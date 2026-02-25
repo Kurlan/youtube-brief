@@ -82,20 +82,28 @@
         </p>
 
         <div class="ideation-step-nav" aria-label="Ideation phase navigation">
-          <button id="prevStepViewBtn" class="btn btn-muted" type="button" aria-label="Previous ideation phase">
-            &larr;
-          </button>
+          <div class="ideation-step-arrows">
+            <button id="prevStepViewBtn" class="btn btn-muted" type="button" aria-label="Previous ideation phase">
+              &larr;
+            </button>
+            <button id="nextStepViewBtn" class="btn btn-muted" type="button" aria-label="Next ideation phase">
+              &rarr;
+            </button>
+          </div>
           <p id="ideationStepViewLabel" class="pipeline-count">Phase 1 of 3</p>
-          <button id="nextStepViewBtn" class="btn btn-muted" type="button" aria-label="Next ideation phase">
-            &rarr;
-          </button>
+          <div class="ideation-step-jumps">
+            <button id="jumpStep1Btn" class="btn btn-muted" type="button">Phase 1</button>
+            <button id="jumpStep2Btn" class="btn btn-muted" type="button">Phase 2</button>
+            <button id="jumpStep3Btn" class="btn btn-muted" type="button">Phase 3</button>
+          </div>
+          <button id="toggleDiscardedBtn" class="btn btn-muted" type="button">Hide Discarded</button>
         </div>
 
         <div class="pipeline-grid">
           <article class="pipeline-stage" data-ideation-step="1">
             <div class="pipeline-stage-head">
               <h3>Phase 1. Brainstorming</h3>
-              <p class="pipeline-count" id="step1Count">Green 0 · Yellow 0 · Red 0</p>
+              <p class="pipeline-count" id="step1Count">Active 0 · Discarded 0</p>
             </div>
             <p class="hint">
               Keep all brainstormed titles here with add-date tracking, filters, and sorting.
@@ -113,10 +121,9 @@
             <div class="pipeline-controls">
               <input id="step1Search" placeholder="Filter by title, notes, source, hypothesis, or name" />
               <select id="step1StatusFilter">
-                <option value="all">All statuses</option>
-                <option value="green">Green</option>
-                <option value="yellow">Yellow</option>
-                <option value="red">Red</option>
+                <option value="all">All ideas</option>
+                <option value="none">Active only</option>
+                <option value="red">Discarded only</option>
               </select>
               <select id="step1Sort">
                 <option value="newest">Sort: Newest first</option>
@@ -138,7 +145,7 @@
           <article class="pipeline-stage" data-ideation-step="2">
             <div class="pipeline-stage-head">
               <h3>Phase 2. Title + Thumbnail Ideation</h3>
-              <p class="pipeline-count" id="step2Count">Green 0 · Yellow 0 · Red 0</p>
+              <p class="pipeline-count" id="step2Count">Active 0 · Discarded 0</p>
             </div>
             <p class="hint">
               Build hook drafts and title/thumbnail combos. Promote strong options to Phase 3.
@@ -158,7 +165,7 @@
           <article class="pipeline-stage" data-ideation-step="3">
             <div class="pipeline-stage-head">
               <h3>Phase 3. Hypothesis + Experiment Log</h3>
-              <p class="pipeline-count" id="step3Count">Green 0 · Yellow 0 · Red 0</p>
+              <p class="pipeline-count" id="step3Count">Active 0 · Discarded 0</p>
             </div>
             <p class="hint">
               Finalize hypothesis + metric, capture learnings, then promote ready ideas to the Briefs workspace.
@@ -573,10 +580,8 @@
             </div>
             <div class="pipeline-actions">
               <select data-role="status">
-              <option value="none">No status</option>
-              <option value="green">Green · Move Forward</option>
-              <option value="yellow">Yellow · Not Quite There</option>
-              <option value="red">Red · Reject</option>
+              <option value="none">Active (white)</option>
+              <option value="red">Discard (red)</option>
             </select>
               <button type="button" class="btn btn-muted" data-action="promote">Send to Phase 2</button>
               <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
@@ -621,9 +626,8 @@
             <h4 class="pipeline-card-title"></h4>
             <div class="pipeline-actions">
               <select data-role="status">
-              <option value="green">Green · Move Forward</option>
-              <option value="yellow">Yellow · Not Quite There</option>
-              <option value="red">Red · Reject</option>
+              <option value="none">Active (white)</option>
+              <option value="red">Discard (red)</option>
             </select>
               <button type="button" class="btn btn-muted" data-action="demote">Demote to Phase 1</button>
               <button type="button" class="btn btn-muted" data-action="promote">Promote to Phase 3</button>
@@ -665,9 +669,8 @@
             <h4 class="pipeline-card-title"></h4>
             <div class="pipeline-actions">
               <select data-role="status">
-                <option value="green">Green · Ready for Brief</option>
-                <option value="yellow">Yellow · Not Quite There</option>
-                <option value="red">Red · Reject</option>
+                <option value="none">Active (white)</option>
+                <option value="red">Discard (red)</option>
               </select>
               <button type="button" class="btn btn-muted" data-action="demote">Demote to Phase 2</button>
               <button type="button" class="btn btn-muted" data-action="startBrief">Promote to Brief</button>

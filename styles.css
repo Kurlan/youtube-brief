@@ -506,15 +506,29 @@ select:focus {
 
 .ideation-step-nav {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: 0.6rem;
   margin-bottom: 0.75rem;
 }
 
 .ideation-step-nav .btn {
-  min-width: 48px;
   padding-inline: 0.8rem;
+}
+
+.ideation-step-arrows {
+  display: inline-flex;
+  gap: 0.45rem;
+}
+
+.ideation-step-arrows .btn {
+  min-width: 48px;
+}
+
+.ideation-step-jumps {
+  display: inline-flex;
+  gap: 0.4rem;
+  justify-self: start;
 }
 
 .pipeline-stage {
@@ -703,28 +717,8 @@ select:focus {
   display: none;
 }
 
-.pipeline-card[data-status="green"] .pipeline-row-summary {
-  background: rgba(43, 138, 62, 0.08);
-}
-
-.pipeline-card[data-status="yellow"] .pipeline-row-summary {
-  background: rgba(243, 190, 91, 0.14);
-}
-
 .pipeline-card[data-status="red"] .pipeline-row-summary {
   background: rgba(177, 42, 42, 0.12);
-}
-
-.pipeline-card[data-status="green"] .pipeline-row-status {
-  border-color: rgba(43, 138, 62, 0.35);
-  color: #236f34;
-  background: rgba(43, 138, 62, 0.12);
-}
-
-.pipeline-card[data-status="yellow"] .pipeline-row-status {
-  border-color: rgba(160, 112, 0, 0.35);
-  color: #785300;
-  background: rgba(243, 190, 91, 0.22);
 }
 
 .pipeline-card[data-status="red"] .pipeline-row-status {
@@ -1057,12 +1051,26 @@ select:focus {
   }
 
   .ideation-step-nav {
-    grid-template-columns: auto auto;
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
   }
 
   .ideation-step-nav .pipeline-count {
-    grid-column: 1 / -1;
     order: -1;
+  }
+
+  .ideation-step-arrows {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ideation-step-jumps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ideation-step-nav > .btn {
+    width: 100%;
   }
 
   .pipeline-controls {
@@ -1138,6 +1146,15 @@ select:focus {
 
   .compare-entry {
     grid-template-columns: 1fr;
+  }
+
+  .brief-list-hit {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .brief-list-side {
+    justify-items: start;
   }
 
   .quick-entry.two-plus,

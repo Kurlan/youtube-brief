@@ -16,7 +16,7 @@ const LOCAL_DB_KEY_BRIEFS = "briefs";
 const LOCAL_DB_KEY_VIEWER = "viewer";
 const SAVE_DEBOUNCE_MS = 180;
 const DEFAULT_OWNER_NAME = "Steve Huynh";
-const IDEA_STATUSES = ["green", "yellow", "red"];
+const IDEA_STATUSES = ["none", "red"];
 const STEP3_LIFECYCLE_STATUSES = ["brainstorming", "in-brief"];
 const STEP1_SORT_OPTIONS = ["newest", "oldest", "title-asc", "title-desc", "name-asc"];
 const PAGE_OPTIONS = ["home", "channel", "briefs"];
@@ -102,6 +102,10 @@ const refs = {
   jumpToBriefsBtn: document.getElementById("jumpToBriefsBtn"),
   prevStepViewBtn: document.getElementById("prevStepViewBtn"),
   nextStepViewBtn: document.getElementById("nextStepViewBtn"),
+  jumpStep1Btn: document.getElementById("jumpStep1Btn"),
+  jumpStep2Btn: document.getElementById("jumpStep2Btn"),
+  jumpStep3Btn: document.getElementById("jumpStep3Btn"),
+  toggleDiscardedBtn: document.getElementById("toggleDiscardedBtn"),
   ideationStepViewLabel: document.getElementById("ideationStepViewLabel"),
   step1Board: document.getElementById("step1Board"),
   step2Board: document.getElementById("step2Board"),
@@ -178,6 +182,7 @@ const state = {
   activeBriefId: "",
   channelView: "dashboard",
   ideationStepView: 1,
+  showDiscarded: true,
   step1View: {
     query: "",
     status: "all",
@@ -535,8 +540,9 @@ function createRecordId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function normalizeIdeaStatus(value, fallback = "yellow") {
-  return IDEA_STATUSES.includes(value) ? value : fallback;
+function normalizeIdeaStatus(value, fallback = "none") {
+  const normalized = toCleanText(value).toLowerCase();
+  return IDEA_STATUSES.includes(normalized) ? normalized : fallback;
 }
 
 function normalizeStep3LifecycleStatus(value, fallback = "brainstorming") {
@@ -572,7 +578,7 @@ function createStep2Idea(seed = {}) {
     notes: toCleanText(seed.notes),
     hookDrafts: toCleanText(seed.hookDrafts),
     titleThumbCombos: toCleanText(seed.titleThumbCombos),
-    status: normalizeIdeaStatus(seed.status, "yellow"),
+    status: normalizeIdeaStatus(seed.status, "none"),
   };
 }
 
@@ -589,7 +595,7 @@ function createStep3Idea(seed = {}) {
     lifecycleStatus: normalizeStep3LifecycleStatus(seed.lifecycleStatus, defaultLifecycle),
     promotedBriefId,
     promotedAt: promotedBriefId ? normalizeTimestamp(seed.promotedAt) : null,
-    status: normalizeIdeaStatus(seed.status, "yellow"),
+    status: normalizeIdeaStatus(seed.status, "none"),
   };
 }
 
@@ -829,6 +835,10 @@ function normalizeStep1View(view = {}) {
   };
 }
 
+function normalizeShowDiscarded(value) {
+  return value !== false;
+}
+
 function normalizePageView(value) {
   return PAGE_OPTIONS.includes(value) ? value : "home";
 }
@@ -969,6 +979,7 @@ function normalizeChannels(items) {
 function createEmptyChannelWorkspace() {
   return {
     ideationStepView: 1,
+    showDiscarded: true,
     step1View: normalizeStep1View({}),
     step1Ideas: [],
     step2Ideas: [],
@@ -979,6 +990,7 @@ function createEmptyChannelWorkspace() {
 function normalizeChannelWorkspace(workspace = {}) {
   return {
     ideationStepView: normalizeIdeationStep(workspace.ideationStepView),
+    showDiscarded: normalizeShowDiscarded(workspace.showDiscarded),
     step1View: normalizeStep1View(workspace.step1View),
     step1Ideas: normalizeStep1Ideas(workspace.step1Ideas),
     step2Ideas: normalizeStep2Ideas(workspace.step2Ideas),
@@ -1031,14 +1043,14 @@ function formatAddedAt(value) {
 function formatStatusLabel(status) {
   const raw = toCleanText(status).toLowerCase();
   if (!raw || raw === "none") {
-    return "No status";
+    return "Active";
   }
 
   const normalized = normalizeIdeaStatus(status, "none");
   if (normalized === "none") {
-    return "No status";
+    return "Active";
   }
-  return normalized[0].toUpperCase() + normalized.slice(1);
+  return normalized === "red" ? "Discarded" : "Active";
 }
 
 function summarizeLine(value, fallback = "No details yet", max = 42) {
@@ -1067,21 +1079,13 @@ function setInputValueIfChanged(el, value) {
 }
 
 function formatStatusCounts(items) {
-  const counts = IDEA_STATUSES.reduce((acc, status) => {
-    acc[status] = 0;
-    return acc;
-  }, {});
-
+  const counts = { none: 0, red: 0 };
   items.forEach((item) => {
     const normalized = normalizeIdeaStatus(item.status, "none");
-    if (!IDEA_STATUSES.includes(normalized)) {
-      return;
-    }
-
     counts[normalized] += 1;
   });
 
-  return `Green ${counts.green} · Yellow ${counts.yellow} · Red ${counts.red}`;
+  return `Active ${counts.none} · Discarded ${counts.red}`;
 }
 
 function applyPipelineDefaults() {
@@ -1093,6 +1097,7 @@ function applyPipelineDefaults() {
   }
 
   state.step1View = normalizeStep1View(state.step1View);
+  state.showDiscarded = normalizeShowDiscarded(state.showDiscarded);
 
   if (refs.step1Search) {
     refs.step1Search.value = state.step1View.query;
@@ -1170,6 +1175,7 @@ function renderChannelHomeBoard() {
 function renderIdeationStepView() {
   const activeStep = normalizeIdeationStep(state.ideationStepView);
   state.ideationStepView = activeStep;
+  state.showDiscarded = normalizeShowDiscarded(state.showDiscarded);
 
   document.querySelectorAll("[data-ideation-step]").forEach((stage) => {
     const isActive = Number(stage.dataset.ideationStep) === activeStep;
@@ -1180,6 +1186,10 @@ function renderIdeationStepView() {
   refs.prevStepViewBtn.disabled = activeStep === 1;
   refs.nextStepViewBtn.disabled = activeStep === 3;
   refs.ideationStepViewLabel.textContent = `Phase ${activeStep} of 3`;
+  refs.jumpStep1Btn.classList.toggle("is-active", activeStep === 1);
+  refs.jumpStep2Btn.classList.toggle("is-active", activeStep === 2);
+  refs.jumpStep3Btn.classList.toggle("is-active", activeStep === 3);
+  refs.toggleDiscardedBtn.textContent = state.showDiscarded ? "Hide Discarded" : "Show Discarded";
 }
 
 function setIdeationStep(step, shouldPersist = true) {
@@ -1327,6 +1337,7 @@ function withBriefDefaultValues(values = {}) {
 function buildActiveChannelWorkspace() {
   return normalizeChannelWorkspace({
     ideationStepView: state.ideationStepView,
+    showDiscarded: state.showDiscarded,
     step1View: state.step1View,
     step1Ideas: state.step1Ideas,
     step2Ideas: state.step2Ideas,
@@ -1337,6 +1348,7 @@ function buildActiveChannelWorkspace() {
 function applyActiveChannelWorkspace(workspace = {}) {
   const parsed = normalizeChannelWorkspace(workspace);
   state.ideationStepView = parsed.ideationStepView;
+  state.showDiscarded = parsed.showDiscarded;
   state.step1View = parsed.step1View;
   state.step1Ideas = parsed.step1Ideas;
   state.step2Ideas = parsed.step2Ideas;
@@ -1844,7 +1856,7 @@ function promoteStep3IdeaToBrief(step3Idea, button) {
   step3Idea.lifecycleStatus = "in-brief";
   step3Idea.promotedBriefId = brief.id;
   step3Idea.promotedAt = Date.now();
-  step3Idea.status = "green";
+  step3Idea.status = "none";
   applyActiveChannelBriefState(nextState);
   state.pageView = "briefs";
   updateBoardsAndBrief();
@@ -2013,7 +2025,15 @@ function getStep1FilteredSortedIdeas() {
     return haystack.includes(query);
   });
 
-  const sorted = [...filtered];
+  const visible = filtered.filter((item) => {
+    if (state.showDiscarded) {
+      return true;
+    }
+
+    return normalizeIdeaStatus(item.status, "none") !== "red";
+  });
+
+  const sorted = [...visible];
   sorted.sort((left, right) => {
     if (view.sort === "oldest") {
       return normalizeTimestamp(left.createdAt) - normalizeTimestamp(right.createdAt);
@@ -2038,6 +2058,7 @@ function getStep1FilteredSortedIdeas() {
     view,
     items: sorted,
     filteredCount: sorted.length,
+    preVisibilityCount: filtered.length,
     totalCount: state.step1Ideas.length,
   };
 }
@@ -2053,12 +2074,17 @@ function renderStep1Board() {
   refs.step1ResultCount.textContent = `Showing ${viewState.filteredCount} of ${viewState.totalCount} titles`;
 
   if (!viewState.totalCount) {
-    refs.step1Board.innerHTML =
-      '<p class="pipeline-empty">No ideas in Phase 1 yet. Add fast entries and score with green/yellow/red.</p>';
+    refs.step1Board.innerHTML = '<p class="pipeline-empty">No ideas in Phase 1 yet. Add fast entries.</p>';
     return;
   }
 
   if (!viewState.filteredCount) {
+    if (!state.showDiscarded && viewState.preVisibilityCount > 0) {
+      refs.step1Board.innerHTML =
+        '<p class="pipeline-empty">All matching ideas are discarded and hidden. Click "Show Discarded".</p>';
+      return;
+    }
+
     refs.step1Board.innerHTML =
       '<p class="pipeline-empty">No titles match the current filters. Adjust search/status/sort and try again.</p>';
     return;
@@ -2134,7 +2160,7 @@ function renderStep1Board() {
         createStep2Idea({
           videoIdea: record.videoIdea,
           notes,
-          status: "yellow",
+          status: "none",
         }),
       );
       state.step1Ideas.splice(sourceIndex, 1);
@@ -2162,7 +2188,7 @@ function renderStep1Board() {
       refs.step1Count.textContent = formatStatusCounts(state.step1Ideas);
       item.status = record.status;
       refreshText();
-      if (state.step1View.status !== "all") {
+      if (state.step1View.status !== "all" || (!state.showDiscarded && record.status === "red")) {
         renderStep1Board();
       }
       saveSnapshot();
@@ -2251,7 +2277,22 @@ function renderStep2Board() {
     return;
   }
 
-  state.step2Ideas.forEach((item, index) => {
+  const visibleIdeas = state.step2Ideas.filter((item) => {
+    if (state.showDiscarded) {
+      return true;
+    }
+
+    return normalizeIdeaStatus(item.status, "none") !== "red";
+  });
+
+  if (!visibleIdeas.length) {
+    refs.step2Board.innerHTML =
+      '<p class="pipeline-empty">All ideas in this phase are discarded and hidden. Click "Show Discarded".</p>';
+    return;
+  }
+
+  visibleIdeas.forEach((item, index) => {
+    const itemId = item.id;
     const fragment = refs.step2Template.content.cloneNode(true);
     const card = fragment.querySelector(".pipeline-card");
     const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
@@ -2275,6 +2316,7 @@ function renderStep2Board() {
       titleEl.textContent = ideaText || `Phase 2 Idea ${index + 1}`;
       lineTitleEl.textContent = ideaText || `Phase 2 Idea ${index + 1}`;
       lineStatusEl.textContent = formatStatusLabel(item.status);
+      lineStatusEl.hidden = normalizeIdeaStatus(item.status, "none") === "none";
       lineMetaEl.textContent = summarizeLine(item.hookDrafts || item.titleThumbCombos || item.notes);
     };
 
@@ -2297,6 +2339,9 @@ function renderStep2Board() {
       setPipelineCardStatus(card, item.status);
       refs.step2Count.textContent = formatStatusCounts(state.step2Ideas);
       refreshText();
+      if (!state.showDiscarded && item.status === "red") {
+        renderStep2Board();
+      }
       saveSnapshot();
     });
 
@@ -2325,6 +2370,12 @@ function renderStep2Board() {
     });
 
     promoteBtn.addEventListener("click", () => {
+      const sourceIndex = state.step2Ideas.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      const record = state.step2Ideas[sourceIndex];
       if (!toCleanText(item.videoIdea)) {
         flashButtonText(promoteBtn, "Need idea", 1000);
         return;
@@ -2332,36 +2383,47 @@ function renderStep2Board() {
 
       state.step3Ideas.unshift(
         createStep3Idea({
-          videoIdea: item.videoIdea,
-          notes: item.notes,
-          titleThumbLink: item.titleThumbCombos,
-          hypothesisMetric: item.hookDrafts,
-          status: "yellow",
+          videoIdea: record.videoIdea,
+          notes: record.notes,
+          titleThumbLink: record.titleThumbCombos,
+          hypothesisMetric: record.hookDrafts,
+          status: "none",
         }),
       );
-      state.step2Ideas.splice(index, 1);
+      state.step2Ideas.splice(sourceIndex, 1);
       updateBoardsAndBrief();
     });
 
     demoteBtn.addEventListener("click", () => {
+      const sourceIndex = state.step2Ideas.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      const record = state.step2Ideas[sourceIndex];
       const ownerName = getPrimaryChannelOwnerName(getActiveChannelRecord());
 
       state.step1Ideas.unshift(
         createStep1Idea({
           name: ownerName,
-          videoIdea: item.videoIdea,
-          source: item.titleThumbCombos,
-          hypothesis: item.hookDrafts,
-          notes: item.notes,
+          videoIdea: record.videoIdea,
+          source: record.titleThumbCombos,
+          hypothesis: record.hookDrafts,
+          notes: record.notes,
           status: "none",
         }),
       );
-      state.step2Ideas.splice(index, 1);
+      state.step2Ideas.splice(sourceIndex, 1);
       updateBoardsAndBrief();
     });
 
     removeBtn.addEventListener("click", () => {
-      state.step2Ideas.splice(index, 1);
+      const sourceIndex = state.step2Ideas.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.step2Ideas.splice(sourceIndex, 1);
       updateBoardsAndBrief();
     });
 
@@ -2379,7 +2441,22 @@ function renderStep3Board() {
     return;
   }
 
-  state.step3Ideas.forEach((item, index) => {
+  const visibleIdeas = state.step3Ideas.filter((item) => {
+    if (state.showDiscarded) {
+      return true;
+    }
+
+    return normalizeIdeaStatus(item.status, "none") !== "red";
+  });
+
+  if (!visibleIdeas.length) {
+    refs.step3Board.innerHTML =
+      '<p class="pipeline-empty">All ideas in this phase are discarded and hidden. Click "Show Discarded".</p>';
+    return;
+  }
+
+  visibleIdeas.forEach((item, index) => {
+    const itemId = item.id;
     const fragment = refs.step3Template.content.cloneNode(true);
     const card = fragment.querySelector(".pipeline-card");
     const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
@@ -2405,6 +2482,7 @@ function renderStep3Board() {
       titleEl.textContent = ideaText || `Phase 3 Idea ${index + 1}`;
       lineTitleEl.textContent = ideaText || `Phase 3 Idea ${index + 1}`;
       lineStatusEl.textContent = formatStatusLabel(item.status);
+      lineStatusEl.hidden = normalizeIdeaStatus(item.status, "none") === "none";
       lineMetaEl.textContent = `${ideaLifecycle} · ${summarizeLine(item.hypothesisMetric || item.insights || item.notes)}`;
       startBriefBtn.textContent = toCleanText(item.promotedBriefId) ? "Open Brief" : "Promote to Brief";
     };
@@ -2429,6 +2507,9 @@ function renderStep3Board() {
       setPipelineCardStatus(card, item.status);
       refs.step3Count.textContent = formatStatusCounts(state.step3Ideas);
       refreshText();
+      if (!state.showDiscarded && item.status === "red") {
+        renderStep3Board();
+      }
       saveSnapshot();
     });
 
@@ -2466,21 +2547,32 @@ function renderStep3Board() {
     });
 
     demoteBtn.addEventListener("click", () => {
+      const sourceIndex = state.step3Ideas.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      const record = state.step3Ideas[sourceIndex];
       state.step2Ideas.unshift(
         createStep2Idea({
-          videoIdea: item.videoIdea,
-          notes: item.notes,
-          hookDrafts: item.hypothesisMetric,
-          titleThumbCombos: item.titleThumbLink,
-          status: normalizeIdeaStatus(item.status, "yellow"),
+          videoIdea: record.videoIdea,
+          notes: record.notes,
+          hookDrafts: record.hypothesisMetric,
+          titleThumbCombos: record.titleThumbLink,
+          status: normalizeIdeaStatus(record.status, "none"),
         }),
       );
-      state.step3Ideas.splice(index, 1);
+      state.step3Ideas.splice(sourceIndex, 1);
       updateBoardsAndBrief();
     });
 
     removeBtn.addEventListener("click", () => {
-      state.step3Ideas.splice(index, 1);
+      const sourceIndex = state.step3Ideas.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.step3Ideas.splice(sourceIndex, 1);
       updateBoardsAndBrief();
     });
 
@@ -3780,6 +3872,7 @@ function resetAll() {
   state.currentAccountId = defaultAccount.id;
   state.activeChannelId = defaultChannel.id;
   state.channelView = "dashboard";
+  state.showDiscarded = true;
   state.channelWorkspaces = {
     [defaultChannel.id]: normalizeChannelWorkspace(createEmptyChannelWorkspace()),
   };
@@ -4003,7 +4096,7 @@ function addStep2IdeaFromQuickEntry() {
   state.step2Ideas.unshift(
     createStep2Idea({
       videoIdea: ideaText,
-      status: "yellow",
+      status: "none",
     }),
   );
 
@@ -4021,7 +4114,7 @@ function addStep3IdeaFromQuickEntry() {
   state.step3Ideas.unshift(
     createStep3Idea({
       videoIdea: ideaText,
-      status: "yellow",
+      status: "none",
     }),
   );
 
@@ -4074,6 +4167,23 @@ function bindEvents() {
 
   refs.nextStepViewBtn.addEventListener("click", () => {
     setIdeationStep(state.ideationStepView + 1);
+  });
+
+  refs.jumpStep1Btn.addEventListener("click", () => {
+    setIdeationStep(1);
+  });
+
+  refs.jumpStep2Btn.addEventListener("click", () => {
+    setIdeationStep(2);
+  });
+
+  refs.jumpStep3Btn.addEventListener("click", () => {
+    setIdeationStep(3);
+  });
+
+  refs.toggleDiscardedBtn.addEventListener("click", () => {
+    state.showDiscarded = !state.showDiscarded;
+    updateBoardsAndBrief();
   });
 
   refs.addStep1FastBtn.addEventListener("click", addStep1IdeaFast);
