@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YouTube Brief Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Space+Grotesk:wght@300..700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="background-glow bg-one"></div>
+    <div class="background-glow bg-two"></div>
+
+    <header class="hero">
+      <div>
+        <p class="kicker">Packaging-First Creator System</p>
+        <h1>YouTube Brief Studio</h1>
+        <p class="subtitle">
+          Build strong packaging first, then execute production with one polished brief.
+        </p>
+      </div>
+      <div class="hero-actions">
+        <button id="saveStateBtn" class="btn btn-muted">Save Snapshot</button>
+        <button id="resetStateBtn" class="btn btn-muted">Reset</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>1. Viewer Strategy Snapshot</h2>
+          <a class="btn btn-muted link-btn" href="viewer-strategy.html" target="_blank" rel="noreferrer">
+            Open Strategy Page
+          </a>
+        </div>
+        <p class="hint">
+          Static profile for <strong>@ALifeEngineered</strong> (from your worksheet + deep viewer signals). This
+          strategy is referenced by every brief.
+        </p>
+        <div class="snapshot-grid">
+          <article>
+            <h3>Niche</h3>
+            <p id="snapNiche"></p>
+          </article>
+          <article>
+            <h3>Age Range</h3>
+            <p id="snapAgeRange"></p>
+          </article>
+          <article>
+            <h3>Main Countries</h3>
+            <p id="snapCountries"></p>
+          </article>
+          <article>
+            <h3>Similar Channels</h3>
+            <p id="snapSimilarChannels"></p>
+          </article>
+          <article>
+            <h3>TAM Estimate</h3>
+            <p id="snapTamEstimate"></p>
+          </article>
+          <article>
+            <h3>Current Avg Views</h3>
+            <p id="snapTamCurrent"></p>
+          </article>
+          <article>
+            <h3>% of TAM Reached</h3>
+            <p id="snapTamShare"></p>
+          </article>
+          <article>
+            <h3>Audience</h3>
+            <p id="snapAudience"></p>
+          </article>
+          <article>
+            <h3>Avatar</h3>
+            <p id="snapAvatar"></p>
+          </article>
+          <article>
+            <h3>Cluster</h3>
+            <p id="snapCluster"></p>
+          </article>
+          <article>
+            <h3>Humor Style</h3>
+            <p id="snapHumorStyle"></p>
+          </article>
+          <article>
+            <h3>What They Hate</h3>
+            <p id="snapAntiPatterns"></p>
+          </article>
+          <article>
+            <h3>What They Want</h3>
+            <p id="snapUnlock"></p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>2. Treatment + Logline</h2>
+        <p class="hint">
+          Define the pitch vibe, then write the single sentence this video will prove.
+        </p>
+        <div class="grid two-up">
+          <label>
+            Project Name
+            <input id="projectName" placeholder="Example: Packaging-First Creator Framework" />
+          </label>
+          <label>
+            Idea Focus
+            <input id="ideaFocus" placeholder="What this specific video is about" />
+          </label>
+          <label>
+            Core Pain
+            <input id="painPoint" placeholder="What frustration keeps repeating?" />
+          </label>
+          <label>
+            Desired Outcome
+            <input id="desiredOutcome" placeholder="What result do they want quickly?" />
+          </label>
+          <label>
+            Intrigue Trigger
+            <input id="intrigueTrigger" placeholder="Unexpected mechanism or contradiction" />
+          </label>
+          <label>
+            Curiosity Gap
+            <input id="curiosityGap" placeholder="What unknown detail makes them click?" />
+          </label>
+          <label class="full">
+            Uniqueness Edge
+            <input id="uniquenessEdge" placeholder="Your angle that competitors are missing" />
+          </label>
+          <label class="full">
+            Treatment (Vibe and Direction)
+            <textarea
+              id="treatment"
+              rows="4"
+              placeholder="Example: Fast-paced tactical breakdown with documentary tension and hopeful payoff."
+            ></textarea>
+          </label>
+          <label class="full">
+            Treatment References
+            <input
+              id="treatmentReferences"
+              placeholder="Example: Vox explainers x MrBeast pacing x analytical self-improvement"
+            />
+          </label>
+          <label class="full">
+            Core Logline
+            <textarea
+              id="logline"
+              rows="3"
+              placeholder="I help [avatar] achieve [outcome] by revealing [surprising mechanism]."
+            ></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>3. Title Variations</h2>
+          <button id="generateTitlesBtn" class="btn">Generate Titles</button>
+        </div>
+        <p class="hint">The generator combines curiosity, clarity, and novelty patterns.</p>
+        <div id="titleBoard" class="idea-board"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>4. Thumbnail Variations</h2>
+          <button id="generateThumbsBtn" class="btn">Generate Thumbnails</button>
+        </div>
+        <p class="hint">Each concept pushes emotion + visual contrast + minimal text overlay.</p>
+        <div id="thumbnailBoard" class="idea-board"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>5. Comparable Videos</h2>
+        </div>
+        <p class="hint">Paste a YouTube URL and attach thumbnail + metadata to your brief.</p>
+        <div class="compare-entry">
+          <input id="comparableUrl" placeholder="https://www.youtube.com/watch?v=..." />
+          <button id="addComparableBtn" class="btn">Add Comparable</button>
+        </div>
+        <div id="comparableBoard" class="comparable-board"></div>
+      </section>
+
+      <section class="panel">
+        <h2>6. Packaging Scorecard</h2>
+        <div class="score-grid">
+          <article>
+            <h3>Top Title</h3>
+            <p id="topTitle">Generate and score titles first.</p>
+          </article>
+          <article>
+            <h3>Top Thumbnail Concept</h3>
+            <p id="topThumb">Generate and score thumbnails first.</p>
+          </article>
+          <article>
+            <h3>Patty-Style Check</h3>
+            <ul>
+              <li id="checkCuriosity">Curiosity: not checked</li>
+              <li id="checkClarity">Clarity: not checked</li>
+              <li id="checkUniqueness">Uniqueness: not checked</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>7. Accelerator Playbook Signals</h2>
+        <p class="hint">
+          Integrated from Weeks 1-3: idea funnel, CCN fit, packaging stages, and traffic-aware strategy.
+        </p>
+        <div class="grid two-up">
+          <label>
+            Idea Source
+            <select id="ideaSource">
+              <option value="40/40/20 blend (Internal/External/Innovation)">40/40/20 Blend</option>
+              <option value="Internal hit (repeat/twist/upgrade)">Internal Hit</option>
+              <option value="External outlier (niche or adjacent)">External Outlier</option>
+              <option value="Innovation play (format or angle gap)">Innovation Play</option>
+            </select>
+          </label>
+          <label>
+            Target Traffic Source
+            <select id="targetTrafficSource">
+              <option value="Suggested/Browse hybrid">Suggested + Browse</option>
+              <option value="Suggested">Suggested</option>
+              <option value="Browse">Browse</option>
+              <option value="Search">Search</option>
+            </select>
+          </label>
+          <label class="full">
+            Upload Strategy
+            <select id="uploadStrategy">
+              <option value="Establish > Experiment > Double Down">Establish > Experiment > Double Down</option>
+              <option value="Sandwich (Proven > Risky > Proven)">Sandwich Strategy</option>
+              <option value="Bridge (Current > Transitional > New)">Bridge Strategy</option>
+            </select>
+          </label>
+          <label>
+            CCN Fit: Core
+            <input id="ccnCore" type="range" min="1" max="10" value="6" />
+          </label>
+          <label>
+            CCN Fit: Casual
+            <input id="ccnCasual" type="range" min="1" max="10" value="6" />
+          </label>
+          <label>
+            CCN Fit: New
+            <input id="ccnNew" type="range" min="1" max="10" value="6" />
+          </label>
+        </div>
+        <div class="playbook-checks">
+          <p id="checkTitleLength">Title length check: pending</p>
+          <p id="checkThumbTextRule">Thumbnail text check: pending</p>
+          <p id="checkPackagingStages">Stage check (Stop Scroll > Interest > Click): pending</p>
+          <p id="checkCCN">CCN balance: pending</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>8. Brief Output (HTML)</h2>
+          <div class="row">
+            <button id="copyHtmlBtn" class="btn btn-muted">Copy HTML</button>
+            <button id="downloadBriefBtn" class="btn btn-muted">Download .html</button>
+          </div>
+        </div>
+        <div id="briefOutput" class="brief-output"></div>
+      </section>
+    </main>
+
+    <template id="titleCardTemplate">
+      <article class="idea-card">
+        <h3 class="idea-title"></h3>
+        <div class="score-inputs">
+          <label>
+            Curiosity
+            <input type="range" min="1" max="10" value="5" data-score="curiosity" />
+          </label>
+          <label>
+            Clarity
+            <input type="range" min="1" max="10" value="5" data-score="clarity" />
+          </label>
+          <label>
+            Uniqueness
+            <input type="range" min="1" max="10" value="5" data-score="uniqueness" />
+          </label>
+          <label>
+            Promise Strength
+            <input type="range" min="1" max="10" value="5" data-score="promise" />
+          </label>
+        </div>
+        <p class="score-pill"></p>
+      </article>
+    </template>
+
+    <template id="thumbCardTemplate">
+      <article class="idea-card">
+        <h3 class="idea-title"></h3>
+        <p class="idea-meta"></p>
+        <div class="score-inputs">
+          <label>
+            Emotion
+            <input type="range" min="1" max="10" value="5" data-score="emotion" />
+          </label>
+          <label>
+            Contrast
+            <input type="range" min="1" max="10" value="5" data-score="contrast" />
+          </label>
+          <label>
+            Clarity
+            <input type="range" min="1" max="10" value="5" data-score="clarity" />
+          </label>
+          <label>
+            Click Intent
+            <input type="range" min="1" max="10" value="5" data-score="intent" />
+          </label>
+        </div>
+        <p class="score-pill"></p>
+      </article>
+    </template>
+
+    <template id="comparableCardTemplate">
+      <article class="comparable-card">
+        <img class="comparable-thumb" alt="Comparable video thumbnail" />
+        <div class="comparable-content">
+          <h3 class="comparable-title"></h3>
+          <p class="comparable-meta"></p>
+          <a class="comparable-link" target="_blank" rel="noreferrer noopener">Open video</a>
+          <button class="btn btn-muted comparable-remove" type="button">Remove</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

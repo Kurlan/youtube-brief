@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ALifeEngineered Viewer Strategy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Space+Grotesk:wght@300..700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f6efe4;
+        --ink: #152836;
+        --ink-soft: #3f5b6d;
+        --line: rgba(8, 33, 52, 0.15);
+        --panel: rgba(255, 255, 255, 0.82);
+        --accent: #d9502d;
+        --sea: #0d646b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 20% 0%, rgba(255, 180, 102, 0.28), transparent 45%),
+          radial-gradient(circle at 90% 80%, rgba(13, 100, 107, 0.2), transparent 40%),
+          linear-gradient(180deg, #fffaf0, var(--bg));
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 2.2rem));
+        margin: 1.4rem auto 2.4rem;
+        display: grid;
+        gap: 1rem;
+      }
+
+      .hero,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        backdrop-filter: blur(4px);
+      }
+
+      .hero {
+        padding: 1.15rem;
+      }
+
+      .kicker {
+        margin: 0;
+        color: var(--accent);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 0.3rem 0 0;
+        font-family: "Fraunces", Georgia, serif;
+        font-size: clamp(1.9rem, 4vw, 2.6rem);
+      }
+
+      .hero p {
+        margin: 0.55rem 0 0;
+        color: var(--ink-soft);
+        max-width: 80ch;
+      }
+
+      .panel {
+        padding: 1rem;
+      }
+
+      h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.05rem;
+      }
+
+      h3 {
+        margin: 0;
+        font-size: 0.92rem;
+      }
+
+      p,
+      li {
+        color: var(--ink-soft);
+        line-height: 1.5;
+        font-size: 0.88rem;
+      }
+
+      .model-grid {
+        display: grid;
+        gap: 0.8rem;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        padding: 0.85rem;
+      }
+
+      .card p {
+        margin: 0.35rem 0 0;
+      }
+
+      .two-up {
+        display: grid;
+        gap: 0.8rem;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      }
+
+      .three-up {
+        display: grid;
+        gap: 0.8rem;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 1.15rem;
+      }
+
+      .source-list a {
+        color: var(--sea);
+        font-weight: 700;
+      }
+
+      .note {
+        margin: 0;
+        padding: 0.6rem 0.75rem;
+        border-radius: 12px;
+        background: rgba(13, 100, 107, 0.1);
+        border: 1px solid rgba(13, 100, 107, 0.22);
+      }
+
+      .metric {
+        font-size: 1.15rem;
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      @media (max-width: 650px) {
+        main {
+          width: calc(100vw - 1rem);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="kicker">Static Strategy Profile</p>
+        <h1>ALifeEngineered Viewer Strategy</h1>
+        <p>
+          Viewer profile grounded in your worksheet and converted into a reusable strategy reference for every brief.
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>Core Model</h2>
+        <div class="model-grid">
+          <article class="card">
+            <h3>Cluster</h3>
+            <p><strong>Niche:</strong> Tech professionals who care about career growth.</p>
+            <p><strong>Age range:</strong> 25-45</p>
+            <p><strong>Main countries:</strong> US, Canada, UK, India</p>
+            <p><strong>Similar channels:</strong> The Prime Time, Tina Huang, Asian Dad Energy, Joma Tech</p>
+          </article>
+
+          <article class="card">
+            <h3>TAM</h3>
+            <p><strong>Estimate of TAM:</strong> <span class="metric">2,000,000 views/video</span></p>
+            <p><strong>% of TAM you are at:</strong> <span class="metric">2.4%</span></p>
+            <p><strong>Current average:</strong> 49,761 views across last 14 long forms</p>
+            <p>Packaging goal: increase TAM framing without breaking business and audience alignment.</p>
+          </article>
+
+          <article class="card">
+            <h3>Personality</h3>
+            <p>
+              Tech worker making good money. Usually good at school, or at least good at being clever. Loves competence
+              porn and rabbit-holing on topics. Hates loud idiots. Wants an unlock that helps them go figure it out.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Deep Viewer Signals (Patty-Style)</h2>
+        <div class="three-up">
+          <article class="card">
+            <h3>Humor They Like</h3>
+            <ul>
+              <li>Dry, sharp, understated humor</li>
+              <li>Clever observational takes</li>
+              <li>Deadpan confidence and subtle internet-native references</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Humor They Reject</h3>
+            <ul>
+              <li>Loud, performative, or cringey delivery</li>
+              <li>Forced comedy that lowers signal</li>
+              <li>Low-effort memes with no strategic point</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>What Creates Curiosity</h3>
+            <ul>
+              <li>A hidden mechanism behind visible results</li>
+              <li>Counterintuitive framing with proof</li>
+              <li>Specific unlocks they can immediately test</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Proof Style They Trust</h3>
+            <ul>
+              <li>Before/after systems and process screenshots</li>
+              <li>Operational breakdowns over motivational claims</li>
+              <li>Clear reasoning chain and practical constraints</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Language Style</h3>
+            <ul>
+              <li>Direct, analytical, no fluff</li>
+              <li>Builder/operator framing</li>
+              <li>Competence-first tone with high agency</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Emotional Payoff</h3>
+            <ul>
+              <li>Regain control of career trajectory</li>
+              <li>Feel precise and strategic, not scattered</li>
+              <li>Ship better decisions with less noise</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel two-up">
+        <article class="card">
+          <h3>Idea Development Playbook (Weeks 1-2)</h3>
+          <ul>
+            <li>Idea Funnel: 0 > 100+ > 20 > 5</li>
+            <li>Source mix: 40% Internal / 40% External / 20% Innovation</li>
+            <li>80/20 programming: 80% mass-appeal for core audience, 20% experiments</li>
+            <li>CCN test on every concept: Core + Casual + New must all have a reason to click</li>
+            <li>Post-mortem misses using retention, comments, and expectation mismatch</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h3>Packaging Playbook (Week 3)</h3>
+          <ul>
+            <li>Stage 1: Stop Scroll (visual contrast + emotional signal)</li>
+            <li>Stage 2: Create Interest (open loop, stakes, unresolved question)</li>
+            <li>Stage 3: Get Click (title + thumbnail complete the curiosity gap)</li>
+            <li>Title rule: ideally <50 chars, usually <70 max, easy glance readability</li>
+            <li>Thumbnail rule: minimal clutter, <=5 words text if used, 3-element hierarchy</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>Algorithm and Traffic Framing (Week 1)</h2>
+        <div class="three-up">
+          <article class="card">
+            <h3>Primary Metrics</h3>
+            <ul>
+              <li>CTR: title + thumbnail + idea match</li>
+              <li>AVD: pacing, structure, and narrative delivery</li>
+              <li>Satisfaction: likes/shares/more-session views and expectation fulfillment</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Traffic Priorities</h3>
+            <ul>
+              <li>Suggested: strongest growth surface inside clusters</li>
+              <li>Browse: useful but limited share</li>
+              <li>Search: relevance-based, not tag-hacking</li>
+              <li>External: often lower context and weaker quality views</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Creator Reframe</h3>
+            <ul>
+              <li>Do not optimize for algorithm myths.</li>
+              <li>Optimize for audience utility, curiosity, and payoff.</li>
+              <li>Packaging should promise what the video can deliver.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel two-up">
+        <article class="card">
+          <h3>Operational Defaults for Briefs</h3>
+          <ul>
+            <li>Default pain: high capability but fragmented personal operating system.</li>
+            <li>Default outcome: consistent compounding progress through systems.</li>
+            <li>Tone: analytical, practical, non-performative.</li>
+            <li>Complexity level: intermediate, concrete examples over generic advice.</li>
+            <li>Packaging rule: broaden TAM with framing, not dilution.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h3>Quick Title/Thumbnail Guidance</h3>
+          <ul>
+            <li>Promise an unlock, not vague inspiration.</li>
+            <li>Use contradiction and mechanism-based hooks.</li>
+            <li>Thumbnail text should be short and competence-coded.</li>
+            <li>Prioritize visual contrast and one clear focal cue.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>Confidence and Next Calibration</h2>
+        <p class="note">
+          This profile now reflects your worksheet directly. Next calibration step is replacing estimates with latest
+          YouTube Studio data for returning viewers, top geos, watch-time by topic cluster, and browse/suggested split.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
