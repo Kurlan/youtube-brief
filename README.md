@@ -5,6 +5,7 @@ A packaging-first YouTube brief generator focused on:
 - Pre-brief ideation pipeline with 3 phases (brainstorming, title/thumbnail ideation, hypothesis/experiment log)
 - Home view with channel cards (multi-channel capable, optimized for one primary owner channel)
 - Channel workspace view with ideation, viewer strategy, and brief authoring modules
+- Account-to-channel membership model (owner/editor/viewer) for future multi-user channels
 - Split workspace views: ideation is separate from brief authoring
 - Fast inline editing and color status tracking (green/yellow/red) across stages
 - One-click promotion between ideation phases and matriculation handoff from phase 3

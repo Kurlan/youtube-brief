@@ -19,6 +19,8 @@ const IDEA_STATUSES = ["green", "yellow", "red"];
 const STEP1_SORT_OPTIONS = ["newest", "oldest", "title-asc", "title-desc", "name-asc"];
 const PAGE_OPTIONS = ["home", "channel"];
 const DEFAULT_CHANNEL_ID = "channel-alifeengineered";
+const DEFAULT_ACCOUNT_ID = "acct-steve-huynh";
+const CHANNEL_MEMBER_ROLES = ["owner", "editor", "viewer"];
 
 const VIEWER_STRATEGY = {
   channel: "@ALifeEngineered",
@@ -156,6 +158,8 @@ const refs = {
 const state = {
   pageView: "home",
   channels: [],
+  accounts: [],
+  channelMemberships: [],
   activeChannelId: "",
   channelWorkspaces: {},
   activeView: "ideation",
@@ -631,6 +635,91 @@ function createDefaultChannelRecord() {
   });
 }
 
+function createAccountRecord(seed = {}) {
+  const name = toCleanText(seed.name) || "Unknown User";
+  return {
+    id: toCleanText(seed.id) || createRecordId("acct"),
+    name,
+    email: toCleanText(seed.email),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt),
+  };
+}
+
+function createDefaultAccountRecord() {
+  const now = Date.now();
+  return createAccountRecord({
+    id: DEFAULT_ACCOUNT_ID,
+    name: DEFAULT_OWNER_NAME,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+function normalizeAccounts(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const seen = new Set();
+  return items
+    .map((item) => createAccountRecord(item))
+    .filter((item) => {
+      if (seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    });
+}
+
+function normalizeMembershipRole(value) {
+  return CHANNEL_MEMBER_ROLES.includes(value) ? value : "editor";
+}
+
+function createChannelMembershipRecord(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("m"),
+    channelId: toCleanText(seed.channelId),
+    accountId: toCleanText(seed.accountId),
+    role: normalizeMembershipRole(seed.role),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt),
+  };
+}
+
+function normalizeChannelMemberships(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const deduped = new Map();
+  items.forEach((item) => {
+    const parsed = createChannelMembershipRecord(item);
+    if (!parsed.channelId || !parsed.accountId) {
+      return;
+    }
+
+    const key = `${parsed.channelId}::${parsed.accountId}`;
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, parsed);
+      return;
+    }
+
+    const shouldPromoteOwner = existing.role !== "owner" && parsed.role === "owner";
+    if (shouldPromoteOwner || parsed.updatedAt > existing.updatedAt) {
+      deduped.set(key, {
+        ...existing,
+        ...parsed,
+        role: shouldPromoteOwner ? "owner" : parsed.role,
+      });
+    }
+  });
+
+  return Array.from(deduped.values());
+}
+
 function normalizeChannels(items) {
   if (!Array.isArray(items)) {
     return [];
@@ -736,8 +825,11 @@ function formatStatusCounts(items) {
 }
 
 function applyPipelineDefaults() {
+  const activeChannel = getActiveChannelRecord();
+  const ownerName = getPrimaryChannelOwnerName(activeChannel);
+
   if (refs.step1QuickName && !toCleanText(refs.step1QuickName.value)) {
-    refs.step1QuickName.value = DEFAULT_OWNER_NAME;
+    refs.step1QuickName.value = ownerName;
   }
 
   state.step1View = normalizeStep1View(state.step1View);
@@ -791,6 +883,7 @@ function renderChannelHomeBoard() {
 
   state.channels.forEach((channel) => {
     const counts = getChannelIdeaCounts(channel.id);
+    const ownerName = getPrimaryChannelOwnerName(channel);
     const fragment = refs.channelCardTemplate.content.cloneNode(true);
     const openBtn = fragment.querySelector('button[data-action="openChannel"]');
     const nameEl = fragment.querySelector('[data-role="channelName"]');
@@ -799,7 +892,7 @@ function renderChannelHomeBoard() {
     const updatedAtEl = fragment.querySelector('[data-role="updatedAt"]');
 
     nameEl.textContent = channel.name;
-    handleEl.textContent = `${channel.handle || channel.platform} · Owner ${channel.ownerName}`;
+    handleEl.textContent = `${channel.handle || channel.platform} · Owner ${ownerName}`;
     phaseCountsEl.textContent = `Phase 1 ${counts.step1} · Phase 2 ${counts.step2} · Phase 3 ${counts.step3}`;
     updatedAtEl.textContent = `Updated ${formatChannelUpdatedAt(channel.updatedAt)}`;
 
@@ -1013,24 +1106,133 @@ function getActiveChannelRecord() {
   return state.channels.find((channel) => channel.id === id) || null;
 }
 
+function getAccountRecord(accountId) {
+  const id = toCleanText(accountId);
+  if (!id) {
+    return null;
+  }
+
+  return state.accounts.find((account) => account.id === id) || null;
+}
+
+function getChannelMemberships(channelId) {
+  const id = toCleanText(channelId);
+  if (!id) {
+    return [];
+  }
+
+  return state.channelMemberships.filter((membership) => membership.channelId === id);
+}
+
+function ensureAccountByName(name) {
+  const cleaned = toCleanText(name) || DEFAULT_OWNER_NAME;
+  const normalized = cleaned.toLowerCase();
+  const existing = state.accounts.find((account) => account.name.toLowerCase() === normalized);
+  if (existing) {
+    if (!toCleanText(existing.name)) {
+      existing.name = cleaned;
+    }
+    return existing;
+  }
+
+  const created = createAccountRecord({ name: cleaned });
+  state.accounts.push(created);
+  return created;
+}
+
+function getPrimaryChannelOwnerAccount(channelId) {
+  const ownerMembership = getChannelMemberships(channelId).find((membership) => membership.role === "owner");
+  if (!ownerMembership) {
+    return null;
+  }
+
+  return getAccountRecord(ownerMembership.accountId);
+}
+
+function getPrimaryChannelOwnerName(channel, fallback = DEFAULT_OWNER_NAME) {
+  if (!channel) {
+    return fallback;
+  }
+
+  const ownerAccount = getPrimaryChannelOwnerAccount(channel.id);
+  if (ownerAccount) {
+    return ownerAccount.name;
+  }
+
+  return toCleanText(channel.ownerName) || fallback;
+}
+
+function ensureOwnerMembershipForChannel(channel) {
+  if (!channel || !toCleanText(channel.id)) {
+    return;
+  }
+
+  const memberships = getChannelMemberships(channel.id);
+  const existingOwnerMembership = memberships.find((membership) => membership.role === "owner");
+  const existingOwnerAccount = existingOwnerMembership
+    ? getAccountRecord(existingOwnerMembership.accountId)
+    : null;
+
+  if (existingOwnerMembership && existingOwnerAccount) {
+    channel.ownerName = existingOwnerAccount.name;
+    return;
+  }
+
+  const desiredOwner = ensureAccountByName(channel.ownerName || DEFAULT_OWNER_NAME);
+  const attachedMembership = memberships.find((membership) => membership.accountId === desiredOwner.id);
+
+  if (attachedMembership) {
+    attachedMembership.role = "owner";
+    attachedMembership.updatedAt = Date.now();
+  } else if (existingOwnerMembership) {
+    existingOwnerMembership.accountId = desiredOwner.id;
+    existingOwnerMembership.role = "owner";
+    existingOwnerMembership.updatedAt = Date.now();
+  } else {
+    state.channelMemberships.push(
+      createChannelMembershipRecord({
+        channelId: channel.id,
+        accountId: desiredOwner.id,
+        role: "owner",
+      }),
+    );
+  }
+
+  channel.ownerName = desiredOwner.name;
+}
+
 function ensureChannelModel() {
   state.channels = normalizeChannels(state.channels);
+  state.accounts = normalizeAccounts(state.accounts);
+  state.channelMemberships = normalizeChannelMemberships(state.channelMemberships);
 
   if (!state.channels.length) {
     const seedChannel = createDefaultChannelRecord();
     state.channels = [seedChannel];
     state.activeChannelId = seedChannel.id;
-    state.channelWorkspaces[seedChannel.id] = normalizeChannelWorkspace(createEmptyChannelWorkspace());
-    return;
+  }
+
+  if (!state.accounts.length) {
+    state.accounts = [createDefaultAccountRecord()];
   }
 
   if (!state.activeChannelId || !state.channels.some((channel) => channel.id === state.activeChannelId)) {
     state.activeChannelId = state.channels[0].id;
   }
 
+  const channelIdSet = new Set(state.channels.map((channel) => channel.id));
+  const accountIdSet = new Set(state.accounts.map((account) => account.id));
+  state.channelMemberships = state.channelMemberships.filter((membership) => {
+    return channelIdSet.has(membership.channelId) && accountIdSet.has(membership.accountId);
+  });
+
   state.channels.forEach((channel) => {
     ensureChannelWorkspace(channel.id);
+    ensureOwnerMembershipForChannel(channel);
   });
+
+  state.accounts = normalizeAccounts(state.accounts);
+  state.channelMemberships = normalizeChannelMemberships(state.channelMemberships);
 }
 
 function formatChannelUpdatedAt(value) {
@@ -2348,9 +2550,11 @@ function updateBriefOutput(values) {
 function buildLegacySnapshotPayload(values = getFieldValues()) {
   cacheActiveChannelWorkspace(values);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     pageView: state.pageView,
     channels: state.channels,
+    accounts: state.accounts,
+    channelMemberships: state.channelMemberships,
     activeChannelId: state.activeChannelId,
     channelWorkspaces: state.channelWorkspaces,
   };
@@ -2359,10 +2563,12 @@ function buildLegacySnapshotPayload(values = getFieldValues()) {
 function buildWorkspacePayload(values = getFieldValues()) {
   cacheActiveChannelWorkspace(values);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     savedAt: Date.now(),
     pageView: state.pageView,
     channels: state.channels,
+    accounts: state.accounts,
+    channelMemberships: state.channelMemberships,
     activeChannelId: state.activeChannelId,
     channelWorkspaces: state.channelWorkspaces,
   };
@@ -2381,7 +2587,7 @@ function buildIdeasPayload() {
   });
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     savedAt: Date.now(),
     byChannel,
   };
@@ -2400,7 +2606,7 @@ function buildBriefsPayload(values = getFieldValues()) {
   });
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     savedAt: Date.now(),
     currentChannelId: state.activeChannelId,
     byChannel,
@@ -2418,11 +2624,15 @@ function buildDbSnapshotPayload(values = getFieldValues()) {
 function applyWorkspacePayload(payload = {}) {
   const isChannelPayload =
     Array.isArray(payload.channels) ||
-    (payload.channelWorkspaces && typeof payload.channelWorkspaces === "object");
+    (payload.channelWorkspaces && typeof payload.channelWorkspaces === "object") ||
+    Array.isArray(payload.accounts) ||
+    Array.isArray(payload.channelMemberships);
 
   if (isChannelPayload) {
     state.pageView = normalizePageView(payload.pageView);
     state.channels = normalizeChannels(payload.channels);
+    state.accounts = normalizeAccounts(payload.accounts);
+    state.channelMemberships = normalizeChannelMemberships(payload.channelMemberships);
     state.activeChannelId = toCleanText(payload.activeChannelId);
     state.channelWorkspaces = {};
 
@@ -2449,11 +2659,14 @@ function applyWorkspacePayload(payload = {}) {
   state.comparables = Array.isArray(payload.comparables) ? payload.comparables : [];
   state.latestBriefHtml = toCleanText(payload.latestBriefHtml);
   state.channels = [createDefaultChannelRecord()];
+  state.accounts = [];
+  state.channelMemberships = [];
   state.activeChannelId = state.channels[0].id;
   state.channelWorkspaces = {
     [state.activeChannelId]: buildActiveChannelWorkspace(payload.values || {}),
   };
   state.pageView = "home";
+  ensureChannelModel();
 }
 
 function applyIdeasPayload(payload = {}) {
@@ -2478,6 +2691,7 @@ function applyIdeasPayload(payload = {}) {
       state.channelWorkspaces[channelId] = workspace;
     });
 
+    ensureChannelModel();
     ensureChannelWorkspace(state.activeChannelId);
     applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
     return;
@@ -2492,11 +2706,15 @@ function applyIdeasPayload(payload = {}) {
 function applyLegacySnapshotPayload(parsed = {}) {
   const isChannelPayload =
     Array.isArray(parsed.channels) ||
-    (parsed.channelWorkspaces && typeof parsed.channelWorkspaces === "object");
+    (parsed.channelWorkspaces && typeof parsed.channelWorkspaces === "object") ||
+    Array.isArray(parsed.accounts) ||
+    Array.isArray(parsed.channelMemberships);
 
   if (isChannelPayload) {
     state.pageView = normalizePageView(parsed.pageView);
     state.channels = normalizeChannels(parsed.channels);
+    state.accounts = normalizeAccounts(parsed.accounts);
+    state.channelMemberships = normalizeChannelMemberships(parsed.channelMemberships);
     state.activeChannelId = toCleanText(parsed.activeChannelId);
     state.channelWorkspaces = {};
     Object.entries(parsed.channelWorkspaces || {}).forEach(([channelId, workspace]) => {
@@ -2522,11 +2740,14 @@ function applyLegacySnapshotPayload(parsed = {}) {
   state.comparables = Array.isArray(parsed.comparables) ? parsed.comparables : [];
   state.latestBriefHtml = toCleanText(parsed.latestBriefHtml);
   state.channels = [createDefaultChannelRecord()];
+  state.accounts = [];
+  state.channelMemberships = [];
   state.activeChannelId = state.channels[0].id;
   state.channelWorkspaces = {
     [state.activeChannelId]: buildActiveChannelWorkspace(parsed.values || {}),
   };
   state.pageView = "home";
+  ensureChannelModel();
   ensureViewAccess();
 }
 
@@ -2670,12 +2891,22 @@ function resetAll() {
   refs.step2QuickIdea.value = "";
   refs.step3QuickIdea.value = "";
   const defaultChannel = createDefaultChannelRecord();
+  const defaultAccount = createDefaultAccountRecord();
   state.pageView = "home";
   state.channels = [defaultChannel];
+  state.accounts = [defaultAccount];
+  state.channelMemberships = [
+    createChannelMembershipRecord({
+      channelId: defaultChannel.id,
+      accountId: defaultAccount.id,
+      role: "owner",
+    }),
+  ];
   state.activeChannelId = defaultChannel.id;
   state.channelWorkspaces = {
     [defaultChannel.id]: normalizeChannelWorkspace(createEmptyChannelWorkspace()),
   };
+  ensureChannelModel();
   applyActiveChannelWorkspace(state.channelWorkspaces[defaultChannel.id]);
 
   localStorage.removeItem(STORAGE_KEY);
