@@ -59,46 +59,45 @@ body {
 .hero {
   width: min(1120px, calc(100vw - 3rem));
   margin: 2.4rem auto 1rem;
-  padding: 1.6rem 1.8rem;
+  padding: 1.2rem 1.3rem;
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) + 8px);
   background: linear-gradient(145deg, rgba(255, 251, 240, 0.92), rgba(255, 255, 255, 0.75));
   box-shadow: var(--shadow);
   backdrop-filter: blur(4px);
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
   animation: rise 0.7s ease both;
 }
 
-.kicker {
-  margin: 0;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 0.72rem;
-  color: var(--sea);
-  font-weight: 700;
+.hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.hero-logo {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.7rem;
+  box-shadow: 0 8px 20px rgba(12, 44, 69, 0.18);
+  flex-shrink: 0;
 }
 
 h1 {
-  margin: 0.35rem 0 0;
+  margin: 0;
   font-family: "Fraunces", Georgia, serif;
-  font-size: clamp(2rem, 4.2vw, 3rem);
-  line-height: 1;
-}
-
-.subtitle {
-  margin: 0.7rem 0 0;
-  max-width: 60ch;
-  color: var(--ink-soft);
+  font-size: clamp(1.8rem, 3.8vw, 2.6rem);
+  line-height: 0.98;
 }
 
 .hero-actions {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  justify-items: end;
 }
 
 .view-switch {
@@ -109,6 +108,12 @@ h1 {
 
 .view-switch .btn {
   padding-inline: 0.9rem;
+}
+
+.hero-action-row {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .btn.is-active {
@@ -123,9 +128,16 @@ h1 {
 
 .view-gate-hint {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--ink-soft);
-  max-width: 42ch;
+  max-width: min(46ch, 100%);
+  border: 1px solid rgba(8, 33, 52, 0.14);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  padding: 0.32rem 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .is-hidden {
@@ -171,12 +183,13 @@ h1 {
 
 .channel-home-board {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .channel-card {
   border: 1px solid rgba(8, 33, 52, 0.16);
-  border-radius: 14px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.78);
   overflow: hidden;
 }
@@ -188,34 +201,126 @@ h1 {
   color: inherit;
   text-align: left;
   display: grid;
-  gap: 0.35rem;
-  padding: 0.85rem 0.9rem;
+  gap: 0;
+  padding: 0;
   cursor: pointer;
 }
 
 .channel-card-hit:hover {
-  background: rgba(8, 33, 52, 0.05);
+  background: rgba(8, 33, 52, 0.03);
+}
+
+.channel-card-banner {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  min-height: 78px;
+  background:
+    linear-gradient(145deg, rgba(24, 57, 81, 0.62), rgba(18, 72, 73, 0.62)),
+    linear-gradient(120deg, rgba(232, 107, 59, 0.34), rgba(255, 199, 124, 0.2));
+  background-size: cover;
+  background-position: center;
+  border-bottom: 1px solid rgba(8, 33, 52, 0.14);
+}
+
+.channel-card-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(150deg, rgba(8, 33, 52, 0.18), rgba(8, 33, 52, 0.02));
+  pointer-events: none;
+}
+
+.channel-card-banner-image {
+  width: 100%;
+  height: 100%;
+  min-height: 78px;
+  object-fit: cover;
+  display: none;
+}
+
+.channel-card-banner.has-image .channel-card-banner-image {
+  display: block;
+}
+
+.channel-card-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
+  padding: 0.75rem 0.86rem;
+}
+
+.channel-card-avatar-shell {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(8, 33, 52, 0.2);
+  background: linear-gradient(145deg, rgba(16, 72, 103, 0.74), rgba(12, 95, 102, 0.76));
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.channel-card-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+.channel-card-avatar-shell.has-image .channel-card-avatar {
+  display: block;
+}
+
+.channel-card-avatar-shell.has-image .channel-card-avatar-fallback {
+  display: none;
+}
+
+.channel-card-avatar-fallback {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.channel-card-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
 }
 
 .channel-card-title {
   margin: 0;
   font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .channel-card-meta {
-  margin: 0.22rem 0 0;
+  margin: 0;
   color: var(--ink-soft);
   font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.channel-card-stats {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-  color: var(--ink-soft);
-  font-size: 0.78rem;
+.channel-card-open {
+  border: 1px solid rgba(8, 33, 52, 0.2);
+  border-radius: 999px;
+  padding: 0.24rem 0.58rem;
+  font-size: 0.7rem;
   font-weight: 700;
+  color: var(--ink-soft);
+  background: rgba(8, 33, 52, 0.06);
+  white-space: nowrap;
+}
+
+.channel-card-hit:hover .channel-card-open {
+  background: rgba(13, 106, 113, 0.16);
+  color: #144057;
 }
 
 .brief-list-board {
@@ -1095,10 +1200,11 @@ select:focus {
 
   .hero {
     margin-top: 1.2rem;
+    grid-template-columns: 1fr;
   }
 
   .hero-actions {
-    align-items: stretch;
+    justify-items: stretch;
   }
 
   .view-switch {
@@ -1109,8 +1215,14 @@ select:focus {
     flex: 1 1 0;
   }
 
+  .hero-action-row {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .view-gate-hint {
     width: 100%;
+    white-space: normal;
   }
 
   .comparable-board {
@@ -1140,6 +1252,11 @@ select:focus {
     padding: 1rem;
   }
 
+  .hero-logo {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+
   .brief-output {
     padding: 0.9rem;
   }
@@ -1155,6 +1272,15 @@ select:focus {
 
   .brief-list-side {
     justify-items: start;
+  }
+
+  .channel-card-body {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .channel-card-open {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 
   .quick-entry.two-plus,

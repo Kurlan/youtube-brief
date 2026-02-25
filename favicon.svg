@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="briefTube" x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff5340" />
+      <stop offset="1" stop-color="#cd2c0d" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="8" width="56" height="48" rx="14" fill="url(#briefTube)" />
+  <path d="M29 22L45 32L29 42Z" fill="#fffaf4" />
+  <path d="M46 14H56V24Z" fill="#0d6a71" />
+  <circle cx="52" cy="51" r="8" fill="#0d6a71" />
+  <path d="M49 47.5H52.5C54.2 47.5 55.5 48.7 55.5 50.3C55.5 51.1 55.1 51.8 54.5 52.3C55.3 52.8 55.8 53.6 55.8 54.6C55.8 56.3 54.4 57.5 52.5 57.5H49V47.5ZM50.8 49V51.7H52.4C53.2 51.7 53.7 51.2 53.7 50.4C53.7 49.6 53.2 49 52.4 49H50.8ZM50.8 53.2V56H52.4C53.3 56 53.9 55.4 53.9 54.6C53.9 53.8 53.3 53.2 52.4 53.2H50.8Z" fill="#fffaf4" />
+</svg>

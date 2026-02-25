@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>YouTube Brief Studio</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -17,12 +18,9 @@
     <div class="background-glow bg-two"></div>
 
     <header class="hero">
-      <div>
-        <p class="kicker">Packaging-First Creator System</p>
+      <div class="hero-brand">
+        <img class="hero-logo" src="favicon.svg" alt="" />
         <h1>YouTube Brief Studio</h1>
-        <p class="subtitle">
-          Build strong packaging first, then execute production with one polished brief.
-        </p>
       </div>
       <div class="hero-actions">
         <div class="view-switch" role="tablist" aria-label="App navigation">
@@ -31,17 +29,17 @@
           <button id="showBriefsPageBtn" class="btn btn-muted" type="button" role="tab">Briefs</button>
         </div>
         <p id="activeChannelLabel" class="view-gate-hint"></p>
-        <button id="saveStateBtn" class="btn btn-muted">Save Snapshot</button>
-        <button id="resetStateBtn" class="btn btn-muted">Reset</button>
+        <div class="hero-action-row">
+          <button id="saveStateBtn" class="btn btn-muted">Save Snapshot</button>
+          <button id="resetStateBtn" class="btn btn-muted">Reset</button>
+        </div>
       </div>
     </header>
 
     <main class="workspace">
       <section class="panel" data-page="home">
-        <h2>Channel Access</h2>
-        <p class="hint">
-          Root view. This list shows channels your account can access. Open a channel to use ideation and briefs.
-        </p>
+        <h2>Channels</h2>
+        <p class="hint">Open a channel to start ideation and briefs.</p>
         <div id="channelHomeBoard" class="channel-home-board"></div>
       </section>
 
@@ -536,13 +534,19 @@
     <template id="channelCardTemplate">
       <article class="channel-card">
         <button type="button" class="channel-card-hit" data-action="openChannel">
-          <div>
-            <h3 class="channel-card-title" data-role="channelName"></h3>
-            <p class="channel-card-meta" data-role="channelHandle"></p>
-          </div>
-          <div class="channel-card-stats">
-            <span data-role="phaseCounts"></span>
-            <span data-role="updatedAt"></span>
+          <span class="channel-card-banner" data-role="channelBanner" aria-hidden="true">
+            <img class="channel-card-banner-image" data-role="channelBannerImage" alt="" />
+          </span>
+          <div class="channel-card-body">
+            <div class="channel-card-avatar-shell">
+              <img class="channel-card-avatar" data-role="channelAvatar" alt="" />
+              <span class="channel-card-avatar-fallback" data-role="channelAvatarFallback"></span>
+            </div>
+            <div class="channel-card-copy">
+              <h3 class="channel-card-title" data-role="channelName"></h3>
+              <p class="channel-card-meta" data-role="channelHandle"></p>
+            </div>
+            <span class="channel-card-open" aria-hidden="true">Open</span>
           </div>
         </button>
       </article>

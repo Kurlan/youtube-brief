@@ -25,6 +25,34 @@ const DEFAULT_CHANNEL_ID = "channel-alifeengineered";
 const DEFAULT_ACCOUNT_ID = "acct-steve-huynh";
 const CHANNEL_MEMBER_ROLES = ["owner", "editor", "viewer"];
 const CHANNEL_ACCESS_ROLES = ["owner"];
+const CHANNEL_ASSET_KINDS = ["avatar", "banner", "thumbnail", "other"];
+const DEFAULT_CHANNEL_ASSET_SOURCE_URL = "https://www.youtube.com/@ALifeEngineered";
+const DEFAULT_CHANNEL_AVATAR_URL =
+  "https://yt3.googleusercontent.com/xMADx5czTPcIhTmWROpNFrnAFB_S98l_8tq2Fwe2_t2b-hACm1xN8UWyilipkkoehvBAIzW_kBA=s160-c-k-c0x00ffffff-no-rj";
+const DEFAULT_CHANNEL_BANNER_URL =
+  "https://yt3.googleusercontent.com/pbVHdjiF-fat6mkzHWh0kMaRrbuhWdaEzyxit_YhKwjgcTxXiktfTBn0TYYPToKfLHc41rfpIy4=w1707-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj";
+const DEFAULT_CHANNEL_ASSETS = [
+  {
+    kind: "avatar",
+    url: "https://yt3.googleusercontent.com/xMADx5czTPcIhTmWROpNFrnAFB_S98l_8tq2Fwe2_t2b-hACm1xN8UWyilipkkoehvBAIzW_kBA=s900-c-k-c0x00ffffff-no-rj",
+    sourceUrl: DEFAULT_CHANNEL_ASSET_SOURCE_URL,
+  },
+  {
+    kind: "avatar",
+    url: DEFAULT_CHANNEL_AVATAR_URL,
+    sourceUrl: DEFAULT_CHANNEL_ASSET_SOURCE_URL,
+  },
+  {
+    kind: "banner",
+    url: DEFAULT_CHANNEL_BANNER_URL,
+    sourceUrl: DEFAULT_CHANNEL_ASSET_SOURCE_URL,
+  },
+  {
+    kind: "banner",
+    url: "https://yt3.googleusercontent.com/pbVHdjiF-fat6mkzHWh0kMaRrbuhWdaEzyxit_YhKwjgcTxXiktfTBn0TYYPToKfLHc41rfpIy4=w2560-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj",
+    sourceUrl: DEFAULT_CHANNEL_ASSET_SOURCE_URL,
+  },
+];
 
 const VIEWER_STRATEGY = {
   channel: "@ALifeEngineered",
@@ -847,15 +875,75 @@ function normalizeChannelView(value) {
   return CHANNEL_VIEW_OPTIONS.includes(value) ? value : "dashboard";
 }
 
+function normalizeChannelAssetKind(value) {
+  const kind = toCleanText(value).toLowerCase();
+  return CHANNEL_ASSET_KINDS.includes(kind) ? kind : "other";
+}
+
+function createChannelAssetRecord(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("asset"),
+    kind: normalizeChannelAssetKind(seed.kind),
+    url: toCleanText(seed.url),
+    sourceUrl: toCleanText(seed.sourceUrl),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt),
+  };
+}
+
+function normalizeChannelAssets(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const deduped = new Map();
+  items.forEach((item) => {
+    const parsed = createChannelAssetRecord(item);
+    if (!parsed.url) {
+      return;
+    }
+
+    const key = `${parsed.kind}::${parsed.url}`;
+    const existing = deduped.get(key);
+    if (!existing || parsed.updatedAt > existing.updatedAt) {
+      deduped.set(key, parsed);
+    }
+  });
+
+  return Array.from(deduped.values());
+}
+
+function getFirstChannelAssetUrl(channelAssets, kind) {
+  const match = channelAssets.find((asset) => asset.kind === kind && asset.url);
+  return match ? match.url : "";
+}
+
 function createChannelRecord(seed = {}) {
   const name = toCleanText(seed.name) || "Untitled Channel";
   const handle = toCleanText(seed.handle) || "";
+  const isDefaultChannel =
+    toCleanText(seed.id) === DEFAULT_CHANNEL_ID || toCleanText(seed.handle).toLowerCase() === "@alifeengineered";
+  let channelAssets = normalizeChannelAssets(seed.channelAssets || seed.assets);
+  if (isDefaultChannel && !channelAssets.length) {
+    channelAssets = normalizeChannelAssets(DEFAULT_CHANNEL_ASSETS);
+  }
+  let avatarUrl = toCleanText(seed.avatarUrl) || getFirstChannelAssetUrl(channelAssets, "avatar");
+  let bannerUrl = toCleanText(seed.bannerUrl) || getFirstChannelAssetUrl(channelAssets, "banner");
+  if (isDefaultChannel && !avatarUrl) {
+    avatarUrl = DEFAULT_CHANNEL_AVATAR_URL;
+  }
+  if (isDefaultChannel && !bannerUrl) {
+    bannerUrl = DEFAULT_CHANNEL_BANNER_URL;
+  }
   return {
     id: toCleanText(seed.id) || createRecordId("ch"),
     name,
     handle,
     ownerName: toCleanText(seed.ownerName) || DEFAULT_OWNER_NAME,
     platform: toCleanText(seed.platform) || "YouTube",
+    avatarUrl,
+    bannerUrl,
+    channelAssets,
     createdAt: normalizeTimestamp(seed.createdAt),
     updatedAt: normalizeTimestamp(seed.updatedAt),
   };
@@ -869,6 +957,9 @@ function createDefaultChannelRecord() {
     handle: "@ALifeEngineered",
     ownerName: DEFAULT_OWNER_NAME,
     platform: "YouTube",
+    avatarUrl: DEFAULT_CHANNEL_AVATAR_URL,
+    bannerUrl: DEFAULT_CHANNEL_BANNER_URL,
+    channelAssets: DEFAULT_CHANNEL_ASSETS,
     createdAt: now,
     updatedAt: now,
   });
@@ -1131,6 +1222,45 @@ function formatBriefSourceType(value) {
   return toCleanText(value) === "phase3" ? "Promoted from Phase 3" : "Manual / Retrospective";
 }
 
+function getChannelAssetUrl(channel, kind) {
+  if (!channel) {
+    return "";
+  }
+
+  if (kind === "avatar") {
+    const avatarUrl = toCleanText(channel.avatarUrl);
+    if (avatarUrl) {
+      return avatarUrl;
+    }
+  }
+
+  if (kind === "banner") {
+    const bannerUrl = toCleanText(channel.bannerUrl);
+    if (bannerUrl) {
+      return bannerUrl;
+    }
+  }
+
+  const channelAssets = normalizeChannelAssets(channel.channelAssets);
+  const fallback = channelAssets.find((asset) => asset.kind === kind && asset.url);
+  return fallback ? fallback.url : "";
+}
+
+function getChannelCardInitials(channel) {
+  const rawName = toCleanText(channel?.name) || toCleanText(channel?.handle).replace(/^@/, "") || "Y";
+  const words = rawName
+    .replace(/[^A-Za-z0-9 ]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) {
+    return "Y";
+  }
+  return words
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+}
+
 function renderChannelHomeBoard() {
   if (!refs.channelHomeBoard || !refs.channelCardTemplate) {
     return;
@@ -1150,19 +1280,41 @@ function renderChannelHomeBoard() {
   }
 
   accessibleChannels.forEach((channel) => {
-    const counts = getChannelIdeaCounts(channel.id);
-    const ownerName = getPrimaryChannelOwnerName(channel);
     const fragment = refs.channelCardTemplate.content.cloneNode(true);
     const openBtn = fragment.querySelector('button[data-action="openChannel"]');
     const nameEl = fragment.querySelector('[data-role="channelName"]');
     const handleEl = fragment.querySelector('[data-role="channelHandle"]');
-    const phaseCountsEl = fragment.querySelector('[data-role="phaseCounts"]');
-    const updatedAtEl = fragment.querySelector('[data-role="updatedAt"]');
+    const bannerWrapEl = fragment.querySelector('[data-role="channelBanner"]');
+    const bannerImgEl = fragment.querySelector('[data-role="channelBannerImage"]');
+    const avatarShellEl = fragment.querySelector(".channel-card-avatar-shell");
+    const avatarImgEl = fragment.querySelector('[data-role="channelAvatar"]');
+    const avatarFallbackEl = fragment.querySelector('[data-role="channelAvatarFallback"]');
+    const avatarUrl = getChannelAssetUrl(channel, "avatar");
+    const bannerUrl = getChannelAssetUrl(channel, "banner");
 
     nameEl.textContent = channel.name;
-    handleEl.textContent = `${channel.handle || channel.platform} · Owner ${ownerName}`;
-    phaseCountsEl.textContent = `Phase 1 ${counts.step1} · Phase 2 ${counts.step2} · Phase 3 ${counts.step3}`;
-    updatedAtEl.textContent = `Updated ${formatChannelUpdatedAt(channel.updatedAt)}`;
+    handleEl.textContent = channel.handle || channel.platform;
+    avatarFallbackEl.textContent = getChannelCardInitials(channel);
+
+    if (avatarUrl && avatarImgEl && avatarShellEl) {
+      avatarImgEl.src = avatarUrl;
+      avatarImgEl.alt = `${channel.name} avatar`;
+      avatarShellEl.classList.add("has-image");
+    } else if (avatarImgEl && avatarShellEl) {
+      avatarImgEl.removeAttribute("src");
+      avatarImgEl.alt = "";
+      avatarShellEl.classList.remove("has-image");
+    }
+
+    if (bannerUrl && bannerWrapEl && bannerImgEl) {
+      bannerImgEl.src = bannerUrl;
+      bannerImgEl.alt = `${channel.name} banner`;
+      bannerWrapEl.classList.add("has-image");
+    } else if (bannerWrapEl && bannerImgEl) {
+      bannerImgEl.removeAttribute("src");
+      bannerImgEl.alt = "";
+      bannerWrapEl.classList.remove("has-image");
+    }
 
     openBtn.addEventListener("click", () => {
       openChannelById(channel.id);
@@ -1230,8 +1382,8 @@ function renderPageView() {
   refs.showChannelPageBtn.disabled = !hasActiveChannel;
   refs.showBriefsPageBtn.disabled = !hasActiveChannel;
   refs.activeChannelLabel.textContent = hasActiveChannel
-    ? `Channel: ${activeChannel.name}${activeChannel.handle ? ` (${activeChannel.handle})` : ""}`
-    : "Select a channel from Home to continue.";
+    ? `${activeChannel.name}${activeChannel.handle ? ` · ${activeChannel.handle}` : ""}`
+    : "Select a channel from Home.";
 }
 
 function setPageView(pageView, shouldPersist = true) {
