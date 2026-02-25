@@ -1213,7 +1213,6 @@ function setPageView(pageView, shouldPersist = true) {
       ensureChannelBriefState(activeChannel.id);
       applyActiveChannelWorkspace(state.channelWorkspaces[activeChannel.id]);
       applyActiveChannelBriefState(state.briefsByChannel[activeChannel.id]);
-      applyDefaultPlaybookValues();
       applyPipelineDefaults();
     }
   }
@@ -1237,7 +1236,6 @@ function openChannelById(channelId, shouldPersist = true) {
   ensureChannelBriefState(id);
   applyActiveChannelWorkspace(state.channelWorkspaces[id]);
   applyActiveChannelBriefState(state.briefsByChannel[id]);
-  applyDefaultPlaybookValues();
   applyPipelineDefaults();
   state.pageView = "channel";
   updateBoardsAndBrief({ persist: false });
@@ -1326,7 +1324,7 @@ function buildActiveChannelBriefState(values = getFieldValues()) {
     return createBriefRecord({
       ...brief,
       channelId,
-      values: withBriefDefaultValues(values),
+      values: normalizeBriefValues(values),
       titles: state.titles,
       thumbnails: state.thumbnails,
       comparables: state.comparables,
@@ -1377,7 +1375,7 @@ function applyActiveChannelBriefState(briefState = {}) {
     return;
   }
 
-  setFieldValues(withBriefDefaultValues(activeBrief.values));
+  setFieldValues(activeBrief.values || {});
   state.titles = normalizeTitleCollection(activeBrief.titles);
   state.thumbnails = normalizeThumbnailCollection(activeBrief.thumbnails);
   state.comparables = normalizeComparableCollection(activeBrief.comparables);
@@ -1853,28 +1851,6 @@ function setBriefEditorEnabled(enabled) {
   }
 }
 
-function applyDefaultPlaybookValues() {
-  const defaults = {
-    ideaSource: "40/40/20 blend (Internal/External/Innovation)",
-    targetTrafficSource: "Suggested/Browse hybrid",
-    uploadStrategy: "Establish > Experiment > Double Down",
-    ccnCore: "6",
-    ccnCasual: "6",
-    ccnNew: "6",
-  };
-
-  Object.entries(defaults).forEach(([id, value]) => {
-    const el = document.getElementById(id);
-    if (!el) {
-      return;
-    }
-
-    if (!String(el.value || "").trim()) {
-      el.value = value;
-    }
-  });
-}
-
 function renderViewerSnapshot() {
   refs.snapNiche.textContent = VIEWER_STRATEGY.niche;
   refs.snapAgeRange.textContent = VIEWER_STRATEGY.ageRange;
@@ -2203,6 +2179,7 @@ function renderStep2Board() {
     const detailsEl = fragment.querySelector('[data-role="details"]');
     const titleEl = fragment.querySelector(".pipeline-card-title");
     const statusSelect = fragment.querySelector('select[data-role="status"]');
+    const demoteBtn = fragment.querySelector('button[data-action="demote"]');
     const promoteBtn = fragment.querySelector('button[data-action="promote"]');
     const removeBtn = fragment.querySelector('button[data-action="remove"]');
     const ideaEl = fragment.querySelector('[data-field="videoIdea"]');
@@ -2283,6 +2260,23 @@ function renderStep2Board() {
       updateBoardsAndBrief();
     });
 
+    demoteBtn.addEventListener("click", () => {
+      const ownerName = getPrimaryChannelOwnerName(getActiveChannelRecord());
+
+      state.step1Ideas.unshift(
+        createStep1Idea({
+          name: ownerName,
+          videoIdea: item.videoIdea,
+          source: item.titleThumbCombos,
+          hypothesis: item.hookDrafts,
+          notes: item.notes,
+          status: "none",
+        }),
+      );
+      state.step2Ideas.splice(index, 1);
+      updateBoardsAndBrief();
+    });
+
     removeBtn.addEventListener("click", () => {
       state.step2Ideas.splice(index, 1);
       updateBoardsAndBrief();
@@ -2313,6 +2307,7 @@ function renderStep3Board() {
     const detailsEl = fragment.querySelector('[data-role="details"]');
     const titleEl = fragment.querySelector(".pipeline-card-title");
     const statusSelect = fragment.querySelector('select[data-role="status"]');
+    const demoteBtn = fragment.querySelector('button[data-action="demote"]');
     const startBriefBtn = fragment.querySelector('button[data-action="startBrief"]');
     const removeBtn = fragment.querySelector('button[data-action="remove"]');
     const ideaEl = fragment.querySelector('[data-field="videoIdea"]');
@@ -2385,6 +2380,20 @@ function renderStep3Board() {
 
     startBriefBtn.addEventListener("click", () => {
       promoteStep3IdeaToBrief(item, startBriefBtn);
+    });
+
+    demoteBtn.addEventListener("click", () => {
+      state.step2Ideas.unshift(
+        createStep2Idea({
+          videoIdea: item.videoIdea,
+          notes: item.notes,
+          hookDrafts: item.hypothesisMetric,
+          titleThumbCombos: item.titleThumbLink,
+          status: normalizeIdeaStatus(item.status, "yellow"),
+        }),
+      );
+      state.step3Ideas.splice(index, 1);
+      updateBoardsAndBrief();
     });
 
     removeBtn.addEventListener("click", () => {
@@ -3303,18 +3312,19 @@ function applyWorkspacePayload(payload = {}) {
     }),
   };
 
+  const legacyValues = normalizeBriefValues(payload.values || {});
   const legacyBrief = createBriefRecord({
     channelId: state.activeChannelId,
     sourceType: toCleanText(payload.matriculatedIdeaId) ? "phase3" : "manual",
     sourceIdeaId: toCleanText(payload.matriculatedIdeaId),
-    values: withBriefDefaultValues(payload.values || {}),
+    values: legacyValues,
     titles: payload.titles,
     thumbnails: payload.thumbnails,
     comparables: payload.comparables,
     latestBriefHtml: payload.latestBriefHtml,
   });
   const hasLegacyBriefData =
-    Object.values(legacyBrief.values).some(Boolean) ||
+    Object.values(legacyValues).some(Boolean) ||
     legacyBrief.titles.length ||
     legacyBrief.thumbnails.length ||
     legacyBrief.comparables.length ||
@@ -3410,6 +3420,11 @@ function applyBriefsPayload(payload = {}) {
       );
     });
 
+    const requestedChannelId = toCleanText(payload.currentChannelId);
+    if (requestedChannelId && state.channels.some((channel) => channel.id === requestedChannelId)) {
+      state.activeChannelId = requestedChannelId;
+    }
+
     ensureChannelModel();
     ensureChannelBriefState(state.activeChannelId);
     applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
@@ -3489,18 +3504,19 @@ function applyLegacySnapshotPayload(parsed = {}) {
       step3Ideas: state.step3Ideas,
     }),
   };
+  const legacyValues = normalizeBriefValues(parsed.values || {});
   const legacyBrief = createBriefRecord({
     channelId: state.activeChannelId,
     sourceType: toCleanText(parsed.matriculatedIdeaId) ? "phase3" : "manual",
     sourceIdeaId: toCleanText(parsed.matriculatedIdeaId),
-    values: withBriefDefaultValues(parsed.values || {}),
+    values: legacyValues,
     titles: parsed.titles,
     thumbnails: parsed.thumbnails,
     comparables: parsed.comparables,
     latestBriefHtml: parsed.latestBriefHtml,
   });
   const hasLegacyBriefData =
-    Object.values(legacyBrief.values).some(Boolean) ||
+    Object.values(legacyValues).some(Boolean) ||
     legacyBrief.titles.length ||
     legacyBrief.thumbnails.length ||
     legacyBrief.comparables.length ||
@@ -3583,7 +3599,7 @@ async function loadSnapshot() {
       briefsRepo.loadCurrent(),
     ]);
 
-    if (workspacePayload || ideasPayload) {
+    if (workspacePayload || ideasPayload || briefsPayload) {
       applyWorkspacePayload(workspacePayload || {});
       applyIdeasPayload(ideasPayload || {});
       applyBriefsPayload(briefsPayload || {});
@@ -3683,7 +3699,6 @@ function resetAll() {
   localStorage.removeItem(STORAGE_KEY);
   LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
   void clearPersistedWorkspace();
-  applyDefaultPlaybookValues();
   applyPipelineDefaults();
   updateBoardsAndBrief();
 }
@@ -3710,14 +3725,6 @@ function updateBoardsAndBrief(options = {}) {
     updateBriefOutput(values);
   } else {
     setBriefEditorEnabled(false);
-  }
-
-  if (state.pageView !== "briefs") {
-    renderTitleBoard();
-    renderThumbBoard();
-    renderComparableBoard();
-    updateScoreboard(values);
-    updateBriefOutput(values);
   }
 
   if (options.persist !== false) {
@@ -3861,7 +3868,7 @@ function addStep1IdeaFast() {
       name: refs.step1QuickName.value,
       videoIdea: ideaText,
       source: refs.step1QuickSource.value,
-      status: "yellow",
+      status: "none",
     }),
   );
 
@@ -3882,7 +3889,7 @@ function addStep1IdeaFromQuickEntry() {
       name: refs.step1QuickName.value,
       videoIdea: ideaText,
       source: refs.step1QuickSource.value,
-      status: "yellow",
+      status: "none",
     }),
   );
 
@@ -4071,6 +4078,10 @@ function bindEvents() {
     }
 
     const onChange = () => {
+      if (!getActiveBriefRecord()) {
+        return;
+      }
+
       updateScoreboard(getFieldValues());
       updateBriefOutput(getFieldValues());
       saveSnapshot();
@@ -4091,7 +4102,6 @@ async function init() {
   applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
   applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
   state.pageView = normalizePageView(state.pageView);
-  applyDefaultPlaybookValues();
   applyPipelineDefaults();
   bindEvents();
   updateBoardsAndBrief();
