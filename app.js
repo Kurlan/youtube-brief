@@ -1368,8 +1368,11 @@ function renderChannelHomeBoard() {
       bannerWrapEl.classList.remove("has-image");
     }
 
-    openBtn.disabled = true;
-    openBtn.title = "Channel workspace coming soon";
+    openBtn.disabled = false;
+    openBtn.title = `Open ${channel.name}`;
+    openBtn.addEventListener("click", () => {
+      openChannelById(channel.id);
+    });
 
     refs.channelHomeBoard.appendChild(fragment);
   });
