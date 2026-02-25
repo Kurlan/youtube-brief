@@ -25,15 +25,161 @@
         </p>
       </div>
       <div class="hero-actions">
+        <div class="view-switch" role="tablist" aria-label="App navigation">
+          <button id="showHomePageBtn" class="btn btn-muted" type="button" role="tab">Home</button>
+          <button id="showChannelPageBtn" class="btn btn-muted" type="button" role="tab">Channel</button>
+        </div>
+        <p id="activeChannelLabel" class="view-gate-hint"></p>
+        <div id="workspaceViewSwitch" class="view-switch" role="tablist" aria-label="Channel workspace view">
+          <button id="showIdeationViewBtn" class="btn btn-muted" type="button" role="tab">Ideation View</button>
+          <button id="showBriefViewBtn" class="btn btn-muted" type="button" role="tab">Brief View</button>
+        </div>
+        <p id="briefGateStatus" class="view-gate-hint"></p>
         <button id="saveStateBtn" class="btn btn-muted">Save Snapshot</button>
         <button id="resetStateBtn" class="btn btn-muted">Reset</button>
       </div>
     </header>
 
     <main class="workspace">
-      <section class="panel">
+      <section class="panel" data-page="home">
+        <h2>Channel Home</h2>
+        <p class="hint">
+          Start from your channel overview. Open a channel to access ideation phases, viewership context, and brief
+          workflow.
+        </p>
+        <div id="channelHomeBoard" class="channel-home-board"></div>
+      </section>
+
+      <section class="panel" data-page="channel">
+        <h2>Channel Overview</h2>
+        <p class="hint">Use these modules to move from idea volume to validated briefs.</p>
+        <div class="channel-modules">
+          <article>
+            <h3>Ideation</h3>
+            <p>Run ideas through Phase 1 to Phase 3 before starting a brief.</p>
+            <button id="jumpToIdeationBtn" class="btn btn-muted" type="button">Open Ideation Phases</button>
+          </article>
+          <article>
+            <h3>Analytics</h3>
+            <p>Channel-level analytics module is planned for a future release.</p>
+          </article>
+          <article>
+            <h3>Related Channels</h3>
+            <p>Competitor and overlap tracking is planned for a future release.</p>
+          </article>
+          <article>
+            <h3>Viewership</h3>
+            <p>Viewer strategy and avatar context are available in the brief workspace.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" data-page="channel" data-view="ideation">
+        <h2>1-3. Ideation Phases (Pre-Brief)</h2>
+        <p class="hint">
+          Move ideas from volume brainstorming to title/thumbnail packaging, then hypothesis experiments before starting
+          the brief.
+        </p>
+
+        <div class="ideation-step-nav" aria-label="Ideation phase navigation">
+          <button id="prevStepViewBtn" class="btn btn-muted" type="button" aria-label="Previous ideation phase">
+            &larr;
+          </button>
+          <p id="ideationStepViewLabel" class="pipeline-count">Phase 1 of 3</p>
+          <button id="nextStepViewBtn" class="btn btn-muted" type="button" aria-label="Next ideation phase">
+            &rarr;
+          </button>
+        </div>
+
+        <div class="pipeline-grid">
+          <article class="pipeline-stage" data-ideation-step="1">
+            <div class="pipeline-stage-head">
+              <h3>Phase 1. Brainstorming</h3>
+              <p class="pipeline-count" id="step1Count">Green 0 · Yellow 0 · Red 0</p>
+            </div>
+            <p class="hint">
+              Keep all brainstormed titles here with add-date tracking, filters, and sorting.
+            </p>
+            <div class="quick-entry one-plus">
+              <input id="step1FastIdea" placeholder="Quick capture title and hit Enter" />
+              <button id="addStep1FastBtn" class="btn" type="button">Quick Add</button>
+            </div>
+            <div class="quick-entry three-plus">
+              <input id="step1QuickName" value="Steve Huynh" placeholder="Name (default: Steve Huynh)" />
+              <input id="step1QuickIdea" placeholder="Video idea (working title)" />
+              <input id="step1QuickSource" placeholder="Source of idea (data)" />
+              <button id="addStep1Btn" class="btn" type="button">Add Detailed</button>
+            </div>
+            <div class="pipeline-controls">
+              <input id="step1Search" placeholder="Filter by title, notes, source, hypothesis, or name" />
+              <select id="step1StatusFilter">
+                <option value="all">All statuses</option>
+                <option value="green">Green</option>
+                <option value="yellow">Yellow</option>
+                <option value="red">Red</option>
+              </select>
+              <select id="step1Sort">
+                <option value="newest">Sort: Newest first</option>
+                <option value="oldest">Sort: Oldest first</option>
+                <option value="title-asc">Sort: Title A-Z</option>
+                <option value="title-desc">Sort: Title Z-A</option>
+                <option value="name-asc">Sort: Name A-Z</option>
+              </select>
+            </div>
+            <p class="pipeline-count" id="step1ResultCount">Showing 0 of 0 titles</p>
+            <div class="pipeline-list-header" aria-hidden="true">
+              <span>Video idea</span>
+              <span>Status</span>
+              <span>Meta</span>
+            </div>
+            <div id="step1Board" class="pipeline-board"></div>
+          </article>
+
+          <article class="pipeline-stage" data-ideation-step="2">
+            <div class="pipeline-stage-head">
+              <h3>Phase 2. Title + Thumbnail Ideation</h3>
+              <p class="pipeline-count" id="step2Count">Green 0 · Yellow 0 · Red 0</p>
+            </div>
+            <p class="hint">
+              Build hook drafts and title/thumbnail combos. Promote strong options to Phase 3.
+            </p>
+            <div class="quick-entry two-plus">
+              <input id="step2QuickIdea" placeholder="Video idea" />
+              <button id="addStep2Btn" class="btn" type="button">Add to Phase 2</button>
+            </div>
+            <div class="pipeline-list-header" aria-hidden="true">
+              <span>Video idea</span>
+              <span>Status</span>
+              <span>Meta</span>
+            </div>
+            <div id="step2Board" class="pipeline-board"></div>
+          </article>
+
+          <article class="pipeline-stage" data-ideation-step="3">
+            <div class="pipeline-stage-head">
+              <h3>Phase 3. Hypothesis + Experiment Log</h3>
+              <p class="pipeline-count" id="step3Count">Green 0 · Yellow 0 · Red 0</p>
+            </div>
+            <p class="hint">
+              Finalize hypothesis + metric, capture learnings, then matriculate ready ideas into the brief view.
+            </p>
+            <div class="quick-entry two-plus">
+              <input id="step3QuickIdea" placeholder="Video idea" />
+              <button id="addStep3Btn" class="btn" type="button">Add to Phase 3</button>
+            </div>
+            <div class="pipeline-list-header" aria-hidden="true">
+              <span>Video idea</span>
+              <span>Status</span>
+              <span>Meta</span>
+            </div>
+            <div id="step3Board" class="pipeline-board"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" data-page="channel" data-view="brief">
         <div class="panel-header">
-          <h2>1. Viewer Strategy Snapshot</h2>
+          <h2>4. Viewer Strategy Snapshot</h2>
           <a class="btn btn-muted link-btn" href="viewer-strategy.html" target="_blank" rel="noreferrer">
             Open Strategy Page
           </a>
@@ -98,8 +244,8 @@
         </div>
       </section>
 
-      <section class="panel">
-        <h2>2. Treatment + Logline</h2>
+      <section class="panel" data-page="channel" data-view="brief">
+        <h2>5. Treatment + Logline</h2>
         <p class="hint">
           Define the pitch vibe, then write the single sentence this video will prove.
         </p>
@@ -158,27 +304,27 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-page="channel" data-view="brief">
         <div class="panel-header">
-          <h2>3. Title Variations</h2>
+          <h2>6. Title Variations</h2>
           <button id="generateTitlesBtn" class="btn">Generate Titles</button>
         </div>
         <p class="hint">The generator combines curiosity, clarity, and novelty patterns.</p>
         <div id="titleBoard" class="idea-board"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-page="channel" data-view="brief">
         <div class="panel-header">
-          <h2>4. Thumbnail Variations</h2>
+          <h2>7. Thumbnail Variations</h2>
           <button id="generateThumbsBtn" class="btn">Generate Thumbnails</button>
         </div>
         <p class="hint">Each concept pushes emotion + visual contrast + minimal text overlay.</p>
         <div id="thumbnailBoard" class="idea-board"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-page="channel" data-view="brief">
         <div class="panel-header">
-          <h2>5. Comparable Videos</h2>
+          <h2>8. Comparable Videos</h2>
         </div>
         <p class="hint">Paste a YouTube URL and attach thumbnail + metadata to your brief.</p>
         <div class="compare-entry">
@@ -188,8 +334,8 @@
         <div id="comparableBoard" class="comparable-board"></div>
       </section>
 
-      <section class="panel">
-        <h2>6. Packaging Scorecard</h2>
+      <section class="panel" data-page="channel" data-view="brief">
+        <h2>9. Packaging Scorecard</h2>
         <div class="score-grid">
           <article>
             <h3>Top Title</h3>
@@ -210,8 +356,8 @@
         </div>
       </section>
 
-      <section class="panel">
-        <h2>7. Accelerator Playbook Signals</h2>
+      <section class="panel" data-page="channel" data-view="brief">
+        <h2>10. Accelerator Playbook Signals</h2>
         <p class="hint">
           Integrated from Weeks 1-3: idea funnel, CCN fit, packaging stages, and traffic-aware strategy.
         </p>
@@ -263,9 +409,9 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-page="channel" data-view="brief">
         <div class="panel-header">
-          <h2>8. Brief Output (HTML)</h2>
+          <h2>11. Brief Output (HTML)</h2>
           <div class="row">
             <button id="copyHtmlBtn" class="btn btn-muted">Copy HTML</button>
             <button id="downloadBriefBtn" class="btn btn-muted">Download .html</button>
@@ -334,6 +480,161 @@
           <p class="comparable-meta"></p>
           <a class="comparable-link" target="_blank" rel="noreferrer noopener">Open video</a>
           <button class="btn btn-muted comparable-remove" type="button">Remove</button>
+        </div>
+      </article>
+    </template>
+
+    <template id="channelCardTemplate">
+      <article class="channel-card">
+        <button type="button" class="channel-card-hit" data-action="openChannel">
+          <div>
+            <h3 class="channel-card-title" data-role="channelName"></h3>
+            <p class="channel-card-meta" data-role="channelHandle"></p>
+          </div>
+          <div class="channel-card-stats">
+            <span data-role="phaseCounts"></span>
+            <span data-role="updatedAt"></span>
+          </div>
+        </button>
+      </article>
+    </template>
+
+    <template id="step1CardTemplate">
+      <article class="pipeline-card pipeline-row">
+        <button type="button" class="pipeline-row-summary" data-action="toggle">
+          <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+          <span class="pipeline-row-title" data-role="lineTitle"></span>
+          <span class="pipeline-row-status" data-role="lineStatus"></span>
+          <span class="pipeline-row-meta" data-role="lineMeta"></span>
+        </button>
+        <div class="pipeline-row-details" data-role="details" hidden>
+          <div class="pipeline-card-header">
+            <div>
+              <h4 class="pipeline-card-title"></h4>
+              <p class="pipeline-meta" data-role="createdAt"></p>
+            </div>
+            <div class="pipeline-actions">
+              <select data-role="status">
+              <option value="green">Green · Move Forward</option>
+              <option value="yellow">Yellow · Not Quite There</option>
+              <option value="red">Red · Reject</option>
+            </select>
+              <button type="button" class="btn btn-muted" data-action="promote">Send to Phase 2</button>
+              <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
+            </div>
+          </div>
+          <div class="pipeline-fields">
+            <label>
+              Name
+              <input data-field="name" />
+            </label>
+            <label class="full">
+              Video idea (working titles)
+              <input data-field="videoIdea" />
+            </label>
+            <label class="full">
+              Source of Idea (data)
+              <textarea rows="2" data-field="source"></textarea>
+            </label>
+            <label class="full">
+              Hypothesis of reason for success
+              <textarea rows="2" data-field="hypothesis"></textarea>
+            </label>
+            <label class="full">
+              Notes / Thoughts
+              <textarea rows="2" data-field="notes"></textarea>
+            </label>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <template id="step2CardTemplate">
+      <article class="pipeline-card pipeline-row">
+        <button type="button" class="pipeline-row-summary" data-action="toggle">
+          <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+          <span class="pipeline-row-title" data-role="lineTitle"></span>
+          <span class="pipeline-row-status" data-role="lineStatus"></span>
+          <span class="pipeline-row-meta" data-role="lineMeta"></span>
+        </button>
+        <div class="pipeline-row-details" data-role="details" hidden>
+          <div class="pipeline-card-header">
+            <h4 class="pipeline-card-title"></h4>
+            <div class="pipeline-actions">
+              <select data-role="status">
+              <option value="green">Green · Move Forward</option>
+              <option value="yellow">Yellow · Not Quite There</option>
+              <option value="red">Red · Reject</option>
+            </select>
+              <button type="button" class="btn btn-muted" data-action="promote">Send to Phase 3</button>
+              <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
+            </div>
+          </div>
+          <div class="pipeline-fields">
+            <label class="full">
+              Video idea
+              <input data-field="videoIdea" />
+            </label>
+            <label class="full">
+              Notes / Thoughts
+              <textarea rows="2" data-field="notes"></textarea>
+            </label>
+            <label class="full">
+              Hook Drafts
+              <textarea rows="2" data-field="hookDrafts"></textarea>
+            </label>
+            <label class="full">
+              Title and Thumbnail combos
+              <textarea rows="2" data-field="titleThumbCombos"></textarea>
+            </label>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <template id="step3CardTemplate">
+      <article class="pipeline-card pipeline-row">
+        <button type="button" class="pipeline-row-summary" data-action="toggle">
+          <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+          <span class="pipeline-row-title" data-role="lineTitle"></span>
+          <span class="pipeline-row-status" data-role="lineStatus"></span>
+          <span class="pipeline-row-meta" data-role="lineMeta"></span>
+        </button>
+        <div class="pipeline-row-details" data-role="details" hidden>
+          <div class="pipeline-card-header">
+            <h4 class="pipeline-card-title"></h4>
+            <div class="pipeline-actions">
+              <select data-role="status">
+                <option value="green">Green · Ready for Brief</option>
+                <option value="yellow">Yellow · Not Quite There</option>
+                <option value="red">Red · Reject</option>
+              </select>
+              <button type="button" class="btn btn-muted" data-action="startBrief">Matriculate to Brief</button>
+              <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
+            </div>
+          </div>
+          <div class="pipeline-fields">
+            <label class="full">
+              Video idea
+              <input data-field="videoIdea" />
+            </label>
+            <label class="full">
+              Notes / Thoughts
+              <textarea rows="2" data-field="notes"></textarea>
+            </label>
+            <label class="full">
+              Link to Title and Thumbnail
+              <input data-field="titleThumbLink" />
+            </label>
+            <label class="full">
+              Hypothesis + metric for assessment
+              <textarea rows="2" data-field="hypothesisMetric"></textarea>
+            </label>
+            <label class="full">
+              Insights and learnings
+              <textarea rows="2" data-field="insights"></textarea>
+            </label>
+          </div>
         </div>
       </article>
     </template>

@@ -1,5 +1,24 @@
-const STORAGE_KEY = "yt-brief-studio-v4";
-const LEGACY_STORAGE_KEYS = ["yt-brief-studio-v3", "yt-brief-studio-v2", "yt-brief-studio-v1"];
+const STORAGE_KEY = "yt-brief-studio-v6";
+const LEGACY_STORAGE_KEYS = [
+  "yt-brief-studio-v5",
+  "yt-brief-studio-v4",
+  "yt-brief-studio-v3",
+  "yt-brief-studio-v2",
+  "yt-brief-studio-v1",
+];
+const LOCAL_DB_NAME = "yt-brief-studio-local";
+const LOCAL_DB_VERSION = 1;
+const LOCAL_DB_STORE = "kv";
+const LOCAL_DB_KEY_WORKSPACE = "workspace";
+const LOCAL_DB_KEY_IDEAS = "ideas";
+const LOCAL_DB_KEY_BRIEFS = "briefs";
+const LOCAL_DB_KEY_VIEWER = "viewer";
+const SAVE_DEBOUNCE_MS = 180;
+const DEFAULT_OWNER_NAME = "Steve Huynh";
+const IDEA_STATUSES = ["green", "yellow", "red"];
+const STEP1_SORT_OPTIONS = ["newest", "oldest", "title-asc", "title-desc", "name-asc"];
+const PAGE_OPTIONS = ["home", "channel"];
+const DEFAULT_CHANNEL_ID = "channel-alifeengineered";
 
 const VIEWER_STRATEGY = {
   channel: "@ALifeEngineered",
@@ -64,6 +83,42 @@ const fieldIds = [
 ];
 
 const refs = {
+  showHomePageBtn: document.getElementById("showHomePageBtn"),
+  showChannelPageBtn: document.getElementById("showChannelPageBtn"),
+  workspaceViewSwitch: document.getElementById("workspaceViewSwitch"),
+  activeChannelLabel: document.getElementById("activeChannelLabel"),
+  showIdeationViewBtn: document.getElementById("showIdeationViewBtn"),
+  showBriefViewBtn: document.getElementById("showBriefViewBtn"),
+  briefGateStatus: document.getElementById("briefGateStatus"),
+  channelHomeBoard: document.getElementById("channelHomeBoard"),
+  channelCardTemplate: document.getElementById("channelCardTemplate"),
+  jumpToIdeationBtn: document.getElementById("jumpToIdeationBtn"),
+  prevStepViewBtn: document.getElementById("prevStepViewBtn"),
+  nextStepViewBtn: document.getElementById("nextStepViewBtn"),
+  ideationStepViewLabel: document.getElementById("ideationStepViewLabel"),
+  step1Board: document.getElementById("step1Board"),
+  step2Board: document.getElementById("step2Board"),
+  step3Board: document.getElementById("step3Board"),
+  step1Count: document.getElementById("step1Count"),
+  step1ResultCount: document.getElementById("step1ResultCount"),
+  step2Count: document.getElementById("step2Count"),
+  step3Count: document.getElementById("step3Count"),
+  step1FastIdea: document.getElementById("step1FastIdea"),
+  addStep1FastBtn: document.getElementById("addStep1FastBtn"),
+  step1QuickName: document.getElementById("step1QuickName"),
+  step1QuickIdea: document.getElementById("step1QuickIdea"),
+  step1QuickSource: document.getElementById("step1QuickSource"),
+  step1Search: document.getElementById("step1Search"),
+  step1StatusFilter: document.getElementById("step1StatusFilter"),
+  step1Sort: document.getElementById("step1Sort"),
+  step2QuickIdea: document.getElementById("step2QuickIdea"),
+  step3QuickIdea: document.getElementById("step3QuickIdea"),
+  addStep1Btn: document.getElementById("addStep1Btn"),
+  addStep2Btn: document.getElementById("addStep2Btn"),
+  addStep3Btn: document.getElementById("addStep3Btn"),
+  step1Template: document.getElementById("step1CardTemplate"),
+  step2Template: document.getElementById("step2CardTemplate"),
+  step3Template: document.getElementById("step3CardTemplate"),
   titleBoard: document.getElementById("titleBoard"),
   thumbnailBoard: document.getElementById("thumbnailBoard"),
   comparableBoard: document.getElementById("comparableBoard"),
@@ -99,11 +154,32 @@ const refs = {
 };
 
 const state = {
+  pageView: "home",
+  channels: [],
+  activeChannelId: "",
+  channelWorkspaces: {},
+  activeView: "ideation",
+  ideationStepView: 1,
+  briefUnlocked: false,
+  matriculatedIdeaId: "",
+  step1View: {
+    query: "",
+    status: "all",
+    sort: "newest",
+  },
+  step1Ideas: [],
+  step2Ideas: [],
+  step3Ideas: [],
   titles: [],
   thumbnails: [],
   comparables: [],
   latestBriefHtml: "",
 };
+
+let localDbPromise = null;
+let pendingSaveTimer = null;
+let queuedSnapshotPayload = null;
+let persistQueue = Promise.resolve();
 
 const BRIEF_EXPORT_STYLES = `
   :root {
@@ -240,6 +316,187 @@ const BRIEF_EXPORT_STYLES = `
   }
 `;
 
+function hasIndexedDbSupport() {
+  return typeof indexedDB !== "undefined";
+}
+
+function idbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("IndexedDB request failed."));
+  });
+}
+
+function idbTransactionDone(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted."));
+    tx.onerror = () => reject(tx.error || new Error("IndexedDB transaction failed."));
+  });
+}
+
+async function openLocalDb() {
+  if (!hasIndexedDbSupport()) {
+    return null;
+  }
+
+  if (localDbPromise) {
+    return localDbPromise;
+  }
+
+  localDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(LOCAL_DB_STORE)) {
+        db.createObjectStore(LOCAL_DB_STORE, { keyPath: "key" });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Unable to open local database."));
+  }).catch((error) => {
+    localDbPromise = null;
+    console.warn("Local database is unavailable. Falling back to localStorage.", error);
+    return null;
+  });
+
+  return localDbPromise;
+}
+
+async function readFromLocalDb(key) {
+  const db = await openLocalDb();
+  if (!db) {
+    return null;
+  }
+
+  const tx = db.transaction(LOCAL_DB_STORE, "readonly");
+  const txDone = idbTransactionDone(tx);
+  const store = tx.objectStore(LOCAL_DB_STORE);
+  const row = await idbRequest(store.get(key));
+  await txDone;
+  return row?.value ?? null;
+}
+
+async function writeToLocalDb(key, value) {
+  const db = await openLocalDb();
+  if (!db) {
+    return;
+  }
+
+  const tx = db.transaction(LOCAL_DB_STORE, "readwrite");
+  const txDone = idbTransactionDone(tx);
+  const store = tx.objectStore(LOCAL_DB_STORE);
+  await idbRequest(
+    store.put({
+      key,
+      value,
+      updatedAt: Date.now(),
+    }),
+  );
+  await txDone;
+}
+
+async function deleteFromLocalDb(key) {
+  const db = await openLocalDb();
+  if (!db) {
+    return;
+  }
+
+  const tx = db.transaction(LOCAL_DB_STORE, "readwrite");
+  const txDone = idbTransactionDone(tx);
+  const store = tx.objectStore(LOCAL_DB_STORE);
+  await idbRequest(store.delete(key));
+  await txDone;
+}
+
+function enqueuePersistTask(task) {
+  persistQueue = persistQueue
+    .then(task)
+    .catch((error) => {
+      console.warn("Failed to persist snapshot to local database.", error);
+    });
+
+  return persistQueue;
+}
+
+function scheduleSnapshotPersist(snapshotPayload, immediate = false) {
+  queuedSnapshotPayload = snapshotPayload;
+
+  if (pendingSaveTimer) {
+    clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = null;
+  }
+
+  if (immediate) {
+    return enqueuePersistTask(runQueuedSnapshotPersist);
+  }
+
+  pendingSaveTimer = setTimeout(() => {
+    pendingSaveTimer = null;
+    void enqueuePersistTask(runQueuedSnapshotPersist);
+  }, SAVE_DEBOUNCE_MS);
+
+  return Promise.resolve();
+}
+
+async function flushPersistQueue() {
+  if (pendingSaveTimer) {
+    clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = null;
+    await enqueuePersistTask(runQueuedSnapshotPersist);
+    return;
+  }
+
+  await persistQueue;
+}
+
+const workspaceRepo = {
+  async load() {
+    return readFromLocalDb(LOCAL_DB_KEY_WORKSPACE);
+  },
+  async save(payload) {
+    return writeToLocalDb(LOCAL_DB_KEY_WORKSPACE, payload);
+  },
+  async clear() {
+    return deleteFromLocalDb(LOCAL_DB_KEY_WORKSPACE);
+  },
+};
+
+const ideasRepo = {
+  async load() {
+    return readFromLocalDb(LOCAL_DB_KEY_IDEAS);
+  },
+  async save(payload) {
+    return writeToLocalDb(LOCAL_DB_KEY_IDEAS, payload);
+  },
+  async clear() {
+    return deleteFromLocalDb(LOCAL_DB_KEY_IDEAS);
+  },
+};
+
+const briefsRepo = {
+  async loadCurrent() {
+    return readFromLocalDb(LOCAL_DB_KEY_BRIEFS);
+  },
+  async saveCurrent(payload) {
+    return writeToLocalDb(LOCAL_DB_KEY_BRIEFS, payload);
+  },
+  async clear() {
+    return deleteFromLocalDb(LOCAL_DB_KEY_BRIEFS);
+  },
+};
+
+const viewerRepo = {
+  async load() {
+    return readFromLocalDb(LOCAL_DB_KEY_VIEWER);
+  },
+  async save(payload) {
+    return writeToLocalDb(LOCAL_DB_KEY_VIEWER, payload);
+  },
+};
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -258,6 +515,423 @@ function formatDateTime() {
   return new Date().toLocaleString();
 }
 
+function createRecordId(prefix) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeIdeaStatus(value, fallback = "yellow") {
+  return IDEA_STATUSES.includes(value) ? value : fallback;
+}
+
+function toCleanText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeTimestamp(value) {
+  const stamp = Number(value);
+  return Number.isFinite(stamp) ? stamp : Date.now();
+}
+
+function createStep1Idea(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("s1"),
+    name: toCleanText(seed.name) || DEFAULT_OWNER_NAME,
+    videoIdea: toCleanText(seed.videoIdea),
+    source: toCleanText(seed.source),
+    hypothesis: toCleanText(seed.hypothesis),
+    notes: toCleanText(seed.notes),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    status: normalizeIdeaStatus(seed.status, "yellow"),
+  };
+}
+
+function createStep2Idea(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("s2"),
+    videoIdea: toCleanText(seed.videoIdea),
+    notes: toCleanText(seed.notes),
+    hookDrafts: toCleanText(seed.hookDrafts),
+    titleThumbCombos: toCleanText(seed.titleThumbCombos),
+    status: normalizeIdeaStatus(seed.status, "yellow"),
+  };
+}
+
+function createStep3Idea(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("s3"),
+    videoIdea: toCleanText(seed.videoIdea),
+    notes: toCleanText(seed.notes),
+    titleThumbLink: toCleanText(seed.titleThumbLink),
+    hypothesisMetric: toCleanText(seed.hypothesisMetric),
+    insights: toCleanText(seed.insights),
+    status: normalizeIdeaStatus(seed.status, "yellow"),
+  };
+}
+
+function normalizeStep1Ideas(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item) => createStep1Idea(item));
+}
+
+function normalizeStep2Ideas(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item) => createStep2Idea(item));
+}
+
+function normalizeStep3Ideas(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item) => createStep3Idea(item));
+}
+
+function normalizeStep1View(view = {}) {
+  return {
+    query: toCleanText(view.query),
+    status: view.status === "all" || IDEA_STATUSES.includes(view.status) ? view.status : "all",
+    sort: STEP1_SORT_OPTIONS.includes(view.sort) ? view.sort : "newest",
+  };
+}
+
+function normalizePageView(value) {
+  return PAGE_OPTIONS.includes(value) ? value : "home";
+}
+
+function createChannelRecord(seed = {}) {
+  const name = toCleanText(seed.name) || "Untitled Channel";
+  const handle = toCleanText(seed.handle) || "";
+  return {
+    id: toCleanText(seed.id) || createRecordId("ch"),
+    name,
+    handle,
+    ownerName: toCleanText(seed.ownerName) || DEFAULT_OWNER_NAME,
+    platform: toCleanText(seed.platform) || "YouTube",
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt),
+  };
+}
+
+function createDefaultChannelRecord() {
+  const now = Date.now();
+  return createChannelRecord({
+    id: DEFAULT_CHANNEL_ID,
+    name: "A Life Engineered",
+    handle: "@ALifeEngineered",
+    ownerName: DEFAULT_OWNER_NAME,
+    platform: "YouTube",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+function normalizeChannels(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const seen = new Set();
+  return items
+    .map((item) => createChannelRecord(item))
+    .filter((item) => {
+      if (seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    });
+}
+
+function createEmptyChannelWorkspace() {
+  return {
+    activeView: "ideation",
+    ideationStepView: 1,
+    briefUnlocked: false,
+    matriculatedIdeaId: "",
+    step1View: normalizeStep1View({}),
+    values: {},
+    step1Ideas: [],
+    step2Ideas: [],
+    step3Ideas: [],
+    titles: [],
+    thumbnails: [],
+    comparables: [],
+    latestBriefHtml: "",
+  };
+}
+
+function normalizeChannelWorkspace(workspace = {}) {
+  return {
+    activeView: normalizeWorkspaceView(workspace.activeView),
+    ideationStepView: normalizeIdeationStep(workspace.ideationStepView),
+    briefUnlocked: Boolean(workspace.briefUnlocked),
+    matriculatedIdeaId: toCleanText(workspace.matriculatedIdeaId),
+    step1View: normalizeStep1View(workspace.step1View),
+    values: workspace.values && typeof workspace.values === "object" ? workspace.values : {},
+    step1Ideas: normalizeStep1Ideas(workspace.step1Ideas),
+    step2Ideas: normalizeStep2Ideas(workspace.step2Ideas),
+    step3Ideas: normalizeStep3Ideas(workspace.step3Ideas),
+    titles: Array.isArray(workspace.titles) ? workspace.titles : [],
+    thumbnails: Array.isArray(workspace.thumbnails) ? workspace.thumbnails : [],
+    comparables: Array.isArray(workspace.comparables) ? workspace.comparables : [],
+    latestBriefHtml: toCleanText(workspace.latestBriefHtml),
+  };
+}
+
+function formatAddedAt(value) {
+  return new Date(normalizeTimestamp(value)).toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatStatusLabel(status) {
+  const normalized = normalizeIdeaStatus(status, "yellow");
+  return normalized[0].toUpperCase() + normalized.slice(1);
+}
+
+function summarizeLine(value, fallback = "No details yet", max = 42) {
+  const text = toCleanText(value);
+  if (!text) {
+    return fallback;
+  }
+
+  const compact = text.replace(/\s+/g, " ");
+  if (compact.length <= max) {
+    return compact;
+  }
+
+  return `${compact.slice(0, Math.max(10, max - 1))}…`;
+}
+
+function setInputValueIfChanged(el, value) {
+  if (!el) {
+    return;
+  }
+
+  const next = String(value ?? "");
+  if (el.value !== next) {
+    el.value = next;
+  }
+}
+
+function formatStatusCounts(items) {
+  const counts = IDEA_STATUSES.reduce((acc, status) => {
+    acc[status] = 0;
+    return acc;
+  }, {});
+
+  items.forEach((item) => {
+    counts[normalizeIdeaStatus(item.status)] += 1;
+  });
+
+  return `Green ${counts.green} · Yellow ${counts.yellow} · Red ${counts.red}`;
+}
+
+function applyPipelineDefaults() {
+  if (refs.step1QuickName && !toCleanText(refs.step1QuickName.value)) {
+    refs.step1QuickName.value = DEFAULT_OWNER_NAME;
+  }
+
+  state.step1View = normalizeStep1View(state.step1View);
+
+  if (refs.step1Search) {
+    refs.step1Search.value = state.step1View.query;
+  }
+
+  if (refs.step1StatusFilter) {
+    refs.step1StatusFilter.value = state.step1View.status;
+  }
+
+  if (refs.step1Sort) {
+    refs.step1Sort.value = state.step1View.sort;
+  }
+}
+
+function normalizeWorkspaceView(value) {
+  return value === "brief" ? "brief" : "ideation";
+}
+
+function normalizeIdeationStep(value) {
+  const step = Number(value);
+  if (step < 1) {
+    return 1;
+  }
+  if (step > 3) {
+    return 3;
+  }
+  return Number.isFinite(step) ? step : 1;
+}
+
+function ensureViewAccess() {
+  if (!state.briefUnlocked && state.activeView === "brief") {
+    state.activeView = "ideation";
+  }
+}
+
+function renderChannelHomeBoard() {
+  if (!refs.channelHomeBoard || !refs.channelCardTemplate) {
+    return;
+  }
+
+  refs.channelHomeBoard.innerHTML = "";
+
+  if (!state.channels.length) {
+    refs.channelHomeBoard.innerHTML =
+      '<p class="pipeline-empty">No channels yet. Add a channel to begin ideation and brief planning.</p>';
+    return;
+  }
+
+  state.channels.forEach((channel) => {
+    const counts = getChannelIdeaCounts(channel.id);
+    const fragment = refs.channelCardTemplate.content.cloneNode(true);
+    const openBtn = fragment.querySelector('button[data-action="openChannel"]');
+    const nameEl = fragment.querySelector('[data-role="channelName"]');
+    const handleEl = fragment.querySelector('[data-role="channelHandle"]');
+    const phaseCountsEl = fragment.querySelector('[data-role="phaseCounts"]');
+    const updatedAtEl = fragment.querySelector('[data-role="updatedAt"]');
+
+    nameEl.textContent = channel.name;
+    handleEl.textContent = `${channel.handle || channel.platform} · Owner ${channel.ownerName}`;
+    phaseCountsEl.textContent = `Phase 1 ${counts.step1} · Phase 2 ${counts.step2} · Phase 3 ${counts.step3}`;
+    updatedAtEl.textContent = `Updated ${formatChannelUpdatedAt(channel.updatedAt)}`;
+
+    openBtn.addEventListener("click", () => {
+      openChannelById(channel.id);
+    });
+
+    refs.channelHomeBoard.appendChild(fragment);
+  });
+}
+
+function renderIdeationStepView() {
+  const activeStep = normalizeIdeationStep(state.ideationStepView);
+  state.ideationStepView = activeStep;
+
+  document.querySelectorAll("[data-ideation-step]").forEach((stage) => {
+    const isActive = Number(stage.dataset.ideationStep) === activeStep;
+    stage.hidden = !isActive;
+    stage.classList.toggle("is-active", isActive);
+  });
+
+  refs.prevStepViewBtn.disabled = activeStep === 1;
+  refs.nextStepViewBtn.disabled = activeStep === 3;
+  refs.ideationStepViewLabel.textContent = `Phase ${activeStep} of 3`;
+}
+
+function setIdeationStep(step, shouldPersist = true) {
+  state.ideationStepView = normalizeIdeationStep(step);
+  renderIdeationStepView();
+
+  if (shouldPersist) {
+    saveSnapshot();
+  }
+}
+
+function renderWorkspaceView() {
+  ensureViewAccess();
+  const activeView = normalizeWorkspaceView(state.activeView);
+
+  document.querySelectorAll('[data-page="channel"][data-view]').forEach((panel) => {
+    panel.hidden = panel.dataset.view !== activeView;
+  });
+
+  const briefReady = Boolean(state.briefUnlocked);
+  refs.showBriefViewBtn.disabled = !briefReady;
+  refs.showIdeationViewBtn.classList.toggle("is-active", activeView === "ideation");
+  refs.showBriefViewBtn.classList.toggle("is-active", activeView === "brief");
+  refs.showIdeationViewBtn.setAttribute("aria-selected", String(activeView === "ideation"));
+  refs.showBriefViewBtn.setAttribute("aria-selected", String(activeView === "brief"));
+  refs.briefGateStatus.textContent = briefReady
+    ? "Brief view unlocked. You can switch between ideation and brief views."
+    : "Brief view is locked. Matriculate a Phase 3 idea to unlock the brief workspace.";
+
+  renderIdeationStepView();
+}
+
+function renderPageView() {
+  const pageView = normalizePageView(state.pageView);
+  state.pageView = pageView;
+
+  document.querySelectorAll("[data-page]").forEach((panel) => {
+    panel.hidden = panel.dataset.page !== pageView;
+  });
+
+  const activeChannel = getActiveChannelRecord();
+  const hasActiveChannel = Boolean(activeChannel);
+  refs.showHomePageBtn.classList.toggle("is-active", pageView === "home");
+  refs.showChannelPageBtn.classList.toggle("is-active", pageView === "channel");
+  refs.showHomePageBtn.setAttribute("aria-selected", String(pageView === "home"));
+  refs.showChannelPageBtn.setAttribute("aria-selected", String(pageView === "channel"));
+  refs.showChannelPageBtn.disabled = !hasActiveChannel;
+  refs.workspaceViewSwitch.classList.toggle("is-hidden", pageView !== "channel");
+  refs.briefGateStatus.classList.toggle("is-hidden", pageView !== "channel");
+  refs.activeChannelLabel.textContent = hasActiveChannel
+    ? `Channel: ${activeChannel.name}${activeChannel.handle ? ` (${activeChannel.handle})` : ""}`
+    : "No channel selected.";
+}
+
+function setPageView(pageView, shouldPersist = true) {
+  state.pageView = normalizePageView(pageView);
+
+  if (state.pageView === "channel") {
+    const activeChannel = getActiveChannelRecord();
+    if (!activeChannel) {
+      state.pageView = "home";
+    } else {
+      ensureChannelWorkspace(activeChannel.id);
+      applyActiveChannelWorkspace(state.channelWorkspaces[activeChannel.id]);
+      applyDefaultPlaybookValues();
+      applyPipelineDefaults();
+    }
+  }
+
+  updateBoardsAndBrief({ persist: false });
+
+  if (shouldPersist) {
+    saveSnapshot();
+  }
+}
+
+function openChannelById(channelId, shouldPersist = true) {
+  const id = toCleanText(channelId);
+  if (!id || !state.channels.some((channel) => channel.id === id)) {
+    return;
+  }
+
+  cacheActiveChannelWorkspace();
+  state.activeChannelId = id;
+  ensureChannelWorkspace(id);
+  applyActiveChannelWorkspace(state.channelWorkspaces[id]);
+  applyDefaultPlaybookValues();
+  applyPipelineDefaults();
+  state.pageView = "channel";
+  updateBoardsAndBrief({ persist: false });
+
+  if (shouldPersist) {
+    saveSnapshot();
+  }
+}
+
+function setWorkspaceView(view, shouldPersist = true) {
+  state.activeView = normalizeWorkspaceView(view);
+  if (state.pageView !== "channel") {
+    state.pageView = "channel";
+  }
+  updateBoardsAndBrief({ persist: false });
+
+  if (shouldPersist) {
+    saveSnapshot();
+  }
+}
+
 function getFieldValues() {
   return fieldIds.reduce((acc, id) => {
     const el = document.getElementById(id);
@@ -273,6 +947,107 @@ function setFieldValues(values) {
       el.value = values[id] || "";
     }
   });
+}
+
+function buildActiveChannelWorkspace(values = getFieldValues()) {
+  return normalizeChannelWorkspace({
+    activeView: state.activeView,
+    ideationStepView: state.ideationStepView,
+    briefUnlocked: state.briefUnlocked,
+    matriculatedIdeaId: state.matriculatedIdeaId,
+    step1View: state.step1View,
+    values,
+    step1Ideas: state.step1Ideas,
+    step2Ideas: state.step2Ideas,
+    step3Ideas: state.step3Ideas,
+    titles: state.titles,
+    thumbnails: state.thumbnails,
+    comparables: state.comparables,
+    latestBriefHtml: state.latestBriefHtml,
+  });
+}
+
+function applyActiveChannelWorkspace(workspace = {}) {
+  const parsed = normalizeChannelWorkspace(workspace);
+  setFieldValues(parsed.values || {});
+  state.activeView = parsed.activeView;
+  state.ideationStepView = parsed.ideationStepView;
+  state.briefUnlocked = parsed.briefUnlocked;
+  state.matriculatedIdeaId = parsed.matriculatedIdeaId;
+  state.step1View = parsed.step1View;
+  state.step1Ideas = parsed.step1Ideas;
+  state.step2Ideas = parsed.step2Ideas;
+  state.step3Ideas = parsed.step3Ideas;
+  state.titles = parsed.titles;
+  state.thumbnails = parsed.thumbnails;
+  state.comparables = parsed.comparables;
+  state.latestBriefHtml = parsed.latestBriefHtml;
+}
+
+function cacheActiveChannelWorkspace(values = getFieldValues()) {
+  const channelId = toCleanText(state.activeChannelId);
+  if (!channelId) {
+    return;
+  }
+
+  state.channelWorkspaces[channelId] = buildActiveChannelWorkspace(values);
+  const channel = state.channels.find((entry) => entry.id === channelId);
+  if (channel) {
+    channel.updatedAt = Date.now();
+  }
+}
+
+function ensureChannelWorkspace(channelId) {
+  const id = toCleanText(channelId);
+  if (!id) {
+    return;
+  }
+
+  state.channelWorkspaces[id] = normalizeChannelWorkspace(
+    state.channelWorkspaces[id] || createEmptyChannelWorkspace(),
+  );
+}
+
+function getActiveChannelRecord() {
+  const id = toCleanText(state.activeChannelId);
+  return state.channels.find((channel) => channel.id === id) || null;
+}
+
+function ensureChannelModel() {
+  state.channels = normalizeChannels(state.channels);
+
+  if (!state.channels.length) {
+    const seedChannel = createDefaultChannelRecord();
+    state.channels = [seedChannel];
+    state.activeChannelId = seedChannel.id;
+    state.channelWorkspaces[seedChannel.id] = normalizeChannelWorkspace(createEmptyChannelWorkspace());
+    return;
+  }
+
+  if (!state.activeChannelId || !state.channels.some((channel) => channel.id === state.activeChannelId)) {
+    state.activeChannelId = state.channels[0].id;
+  }
+
+  state.channels.forEach((channel) => {
+    ensureChannelWorkspace(channel.id);
+  });
+}
+
+function formatChannelUpdatedAt(value) {
+  return new Date(normalizeTimestamp(value)).toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getChannelIdeaCounts(channelId) {
+  const workspace = normalizeChannelWorkspace(state.channelWorkspaces[channelId] || createEmptyChannelWorkspace());
+  return {
+    step1: workspace.step1Ideas.length,
+    step2: workspace.step2Ideas.length,
+    step3: workspace.step3Ideas.length,
+  };
 }
 
 function applyDefaultPlaybookValues() {
@@ -311,6 +1086,534 @@ function renderViewerSnapshot() {
   refs.snapHumorStyle.textContent = VIEWER_STRATEGY.humorStyle;
   refs.snapAntiPatterns.textContent = VIEWER_STRATEGY.antiPatterns;
   refs.snapUnlock.textContent = VIEWER_STRATEGY.unlockNeed;
+}
+
+function setPipelineCardStatus(card, status) {
+  if (!card) {
+    return;
+  }
+
+  card.dataset.status = normalizeIdeaStatus(status);
+}
+
+function setPipelineRowExpanded(card, detailsEl, arrowEl, expanded) {
+  const isExpanded = Boolean(expanded);
+  card.dataset.expanded = isExpanded ? "true" : "false";
+  detailsEl.hidden = !isExpanded;
+  arrowEl.textContent = isExpanded ? "▼" : "▶";
+}
+
+function togglePipelineRow(boardEl, card, detailsEl, arrowEl) {
+  const nextExpanded = card.dataset.expanded !== "true";
+
+  if (nextExpanded && boardEl) {
+    boardEl.querySelectorAll('.pipeline-card[data-expanded="true"]').forEach((openCard) => {
+      if (openCard === card) {
+        return;
+      }
+
+      const openDetails = openCard.querySelector('[data-role="details"]');
+      const openArrow = openCard.querySelector('[data-role="expandArrow"]');
+      if (!openDetails || !openArrow) {
+        return;
+      }
+
+      setPipelineRowExpanded(openCard, openDetails, openArrow, false);
+    });
+  }
+
+  setPipelineRowExpanded(card, detailsEl, arrowEl, nextExpanded);
+}
+
+function renderPipelineBoards() {
+  renderStep1Board();
+  renderStep2Board();
+  renderStep3Board();
+}
+
+function getStep1FilteredSortedIdeas() {
+  const view = normalizeStep1View(state.step1View);
+  state.step1View = view;
+  const query = view.query.toLowerCase();
+
+  const filtered = state.step1Ideas.filter((item) => {
+    if (view.status !== "all" && normalizeIdeaStatus(item.status) !== view.status) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    const haystack = [item.videoIdea, item.name, item.source, item.hypothesis, item.notes]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+
+  const sorted = [...filtered];
+  sorted.sort((left, right) => {
+    if (view.sort === "oldest") {
+      return normalizeTimestamp(left.createdAt) - normalizeTimestamp(right.createdAt);
+    }
+
+    if (view.sort === "title-asc") {
+      return left.videoIdea.localeCompare(right.videoIdea);
+    }
+
+    if (view.sort === "title-desc") {
+      return right.videoIdea.localeCompare(left.videoIdea);
+    }
+
+    if (view.sort === "name-asc") {
+      return left.name.localeCompare(right.name);
+    }
+
+    return normalizeTimestamp(right.createdAt) - normalizeTimestamp(left.createdAt);
+  });
+
+  return {
+    view,
+    items: sorted,
+    filteredCount: sorted.length,
+    totalCount: state.step1Ideas.length,
+  };
+}
+
+function renderStep1Board() {
+  refs.step1Board.innerHTML = "";
+  refs.step1Count.textContent = formatStatusCounts(state.step1Ideas);
+  const viewState = getStep1FilteredSortedIdeas();
+
+  setInputValueIfChanged(refs.step1Search, viewState.view.query);
+  setInputValueIfChanged(refs.step1StatusFilter, viewState.view.status);
+  setInputValueIfChanged(refs.step1Sort, viewState.view.sort);
+  refs.step1ResultCount.textContent = `Showing ${viewState.filteredCount} of ${viewState.totalCount} titles`;
+
+  if (!viewState.totalCount) {
+    refs.step1Board.innerHTML =
+      '<p class="pipeline-empty">No ideas in Phase 1 yet. Add fast entries and score with green/yellow/red.</p>';
+    return;
+  }
+
+  if (!viewState.filteredCount) {
+    refs.step1Board.innerHTML =
+      '<p class="pipeline-empty">No titles match the current filters. Adjust search/status/sort and try again.</p>';
+    return;
+  }
+
+  viewState.items.forEach((item) => {
+    const itemId = item.id;
+    const fragment = refs.step1Template.content.cloneNode(true);
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
+    const lineTitleEl = fragment.querySelector('[data-role="lineTitle"]');
+    const lineStatusEl = fragment.querySelector('[data-role="lineStatus"]');
+    const lineMetaEl = fragment.querySelector('[data-role="lineMeta"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const titleEl = fragment.querySelector(".pipeline-card-title");
+    const createdAtEl = fragment.querySelector('[data-role="createdAt"]');
+    const statusSelect = fragment.querySelector('select[data-role="status"]');
+    const promoteBtn = fragment.querySelector('button[data-action="promote"]');
+    const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const nameEl = fragment.querySelector('[data-field="name"]');
+    const ideaEl = fragment.querySelector('[data-field="videoIdea"]');
+    const sourceEl = fragment.querySelector('[data-field="source"]');
+    const hypothesisEl = fragment.querySelector('[data-field="hypothesis"]');
+    const notesEl = fragment.querySelector('[data-field="notes"]');
+
+    const refreshText = () => {
+      const ideaText = toCleanText(item.videoIdea);
+      const ownerText = summarizeLine(item.name, DEFAULT_OWNER_NAME, 16);
+      titleEl.textContent = ideaText || "Untitled brainstorm";
+      lineTitleEl.textContent = ideaText || "Untitled brainstorm";
+      lineStatusEl.textContent = formatStatusLabel(item.status);
+      lineMetaEl.textContent = `${ownerText} · Added ${formatAddedAt(item.createdAt)}`;
+      createdAtEl.textContent = `Added ${formatAddedAt(item.createdAt)}`;
+    };
+
+    refreshText();
+    nameEl.value = item.name;
+    ideaEl.value = item.videoIdea;
+    sourceEl.value = item.source;
+    hypothesisEl.value = item.hypothesis;
+    notesEl.value = item.notes;
+
+    statusSelect.value = normalizeIdeaStatus(item.status);
+    setPipelineCardStatus(card, statusSelect.value);
+    setPipelineRowExpanded(card, detailsEl, arrowEl, false);
+
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.step1Board, card, detailsEl, arrowEl);
+    });
+
+    statusSelect.addEventListener("change", () => {
+      const record = state.step1Ideas.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.status = normalizeIdeaStatus(statusSelect.value);
+      setPipelineCardStatus(card, record.status);
+      refs.step1Count.textContent = formatStatusCounts(state.step1Ideas);
+      item.status = record.status;
+      refreshText();
+      if (state.step1View.status !== "all") {
+        renderStep1Board();
+      }
+      saveSnapshot();
+    });
+
+    nameEl.addEventListener("input", () => {
+      const record = state.step1Ideas.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.name = nameEl.value;
+      item.name = record.name;
+      refreshText();
+      saveSnapshot();
+    });
+
+    ideaEl.addEventListener("input", () => {
+      const record = state.step1Ideas.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.videoIdea = ideaEl.value;
+      item.videoIdea = record.videoIdea;
+      refreshText();
+      saveSnapshot();
+    });
+
+    sourceEl.addEventListener("input", () => {
+      const record = state.step1Ideas.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.source = sourceEl.value;
+      item.source = record.source;
+      saveSnapshot();
+    });
+
+    hypothesisEl.addEventListener("input", () => {
+      const record = state.step1Ideas.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.hypothesis = hypothesisEl.value;
+      item.hypothesis = record.hypothesis;
+      saveSnapshot();
+    });
+
+    notesEl.addEventListener("input", () => {
+      const record = state.step1Ideas.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.notes = notesEl.value;
+      item.notes = record.notes;
+      saveSnapshot();
+    });
+
+    promoteBtn.addEventListener("click", () => {
+      const record = state.step1Ideas.find((entry) => entry.id === itemId);
+      if (!record || !toCleanText(record.videoIdea)) {
+        flashButtonText(promoteBtn, "Need idea", 1000);
+        return;
+      }
+
+      const notes = [
+        toCleanText(record.notes),
+        toCleanText(record.source) ? `Source: ${toCleanText(record.source)}` : "",
+        toCleanText(record.hypothesis) ? `Hypothesis: ${toCleanText(record.hypothesis)}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      state.step2Ideas.unshift(
+        createStep2Idea({
+          videoIdea: record.videoIdea,
+          notes,
+          status: "yellow",
+        }),
+      );
+      record.status = "green";
+      item.status = "green";
+      updateBoardsAndBrief();
+    });
+
+    removeBtn.addEventListener("click", () => {
+      const index = state.step1Ideas.findIndex((entry) => entry.id === itemId);
+      if (index < 0) {
+        return;
+      }
+
+      state.step1Ideas.splice(index, 1);
+      updateBoardsAndBrief();
+    });
+
+    refs.step1Board.appendChild(fragment);
+  });
+}
+
+function renderStep2Board() {
+  refs.step2Board.innerHTML = "";
+  refs.step2Count.textContent = formatStatusCounts(state.step2Ideas);
+
+  if (!state.step2Ideas.length) {
+    refs.step2Board.innerHTML =
+      '<p class="pipeline-empty">No ideas in Phase 2 yet. Promote from Phase 1 or add ideas directly.</p>';
+    return;
+  }
+
+  state.step2Ideas.forEach((item, index) => {
+    const fragment = refs.step2Template.content.cloneNode(true);
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
+    const lineTitleEl = fragment.querySelector('[data-role="lineTitle"]');
+    const lineStatusEl = fragment.querySelector('[data-role="lineStatus"]');
+    const lineMetaEl = fragment.querySelector('[data-role="lineMeta"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const titleEl = fragment.querySelector(".pipeline-card-title");
+    const statusSelect = fragment.querySelector('select[data-role="status"]');
+    const promoteBtn = fragment.querySelector('button[data-action="promote"]');
+    const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const ideaEl = fragment.querySelector('[data-field="videoIdea"]');
+    const notesEl = fragment.querySelector('[data-field="notes"]');
+    const hooksEl = fragment.querySelector('[data-field="hookDrafts"]');
+    const combosEl = fragment.querySelector('[data-field="titleThumbCombos"]');
+
+    const refreshText = () => {
+      const ideaText = toCleanText(item.videoIdea);
+      titleEl.textContent = ideaText || `Phase 2 Idea ${index + 1}`;
+      lineTitleEl.textContent = ideaText || `Phase 2 Idea ${index + 1}`;
+      lineStatusEl.textContent = formatStatusLabel(item.status);
+      lineMetaEl.textContent = summarizeLine(item.hookDrafts || item.titleThumbCombos || item.notes);
+    };
+
+    refreshText();
+    ideaEl.value = item.videoIdea;
+    notesEl.value = item.notes;
+    hooksEl.value = item.hookDrafts;
+    combosEl.value = item.titleThumbCombos;
+
+    statusSelect.value = normalizeIdeaStatus(item.status);
+    setPipelineCardStatus(card, statusSelect.value);
+    setPipelineRowExpanded(card, detailsEl, arrowEl, false);
+
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.step2Board, card, detailsEl, arrowEl);
+    });
+
+    statusSelect.addEventListener("change", () => {
+      item.status = normalizeIdeaStatus(statusSelect.value);
+      setPipelineCardStatus(card, item.status);
+      refs.step2Count.textContent = formatStatusCounts(state.step2Ideas);
+      refreshText();
+      saveSnapshot();
+    });
+
+    ideaEl.addEventListener("input", () => {
+      item.videoIdea = ideaEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    notesEl.addEventListener("input", () => {
+      item.notes = notesEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    hooksEl.addEventListener("input", () => {
+      item.hookDrafts = hooksEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    combosEl.addEventListener("input", () => {
+      item.titleThumbCombos = combosEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    promoteBtn.addEventListener("click", () => {
+      if (!toCleanText(item.videoIdea)) {
+        flashButtonText(promoteBtn, "Need idea", 1000);
+        return;
+      }
+
+      state.step3Ideas.unshift(
+        createStep3Idea({
+          videoIdea: item.videoIdea,
+          notes: item.notes,
+          titleThumbLink: item.titleThumbCombos,
+          hypothesisMetric: item.hookDrafts,
+          status: "yellow",
+        }),
+      );
+      item.status = "green";
+      updateBoardsAndBrief();
+    });
+
+    removeBtn.addEventListener("click", () => {
+      state.step2Ideas.splice(index, 1);
+      updateBoardsAndBrief();
+    });
+
+    refs.step2Board.appendChild(fragment);
+  });
+}
+
+function matriculateStep3IdeaToBrief(item, button) {
+  const ideaText = toCleanText(item.videoIdea);
+  if (!ideaText) {
+    flashButtonText(button, "Need idea", 1000);
+    return;
+  }
+
+  const projectNameEl = document.getElementById("projectName");
+  const ideaFocusEl = document.getElementById("ideaFocus");
+  const treatmentEl = document.getElementById("treatment");
+  const loglineEl = document.getElementById("logline");
+
+  if (!projectNameEl || !ideaFocusEl || !treatmentEl || !loglineEl) {
+    return;
+  }
+
+  item.status = "green";
+  state.briefUnlocked = true;
+  state.matriculatedIdeaId = item.id;
+  state.activeView = "brief";
+  ideaFocusEl.value = ideaText;
+
+  if (!toCleanText(projectNameEl.value)) {
+    projectNameEl.value = ideaText;
+  }
+
+  if (!toCleanText(treatmentEl.value) && toCleanText(item.notes)) {
+    treatmentEl.value = item.notes;
+  }
+
+  if (!toCleanText(loglineEl.value) && toCleanText(item.hypothesisMetric)) {
+    loglineEl.value = item.hypothesisMetric;
+  }
+
+  updateBoardsAndBrief();
+  const firstBriefPanel = document.querySelector('[data-view="brief"]');
+  if (firstBriefPanel) {
+    firstBriefPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function renderStep3Board() {
+  refs.step3Board.innerHTML = "";
+  refs.step3Count.textContent = formatStatusCounts(state.step3Ideas);
+
+  if (!state.step3Ideas.length) {
+    refs.step3Board.innerHTML =
+      '<p class="pipeline-empty">No ideas in Phase 3 yet. Promote from Phase 2 to build experiment-ready concepts.</p>';
+    return;
+  }
+
+  state.step3Ideas.forEach((item, index) => {
+    const fragment = refs.step3Template.content.cloneNode(true);
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
+    const lineTitleEl = fragment.querySelector('[data-role="lineTitle"]');
+    const lineStatusEl = fragment.querySelector('[data-role="lineStatus"]');
+    const lineMetaEl = fragment.querySelector('[data-role="lineMeta"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const titleEl = fragment.querySelector(".pipeline-card-title");
+    const statusSelect = fragment.querySelector('select[data-role="status"]');
+    const startBriefBtn = fragment.querySelector('button[data-action="startBrief"]');
+    const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const ideaEl = fragment.querySelector('[data-field="videoIdea"]');
+    const notesEl = fragment.querySelector('[data-field="notes"]');
+    const linkEl = fragment.querySelector('[data-field="titleThumbLink"]');
+    const hypothesisEl = fragment.querySelector('[data-field="hypothesisMetric"]');
+    const insightsEl = fragment.querySelector('[data-field="insights"]');
+
+    const refreshText = () => {
+      const ideaText = toCleanText(item.videoIdea);
+      titleEl.textContent = ideaText || `Phase 3 Idea ${index + 1}`;
+      lineTitleEl.textContent = ideaText || `Phase 3 Idea ${index + 1}`;
+      lineStatusEl.textContent = formatStatusLabel(item.status);
+      lineMetaEl.textContent = summarizeLine(item.hypothesisMetric || item.insights || item.notes);
+    };
+
+    refreshText();
+    ideaEl.value = item.videoIdea;
+    notesEl.value = item.notes;
+    linkEl.value = item.titleThumbLink;
+    hypothesisEl.value = item.hypothesisMetric;
+    insightsEl.value = item.insights;
+
+    statusSelect.value = normalizeIdeaStatus(item.status);
+    setPipelineCardStatus(card, statusSelect.value);
+    setPipelineRowExpanded(card, detailsEl, arrowEl, false);
+
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.step3Board, card, detailsEl, arrowEl);
+    });
+
+    statusSelect.addEventListener("change", () => {
+      item.status = normalizeIdeaStatus(statusSelect.value);
+      setPipelineCardStatus(card, item.status);
+      refs.step3Count.textContent = formatStatusCounts(state.step3Ideas);
+      refreshText();
+      saveSnapshot();
+    });
+
+    ideaEl.addEventListener("input", () => {
+      item.videoIdea = ideaEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    notesEl.addEventListener("input", () => {
+      item.notes = notesEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    linkEl.addEventListener("input", () => {
+      item.titleThumbLink = linkEl.value;
+      saveSnapshot();
+    });
+
+    hypothesisEl.addEventListener("input", () => {
+      item.hypothesisMetric = hypothesisEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    insightsEl.addEventListener("input", () => {
+      item.insights = insightsEl.value;
+      refreshText();
+      saveSnapshot();
+    });
+
+    startBriefBtn.addEventListener("click", () => {
+      matriculateStep3IdeaToBrief(item, startBriefBtn);
+    });
+
+    removeBtn.addEventListener("click", () => {
+      state.step3Ideas.splice(index, 1);
+      updateBoardsAndBrief();
+    });
+
+    refs.step3Board.appendChild(fragment);
+  });
 }
 
 function defaultTitleScores() {
@@ -1042,18 +2345,219 @@ function updateBriefOutput(values) {
   state.latestBriefHtml = buildExportHtml(values);
 }
 
-function saveSnapshot() {
-  const payload = {
-    values: getFieldValues(),
-    titles: state.titles,
-    thumbnails: state.thumbnails,
-    comparables: state.comparables,
+function buildLegacySnapshotPayload(values = getFieldValues()) {
+  cacheActiveChannelWorkspace(values);
+  return {
+    schemaVersion: 2,
+    pageView: state.pageView,
+    channels: state.channels,
+    activeChannelId: state.activeChannelId,
+    channelWorkspaces: state.channelWorkspaces,
   };
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
 
-function loadSnapshot() {
+function buildWorkspacePayload(values = getFieldValues()) {
+  cacheActiveChannelWorkspace(values);
+  return {
+    schemaVersion: 2,
+    savedAt: Date.now(),
+    pageView: state.pageView,
+    channels: state.channels,
+    activeChannelId: state.activeChannelId,
+    channelWorkspaces: state.channelWorkspaces,
+  };
+}
+
+function buildIdeasPayload() {
+  cacheActiveChannelWorkspace();
+  const byChannel = {};
+  Object.entries(state.channelWorkspaces).forEach(([channelId, workspace]) => {
+    const parsed = normalizeChannelWorkspace(workspace);
+    byChannel[channelId] = {
+      step1Ideas: parsed.step1Ideas,
+      step2Ideas: parsed.step2Ideas,
+      step3Ideas: parsed.step3Ideas,
+    };
+  });
+
+  return {
+    schemaVersion: 2,
+    savedAt: Date.now(),
+    byChannel,
+  };
+}
+
+function buildBriefsPayload(values = getFieldValues()) {
+  cacheActiveChannelWorkspace(values);
+  const byChannel = {};
+  Object.entries(state.channelWorkspaces).forEach(([channelId, workspace]) => {
+    const parsed = normalizeChannelWorkspace(workspace);
+    byChannel[channelId] = {
+      projectName: toCleanText(parsed.values?.projectName) || "youtube-brief",
+      generatedAt: formatDateTime(),
+      html: parsed.latestBriefHtml || "",
+    };
+  });
+
+  return {
+    schemaVersion: 2,
+    savedAt: Date.now(),
+    currentChannelId: state.activeChannelId,
+    byChannel,
+  };
+}
+
+function buildDbSnapshotPayload(values = getFieldValues()) {
+  return {
+    workspace: buildWorkspacePayload(values),
+    ideas: buildIdeasPayload(),
+    briefs: buildBriefsPayload(values),
+  };
+}
+
+function applyWorkspacePayload(payload = {}) {
+  const isChannelPayload =
+    Array.isArray(payload.channels) ||
+    (payload.channelWorkspaces && typeof payload.channelWorkspaces === "object");
+
+  if (isChannelPayload) {
+    state.pageView = normalizePageView(payload.pageView);
+    state.channels = normalizeChannels(payload.channels);
+    state.activeChannelId = toCleanText(payload.activeChannelId);
+    state.channelWorkspaces = {};
+
+    if (payload.channelWorkspaces && typeof payload.channelWorkspaces === "object") {
+      Object.entries(payload.channelWorkspaces).forEach(([channelId, workspace]) => {
+        state.channelWorkspaces[channelId] = normalizeChannelWorkspace(workspace);
+      });
+    }
+
+    ensureChannelModel();
+    ensureChannelWorkspace(state.activeChannelId);
+    applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
+    return;
+  }
+
+  setFieldValues(payload.values || {});
+  state.activeView = normalizeWorkspaceView(payload.activeView);
+  state.ideationStepView = normalizeIdeationStep(payload.ideationStepView);
+  state.briefUnlocked = Boolean(payload.briefUnlocked);
+  state.matriculatedIdeaId = toCleanText(payload.matriculatedIdeaId);
+  state.step1View = normalizeStep1View(payload.step1View);
+  state.titles = Array.isArray(payload.titles) ? payload.titles : [];
+  state.thumbnails = Array.isArray(payload.thumbnails) ? payload.thumbnails : [];
+  state.comparables = Array.isArray(payload.comparables) ? payload.comparables : [];
+  state.latestBriefHtml = toCleanText(payload.latestBriefHtml);
+  state.channels = [createDefaultChannelRecord()];
+  state.activeChannelId = state.channels[0].id;
+  state.channelWorkspaces = {
+    [state.activeChannelId]: buildActiveChannelWorkspace(payload.values || {}),
+  };
+  state.pageView = "home";
+}
+
+function applyIdeasPayload(payload = {}) {
+  if (payload.byChannel && typeof payload.byChannel === "object") {
+    Object.entries(payload.byChannel).forEach(([channelId, ideas]) => {
+      if (!state.channels.some((channel) => channel.id === channelId)) {
+        state.channels.push(
+          createChannelRecord({
+            id: channelId,
+            name: `Channel ${state.channels.length + 1}`,
+            ownerName: DEFAULT_OWNER_NAME,
+            platform: "YouTube",
+          }),
+        );
+      }
+
+      ensureChannelWorkspace(channelId);
+      const workspace = normalizeChannelWorkspace(state.channelWorkspaces[channelId]);
+      workspace.step1Ideas = normalizeStep1Ideas(ideas?.step1Ideas);
+      workspace.step2Ideas = normalizeStep2Ideas(ideas?.step2Ideas);
+      workspace.step3Ideas = normalizeStep3Ideas(ideas?.step3Ideas);
+      state.channelWorkspaces[channelId] = workspace;
+    });
+
+    ensureChannelWorkspace(state.activeChannelId);
+    applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
+    return;
+  }
+
+  state.step1Ideas = normalizeStep1Ideas(payload.step1Ideas);
+  state.step2Ideas = normalizeStep2Ideas(payload.step2Ideas);
+  state.step3Ideas = normalizeStep3Ideas(payload.step3Ideas);
+  cacheActiveChannelWorkspace();
+}
+
+function applyLegacySnapshotPayload(parsed = {}) {
+  const isChannelPayload =
+    Array.isArray(parsed.channels) ||
+    (parsed.channelWorkspaces && typeof parsed.channelWorkspaces === "object");
+
+  if (isChannelPayload) {
+    state.pageView = normalizePageView(parsed.pageView);
+    state.channels = normalizeChannels(parsed.channels);
+    state.activeChannelId = toCleanText(parsed.activeChannelId);
+    state.channelWorkspaces = {};
+    Object.entries(parsed.channelWorkspaces || {}).forEach(([channelId, workspace]) => {
+      state.channelWorkspaces[channelId] = normalizeChannelWorkspace(workspace);
+    });
+    ensureChannelModel();
+    applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
+    ensureViewAccess();
+    return;
+  }
+
+  setFieldValues(parsed.values || {});
+  state.activeView = normalizeWorkspaceView(parsed.activeView);
+  state.ideationStepView = normalizeIdeationStep(parsed.ideationStepView);
+  state.briefUnlocked = Boolean(parsed.briefUnlocked);
+  state.matriculatedIdeaId = toCleanText(parsed.matriculatedIdeaId);
+  state.step1View = normalizeStep1View(parsed.step1View);
+  state.step1Ideas = normalizeStep1Ideas(parsed.step1Ideas);
+  state.step2Ideas = normalizeStep2Ideas(parsed.step2Ideas);
+  state.step3Ideas = normalizeStep3Ideas(parsed.step3Ideas);
+  state.titles = Array.isArray(parsed.titles) ? parsed.titles : [];
+  state.thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
+  state.comparables = Array.isArray(parsed.comparables) ? parsed.comparables : [];
+  state.latestBriefHtml = toCleanText(parsed.latestBriefHtml);
+  state.channels = [createDefaultChannelRecord()];
+  state.activeChannelId = state.channels[0].id;
+  state.channelWorkspaces = {
+    [state.activeChannelId]: buildActiveChannelWorkspace(parsed.values || {}),
+  };
+  state.pageView = "home";
+  ensureViewAccess();
+}
+
+async function persistSnapshotToDb(snapshotPayload) {
+  await workspaceRepo.save(snapshotPayload.workspace);
+  await ideasRepo.save(snapshotPayload.ideas);
+  await briefsRepo.saveCurrent(snapshotPayload.briefs);
+}
+
+async function runQueuedSnapshotPersist() {
+  if (!queuedSnapshotPayload) {
+    return;
+  }
+
+  const payload = queuedSnapshotPayload;
+  queuedSnapshotPayload = null;
+  await persistSnapshotToDb(payload);
+}
+
+function saveSnapshot(options = {}) {
+  const values = getFieldValues();
+  ensureChannelModel();
+  cacheActiveChannelWorkspace(values);
+  const legacyPayload = buildLegacySnapshotPayload(values);
+  const dbPayload = buildDbSnapshotPayload(values);
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(legacyPayload));
+  return scheduleSnapshotPersist(dbPayload, Boolean(options.immediate));
+}
+
+function loadLegacySnapshotFromLocalStorage() {
   const keysToCheck = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS];
 
   for (const key of keysToCheck) {
@@ -1064,10 +2568,14 @@ function loadSnapshot() {
 
     try {
       const parsed = JSON.parse(raw);
-      setFieldValues(parsed.values || {});
-      state.titles = Array.isArray(parsed.titles) ? parsed.titles : [];
-      state.thumbnails = Array.isArray(parsed.thumbnails) ? parsed.thumbnails : [];
-      state.comparables = Array.isArray(parsed.comparables) ? parsed.comparables : [];
+      if (parsed && parsed.workspace && parsed.ideas) {
+        applyWorkspacePayload(parsed.workspace);
+        applyIdeasPayload(parsed.ideas);
+        ensureViewAccess();
+        return true;
+      }
+
+      applyLegacySnapshotPayload(parsed);
       return true;
     } catch {
       continue;
@@ -1075,6 +2583,72 @@ function loadSnapshot() {
   }
 
   return false;
+}
+
+async function loadSnapshot() {
+  try {
+    const [workspacePayload, ideasPayload, briefsPayload] = await Promise.all([
+      workspaceRepo.load(),
+      ideasRepo.load(),
+      briefsRepo.loadCurrent(),
+    ]);
+
+    if (workspacePayload || ideasPayload) {
+      applyWorkspacePayload(workspacePayload || {});
+      applyIdeasPayload(ideasPayload || {});
+      const currentChannelId = toCleanText(state.activeChannelId);
+      const briefHtml =
+        toCleanText(briefsPayload?.byChannel?.[currentChannelId]?.html) || toCleanText(briefsPayload?.current?.html);
+      if (briefHtml) {
+        state.latestBriefHtml = briefHtml;
+        cacheActiveChannelWorkspace();
+      }
+      ensureChannelModel();
+      ensureViewAccess();
+      return true;
+    }
+  } catch (error) {
+    console.warn("Could not load local database snapshot.", error);
+  }
+
+  const loadedLegacy = loadLegacySnapshotFromLocalStorage();
+  if (loadedLegacy) {
+    void saveSnapshot({ immediate: true });
+    return true;
+  }
+
+  return false;
+}
+
+async function ensureViewerProfilePersistence() {
+  try {
+    const existing = await viewerRepo.load();
+    if (existing) {
+      return;
+    }
+
+    await viewerRepo.save({
+      schemaVersion: 1,
+      savedAt: Date.now(),
+      profile: VIEWER_STRATEGY,
+    });
+  } catch (error) {
+    console.warn("Could not persist viewer profile to local database.", error);
+  }
+}
+
+function clearPersistedWorkspace() {
+  queuedSnapshotPayload = null;
+  if (pendingSaveTimer) {
+    clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = null;
+  }
+
+  return enqueuePersistTask(async () => {
+    await workspaceRepo.clear();
+    await ideasRepo.clear();
+    await briefsRepo.clear();
+  });
 }
 
 function resetAll() {
@@ -1086,24 +2660,51 @@ function resetAll() {
   });
 
   refs.comparableUrl.value = "";
-  state.titles = [];
-  state.thumbnails = [];
-  state.comparables = [];
+  refs.step1FastIdea.value = "";
+  refs.step1QuickName.value = DEFAULT_OWNER_NAME;
+  refs.step1QuickIdea.value = "";
+  refs.step1QuickSource.value = "";
+  refs.step1Search.value = "";
+  refs.step1StatusFilter.value = "all";
+  refs.step1Sort.value = "newest";
+  refs.step2QuickIdea.value = "";
+  refs.step3QuickIdea.value = "";
+  const defaultChannel = createDefaultChannelRecord();
+  state.pageView = "home";
+  state.channels = [defaultChannel];
+  state.activeChannelId = defaultChannel.id;
+  state.channelWorkspaces = {
+    [defaultChannel.id]: normalizeChannelWorkspace(createEmptyChannelWorkspace()),
+  };
+  applyActiveChannelWorkspace(state.channelWorkspaces[defaultChannel.id]);
 
   localStorage.removeItem(STORAGE_KEY);
   LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+  void clearPersistedWorkspace();
   applyDefaultPlaybookValues();
+  applyPipelineDefaults();
   updateBoardsAndBrief();
 }
 
-function updateBoardsAndBrief() {
+function updateBoardsAndBrief(options = {}) {
   const values = getFieldValues();
-  renderTitleBoard();
-  renderThumbBoard();
-  renderComparableBoard();
-  updateScoreboard(values);
-  updateBriefOutput(values);
-  saveSnapshot();
+  cacheActiveChannelWorkspace(values);
+  renderPageView();
+  renderChannelHomeBoard();
+
+  if (state.pageView === "channel") {
+    renderWorkspaceView();
+    renderPipelineBoards();
+    renderTitleBoard();
+    renderThumbBoard();
+    renderComparableBoard();
+    updateScoreboard(values);
+    updateBriefOutput(values);
+  }
+
+  if (options.persist !== false) {
+    saveSnapshot();
+  }
 }
 
 function flashButtonText(button, text, ms = 1200) {
@@ -1193,7 +2794,183 @@ async function addComparable() {
   updateBoardsAndBrief();
 }
 
+function updateStep1ViewState(partial) {
+  state.step1View = normalizeStep1View({
+    ...state.step1View,
+    ...partial,
+  });
+  renderStep1Board();
+  saveSnapshot();
+}
+
+function addStep1IdeaFast() {
+  const ideaText = toCleanText(refs.step1FastIdea.value);
+  if (!ideaText) {
+    flashButtonText(refs.addStep1FastBtn, "Need title", 1000);
+    return;
+  }
+
+  state.step1Ideas.unshift(
+    createStep1Idea({
+      name: refs.step1QuickName.value,
+      videoIdea: ideaText,
+      source: refs.step1QuickSource.value,
+      status: "yellow",
+    }),
+  );
+
+  refs.step1FastIdea.value = "";
+  refs.step1FastIdea.focus();
+  updateBoardsAndBrief();
+}
+
+function addStep1IdeaFromQuickEntry() {
+  const ideaText = toCleanText(refs.step1QuickIdea.value);
+  if (!ideaText) {
+    flashButtonText(refs.addStep1Btn, "Need idea", 1000);
+    return;
+  }
+
+  state.step1Ideas.unshift(
+    createStep1Idea({
+      name: refs.step1QuickName.value,
+      videoIdea: ideaText,
+      source: refs.step1QuickSource.value,
+      status: "yellow",
+    }),
+  );
+
+  refs.step1QuickIdea.value = "";
+  refs.step1QuickSource.value = "";
+  updateBoardsAndBrief();
+}
+
+function addStep2IdeaFromQuickEntry() {
+  const ideaText = toCleanText(refs.step2QuickIdea.value);
+  if (!ideaText) {
+    flashButtonText(refs.addStep2Btn, "Need idea", 1000);
+    return;
+  }
+
+  state.step2Ideas.unshift(
+    createStep2Idea({
+      videoIdea: ideaText,
+      status: "yellow",
+    }),
+  );
+
+  refs.step2QuickIdea.value = "";
+  updateBoardsAndBrief();
+}
+
+function addStep3IdeaFromQuickEntry() {
+  const ideaText = toCleanText(refs.step3QuickIdea.value);
+  if (!ideaText) {
+    flashButtonText(refs.addStep3Btn, "Need idea", 1000);
+    return;
+  }
+
+  state.step3Ideas.unshift(
+    createStep3Idea({
+      videoIdea: ideaText,
+      status: "yellow",
+    }),
+  );
+
+  refs.step3QuickIdea.value = "";
+  updateBoardsAndBrief();
+}
+
 function bindEvents() {
+  refs.showHomePageBtn.addEventListener("click", () => {
+    setPageView("home");
+  });
+
+  refs.showChannelPageBtn.addEventListener("click", () => {
+    const activeChannel = getActiveChannelRecord();
+    if (!activeChannel) {
+      return;
+    }
+
+    openChannelById(activeChannel.id);
+  });
+
+  refs.jumpToIdeationBtn.addEventListener("click", () => {
+    setWorkspaceView("ideation");
+  });
+
+  refs.showIdeationViewBtn.addEventListener("click", () => {
+    setWorkspaceView("ideation");
+  });
+
+  refs.showBriefViewBtn.addEventListener("click", () => {
+    if (!state.briefUnlocked) {
+      return;
+    }
+
+    setWorkspaceView("brief");
+  });
+
+  refs.prevStepViewBtn.addEventListener("click", () => {
+    setIdeationStep(state.ideationStepView - 1);
+  });
+
+  refs.nextStepViewBtn.addEventListener("click", () => {
+    setIdeationStep(state.ideationStepView + 1);
+  });
+
+  refs.addStep1FastBtn.addEventListener("click", addStep1IdeaFast);
+  refs.addStep1Btn.addEventListener("click", addStep1IdeaFromQuickEntry);
+  refs.addStep2Btn.addEventListener("click", addStep2IdeaFromQuickEntry);
+  refs.addStep3Btn.addEventListener("click", addStep3IdeaFromQuickEntry);
+
+  refs.step1FastIdea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addStep1IdeaFast();
+    }
+  });
+
+  refs.step1QuickIdea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addStep1IdeaFromQuickEntry();
+    }
+  });
+
+  refs.step1QuickSource.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addStep1IdeaFromQuickEntry();
+    }
+  });
+
+  refs.step1Search.addEventListener("input", () => {
+    updateStep1ViewState({ query: refs.step1Search.value });
+  });
+
+  refs.step1StatusFilter.addEventListener("change", () => {
+    updateStep1ViewState({ status: refs.step1StatusFilter.value });
+  });
+
+  refs.step1Sort.addEventListener("change", () => {
+    updateStep1ViewState({ sort: refs.step1Sort.value });
+  });
+
+  refs.step2QuickIdea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addStep2IdeaFromQuickEntry();
+    }
+  });
+
+  refs.step3QuickIdea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addStep3IdeaFromQuickEntry();
+    }
+  });
+
   document.getElementById("generateTitlesBtn").addEventListener("click", () => {
     const values = getFieldValues();
     state.titles = generateTitles(values);
@@ -1206,8 +2983,9 @@ function bindEvents() {
     updateBoardsAndBrief();
   });
 
-  document.getElementById("saveStateBtn").addEventListener("click", () => {
-    saveSnapshot();
+  document.getElementById("saveStateBtn").addEventListener("click", async () => {
+    await saveSnapshot({ immediate: true });
+    await flushPersistQueue();
     flashButtonText(document.getElementById("saveStateBtn"), "Saved", 900);
   });
 
@@ -1240,12 +3018,18 @@ function bindEvents() {
   });
 }
 
-function init() {
+async function init() {
   renderViewerSnapshot();
-  loadSnapshot();
+  await ensureViewerProfilePersistence();
+  await loadSnapshot();
+  ensureChannelModel();
+  ensureChannelWorkspace(state.activeChannelId);
+  applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
+  state.pageView = normalizePageView(state.pageView);
   applyDefaultPlaybookValues();
+  applyPipelineDefaults();
   bindEvents();
   updateBoardsAndBrief();
 }
 
-init();
+void init();
