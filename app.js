@@ -23,6 +23,7 @@ const PAGE_OPTIONS = ["home", "channel", "briefs"];
 const DEFAULT_CHANNEL_ID = "channel-alifeengineered";
 const DEFAULT_ACCOUNT_ID = "acct-steve-huynh";
 const CHANNEL_MEMBER_ROLES = ["owner", "editor", "viewer"];
+const CHANNEL_ACCESS_ROLES = ["owner"];
 
 const VIEWER_STRATEGY = {
   channel: "@ALifeEngineered",
@@ -170,6 +171,7 @@ const state = {
   accounts: [],
   channelMemberships: [],
   activeChannelId: "",
+  currentAccountId: DEFAULT_ACCOUNT_ID,
   channelWorkspaces: {},
   briefsByChannel: {},
   activeBriefId: "",
@@ -1124,14 +1126,19 @@ function renderChannelHomeBoard() {
   }
 
   refs.channelHomeBoard.innerHTML = "";
+  const accessibleChannels = getAccessibleChannels();
 
-  if (!state.channels.length) {
+  if (!accessibleChannels.length) {
+    const currentAccount = getCurrentAccountRecord();
+    const viewerName = currentAccount ? currentAccount.name : "current account";
     refs.channelHomeBoard.innerHTML =
-      '<p class="pipeline-empty">No channels yet. Add a channel to begin ideation and brief planning.</p>';
+      `<p class="pipeline-empty">No accessible channels for ${escapeHtml(
+        viewerName,
+      )}. Channel access currently requires owner confirmation.</p>`;
     return;
   }
 
-  state.channels.forEach((channel) => {
+  accessibleChannels.forEach((channel) => {
     const counts = getChannelIdeaCounts(channel.id);
     const ownerName = getPrimaryChannelOwnerName(channel);
     const fragment = refs.channelCardTemplate.content.cloneNode(true);
@@ -1187,7 +1194,7 @@ function renderPageView() {
   });
 
   const activeChannel = getActiveChannelRecord();
-  const hasActiveChannel = Boolean(activeChannel);
+  const hasActiveChannel = Boolean(activeChannel && canCurrentAccountAccessChannel(activeChannel.id));
   refs.showHomePageBtn.classList.toggle("is-active", pageView === "home");
   refs.showChannelPageBtn.classList.toggle("is-active", pageView === "channel");
   refs.showBriefsPageBtn.classList.toggle("is-active", pageView === "briefs");
@@ -1198,21 +1205,36 @@ function renderPageView() {
   refs.showBriefsPageBtn.disabled = !hasActiveChannel;
   refs.activeChannelLabel.textContent = hasActiveChannel
     ? `Channel: ${activeChannel.name}${activeChannel.handle ? ` (${activeChannel.handle})` : ""}`
-    : "No channel selected.";
+    : "Select a channel from Home to continue.";
 }
 
 function setPageView(pageView, shouldPersist = true) {
   state.pageView = normalizePageView(pageView);
 
   if (state.pageView === "channel" || state.pageView === "briefs") {
-    const activeChannel = getActiveChannelRecord();
-    if (!activeChannel) {
+    const accessibleChannels = getAccessibleChannels();
+    if (!accessibleChannels.length) {
       state.pageView = "home";
     } else {
-      ensureChannelWorkspace(activeChannel.id);
-      ensureChannelBriefState(activeChannel.id);
-      applyActiveChannelWorkspace(state.channelWorkspaces[activeChannel.id]);
-      applyActiveChannelBriefState(state.briefsByChannel[activeChannel.id]);
+      const activeChannel = getActiveChannelRecord();
+      if (!activeChannel || !canCurrentAccountAccessChannel(activeChannel.id)) {
+        state.activeChannelId = accessibleChannels[0].id;
+      }
+
+      const resolvedChannel = getActiveChannelRecord();
+      if (!resolvedChannel || !canCurrentAccountAccessChannel(resolvedChannel.id)) {
+        state.pageView = "home";
+        updateBoardsAndBrief({ persist: false });
+        if (shouldPersist) {
+          saveSnapshot();
+        }
+        return;
+      }
+
+      ensureChannelWorkspace(resolvedChannel.id);
+      ensureChannelBriefState(resolvedChannel.id);
+      applyActiveChannelWorkspace(state.channelWorkspaces[resolvedChannel.id]);
+      applyActiveChannelBriefState(state.briefsByChannel[resolvedChannel.id]);
       applyPipelineDefaults();
     }
   }
@@ -1226,7 +1248,7 @@ function setPageView(pageView, shouldPersist = true) {
 
 function openChannelById(channelId, shouldPersist = true) {
   const id = toCleanText(channelId);
-  if (!id || !state.channels.some((channel) => channel.id === id)) {
+  if (!id || !state.channels.some((channel) => channel.id === id) || !canCurrentAccountAccessChannel(id)) {
     return;
   }
 
@@ -1458,6 +1480,15 @@ function getActiveChannelRecord() {
   return state.channels.find((channel) => channel.id === id) || null;
 }
 
+function getCurrentAccountRecord() {
+  const id = toCleanText(state.currentAccountId);
+  if (!id) {
+    return null;
+  }
+
+  return state.accounts.find((account) => account.id === id) || null;
+}
+
 function getAccountRecord(accountId) {
   const id = toCleanText(accountId);
   if (!id) {
@@ -1474,6 +1505,35 @@ function getChannelMemberships(channelId) {
   }
 
   return state.channelMemberships.filter((membership) => membership.channelId === id);
+}
+
+function canAccountAccessChannel(channelId, accountId) {
+  const targetChannelId = toCleanText(channelId);
+  const targetAccountId = toCleanText(accountId);
+  if (!targetChannelId || !targetAccountId) {
+    return false;
+  }
+
+  return state.channelMemberships.some((membership) => {
+    return (
+      membership.channelId === targetChannelId &&
+      membership.accountId === targetAccountId &&
+      CHANNEL_ACCESS_ROLES.includes(membership.role)
+    );
+  });
+}
+
+function canCurrentAccountAccessChannel(channelId) {
+  return canAccountAccessChannel(channelId, state.currentAccountId);
+}
+
+function getAccessibleChannels(accountId = state.currentAccountId) {
+  const targetAccountId = toCleanText(accountId);
+  if (!targetAccountId) {
+    return [];
+  }
+
+  return state.channels.filter((channel) => canAccountAccessChannel(channel.id, targetAccountId));
 }
 
 function ensureAccountByName(name) {
@@ -1568,8 +1628,9 @@ function ensureChannelModel() {
     state.accounts = [createDefaultAccountRecord()];
   }
 
-  if (!state.activeChannelId || !state.channels.some((channel) => channel.id === state.activeChannelId)) {
-    state.activeChannelId = state.channels[0].id;
+  if (!state.currentAccountId || !state.accounts.some((account) => account.id === state.currentAccountId)) {
+    const defaultAccount = state.accounts.find((account) => account.id === DEFAULT_ACCOUNT_ID) || state.accounts[0];
+    state.currentAccountId = defaultAccount?.id || "";
   }
 
   const channelIdSet = new Set(state.channels.map((channel) => channel.id));
@@ -1592,6 +1653,11 @@ function ensureChannelModel() {
 
   state.accounts = normalizeAccounts(state.accounts);
   state.channelMemberships = normalizeChannelMemberships(state.channelMemberships);
+
+  const accessibleChannels = getAccessibleChannels(state.currentAccountId);
+  if (!state.activeChannelId || !accessibleChannels.some((channel) => channel.id === state.activeChannelId)) {
+    state.activeChannelId = accessibleChannels[0]?.id || state.channels[0]?.id || "";
+  }
 
   const activeChannelBriefState = state.briefsByChannel[state.activeChannelId] || createEmptyChannelBriefState();
   if (!activeChannelBriefState.briefs.some((brief) => brief.id === state.activeBriefId)) {
@@ -3207,6 +3273,7 @@ function buildWorkspacePayload(values = getFieldValues()) {
     channels: state.channels,
     accounts: state.accounts,
     channelMemberships: state.channelMemberships,
+    currentAccountId: state.currentAccountId,
     activeChannelId: state.activeChannelId,
     channelWorkspaces: state.channelWorkspaces,
   };
@@ -3271,6 +3338,7 @@ function applyWorkspacePayload(payload = {}) {
     state.channels = normalizeChannels(payload.channels);
     state.accounts = normalizeAccounts(payload.accounts);
     state.channelMemberships = normalizeChannelMemberships(payload.channelMemberships);
+    state.currentAccountId = toCleanText(payload.currentAccountId) || DEFAULT_ACCOUNT_ID;
     state.activeChannelId = toCleanText(payload.activeChannelId);
     state.channelWorkspaces = {};
     state.briefsByChannel = {};
@@ -3301,6 +3369,7 @@ function applyWorkspacePayload(payload = {}) {
   state.channels = [createDefaultChannelRecord()];
   state.accounts = [];
   state.channelMemberships = [];
+  state.currentAccountId = DEFAULT_ACCOUNT_ID;
   state.activeChannelId = state.channels[0].id;
   state.channelWorkspaces = {
     [state.activeChannelId]: normalizeChannelWorkspace({
@@ -3471,6 +3540,7 @@ function applyLegacySnapshotPayload(parsed = {}) {
     state.channels = normalizeChannels(parsed.channels);
     state.accounts = normalizeAccounts(parsed.accounts);
     state.channelMemberships = normalizeChannelMemberships(parsed.channelMemberships);
+    state.currentAccountId = toCleanText(parsed.currentAccountId) || DEFAULT_ACCOUNT_ID;
     state.activeChannelId = toCleanText(parsed.activeChannelId);
     state.channelWorkspaces = {};
     state.briefsByChannel = {};
@@ -3494,6 +3564,7 @@ function applyLegacySnapshotPayload(parsed = {}) {
   state.channels = [createDefaultChannelRecord()];
   state.accounts = [];
   state.channelMemberships = [];
+  state.currentAccountId = DEFAULT_ACCOUNT_ID;
   state.activeChannelId = state.channels[0].id;
   state.channelWorkspaces = {
     [state.activeChannelId]: normalizeChannelWorkspace({
@@ -3684,6 +3755,7 @@ function resetAll() {
       role: "owner",
     }),
   ];
+  state.currentAccountId = defaultAccount.id;
   state.activeChannelId = defaultChannel.id;
   state.channelWorkspaces = {
     [defaultChannel.id]: normalizeChannelWorkspace(createEmptyChannelWorkspace()),
@@ -4101,7 +4173,7 @@ async function init() {
   ensureChannelBriefState(state.activeChannelId);
   applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
   applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
-  state.pageView = normalizePageView(state.pageView);
+  state.pageView = "home";
   applyPipelineDefaults();
   bindEvents();
   updateBoardsAndBrief();
