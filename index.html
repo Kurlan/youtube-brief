@@ -28,13 +28,9 @@
         <div class="view-switch" role="tablist" aria-label="App navigation">
           <button id="showHomePageBtn" class="btn btn-muted" type="button" role="tab">Home</button>
           <button id="showChannelPageBtn" class="btn btn-muted" type="button" role="tab">Channel</button>
+          <button id="showBriefsPageBtn" class="btn btn-muted" type="button" role="tab">Briefs</button>
         </div>
         <p id="activeChannelLabel" class="view-gate-hint"></p>
-        <div id="workspaceViewSwitch" class="view-switch" role="tablist" aria-label="Channel workspace view">
-          <button id="showIdeationViewBtn" class="btn btn-muted" type="button" role="tab">Ideation View</button>
-          <button id="showBriefViewBtn" class="btn btn-muted" type="button" role="tab">Brief View</button>
-        </div>
-        <p id="briefGateStatus" class="view-gate-hint"></p>
         <button id="saveStateBtn" class="btn btn-muted">Save Snapshot</button>
         <button id="resetStateBtn" class="btn btn-muted">Reset</button>
       </div>
@@ -56,8 +52,13 @@
         <div class="channel-modules">
           <article>
             <h3>Ideation</h3>
-            <p>Run ideas through Phase 1 to Phase 3 before starting a brief.</p>
+            <p>Run ideas through Phase 1 to Phase 3, then explicitly promote to a production brief.</p>
             <button id="jumpToIdeationBtn" class="btn btn-muted" type="button">Open Ideation Phases</button>
+          </article>
+          <article>
+            <h3>Briefs</h3>
+            <p>Manage production-intent briefs, including manual and retrospective briefs.</p>
+            <button id="jumpToBriefsBtn" class="btn btn-muted" type="button">Open Briefs Workspace</button>
           </article>
           <article>
             <h3>Analytics</h3>
@@ -74,11 +75,11 @@
         </div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="ideation">
+      <section class="panel" data-page="channel">
         <h2>1-3. Ideation Phases (Pre-Brief)</h2>
         <p class="hint">
-          Move ideas from volume brainstorming to title/thumbnail packaging, then hypothesis experiments before starting
-          the brief.
+          Move ideas from volume brainstorming to title/thumbnail packaging, then hypothesis experiments before promoting
+          to the Briefs workspace.
         </p>
 
         <div class="ideation-step-nav" aria-label="Ideation phase navigation">
@@ -161,7 +162,7 @@
               <p class="pipeline-count" id="step3Count">Green 0 · Yellow 0 · Red 0</p>
             </div>
             <p class="hint">
-              Finalize hypothesis + metric, capture learnings, then matriculate ready ideas into the brief view.
+              Finalize hypothesis + metric, capture learnings, then promote ready ideas to the Briefs workspace.
             </p>
             <div class="quick-entry two-plus">
               <input id="step3QuickIdea" placeholder="Video idea" />
@@ -177,9 +178,51 @@
         </div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
+      <section class="panel" data-page="briefs">
         <div class="panel-header">
-          <h2>4. Viewer Strategy Snapshot</h2>
+          <h2>4. Briefs Workspace</h2>
+          <button id="createBriefBtn" class="btn" type="button">Create Manual Brief</button>
+        </div>
+        <p class="hint">
+          Briefs are production-intent records. Promote from Phase 3 or create a manual/retrospective brief directly.
+        </p>
+        <div id="briefListBoard" class="brief-list-board"></div>
+      </section>
+
+      <section class="panel" data-page="briefs">
+        <h2>5. Brief Source Snapshot</h2>
+        <p class="hint">Reference context captured when the brief was created.</p>
+        <div class="grid two-up brief-source-grid">
+          <article class="brief-source-card">
+            <h3>Source</h3>
+            <p id="briefSourceType">Manual brief</p>
+          </article>
+          <article class="brief-source-card">
+            <h3>Source Idea</h3>
+            <p id="briefSourceIdea">Not linked to a phase 3 idea.</p>
+          </article>
+          <article class="brief-source-card full">
+            <h3>Phase 3 Notes Snapshot</h3>
+            <p id="briefSourceNotes">No phase 3 snapshot data.</p>
+          </article>
+          <article class="brief-source-card full">
+            <h3>Phase 3 Title + Thumbnail Link Snapshot</h3>
+            <p id="briefSourceTitleThumb">No phase 3 snapshot data.</p>
+          </article>
+          <article class="brief-source-card full">
+            <h3>Phase 3 Hypothesis + Metric Snapshot</h3>
+            <p id="briefSourceHypothesis">No phase 3 snapshot data.</p>
+          </article>
+          <article class="brief-source-card full">
+            <h3>Phase 3 Insights Snapshot</h3>
+            <p id="briefSourceInsights">No phase 3 snapshot data.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" data-page="briefs">
+        <div class="panel-header">
+          <h2>6. Viewer Strategy Snapshot</h2>
           <a class="btn btn-muted link-btn" href="viewer-strategy.html" target="_blank" rel="noreferrer">
             Open Strategy Page
           </a>
@@ -244,8 +287,8 @@
         </div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
-        <h2>5. Treatment + Logline</h2>
+      <section class="panel" data-page="briefs">
+        <h2>7. Treatment + Logline</h2>
         <p class="hint">
           Define the pitch vibe, then write the single sentence this video will prove.
         </p>
@@ -304,27 +347,27 @@
         </div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
+      <section class="panel" data-page="briefs">
         <div class="panel-header">
-          <h2>6. Title Variations</h2>
+          <h2>8. Title Variations</h2>
           <button id="generateTitlesBtn" class="btn">Generate Titles</button>
         </div>
         <p class="hint">The generator combines curiosity, clarity, and novelty patterns.</p>
         <div id="titleBoard" class="idea-board"></div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
+      <section class="panel" data-page="briefs">
         <div class="panel-header">
-          <h2>7. Thumbnail Variations</h2>
+          <h2>9. Thumbnail Variations</h2>
           <button id="generateThumbsBtn" class="btn">Generate Thumbnails</button>
         </div>
         <p class="hint">Each concept pushes emotion + visual contrast + minimal text overlay.</p>
         <div id="thumbnailBoard" class="idea-board"></div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
+      <section class="panel" data-page="briefs">
         <div class="panel-header">
-          <h2>8. Comparable Videos</h2>
+          <h2>10. Comparable Videos</h2>
         </div>
         <p class="hint">Paste a YouTube URL and attach thumbnail + metadata to your brief.</p>
         <div class="compare-entry">
@@ -334,8 +377,8 @@
         <div id="comparableBoard" class="comparable-board"></div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
-        <h2>9. Packaging Scorecard</h2>
+      <section class="panel" data-page="briefs">
+        <h2>11. Packaging Scorecard</h2>
         <div class="score-grid">
           <article>
             <h3>Top Title</h3>
@@ -356,8 +399,8 @@
         </div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
-        <h2>10. Accelerator Playbook Signals</h2>
+      <section class="panel" data-page="briefs">
+        <h2>12. Accelerator Playbook Signals</h2>
         <p class="hint">
           Integrated from Weeks 1-3: idea funnel, CCN fit, packaging stages, and traffic-aware strategy.
         </p>
@@ -409,9 +452,9 @@
         </div>
       </section>
 
-      <section class="panel" data-page="channel" data-view="brief">
+      <section class="panel" data-page="briefs">
         <div class="panel-header">
-          <h2>11. Brief Output (HTML)</h2>
+          <h2>13. Brief Output (HTML)</h2>
           <div class="row">
             <button id="copyHtmlBtn" class="btn btn-muted">Copy HTML</button>
             <button id="downloadBriefBtn" class="btn btn-muted">Download .html</button>
@@ -499,6 +542,21 @@
       </article>
     </template>
 
+    <template id="briefListItemTemplate">
+      <article class="brief-list-card">
+        <button type="button" class="brief-list-hit" data-action="openBrief">
+          <div class="brief-list-main">
+            <h3 class="brief-list-title" data-role="briefTitle"></h3>
+            <p class="brief-list-meta" data-role="briefMeta"></p>
+          </div>
+          <div class="brief-list-side">
+            <span class="brief-list-badge" data-role="briefSource"></span>
+            <span class="brief-list-updated" data-role="briefUpdated"></span>
+          </div>
+        </button>
+      </article>
+    </template>
+
     <template id="step1CardTemplate">
       <article class="pipeline-card pipeline-row">
         <button type="button" class="pipeline-row-summary" data-action="toggle">
@@ -506,6 +564,7 @@
           <span class="pipeline-row-title" data-role="lineTitle"></span>
           <span class="pipeline-row-status" data-role="lineStatus"></span>
           <span class="pipeline-row-meta" data-role="lineMeta"></span>
+          <span class="pipeline-row-quick-promote" data-role="summaryPromote">Send to Phase 2</span>
         </button>
         <div class="pipeline-row-details" data-role="details" hidden>
           <div class="pipeline-card-header">
@@ -515,6 +574,7 @@
             </div>
             <div class="pipeline-actions">
               <select data-role="status">
+              <option value="none">No status</option>
               <option value="green">Green · Move Forward</option>
               <option value="yellow">Yellow · Not Quite There</option>
               <option value="red">Red · Reject</option>
@@ -609,7 +669,7 @@
                 <option value="yellow">Yellow · Not Quite There</option>
                 <option value="red">Red · Reject</option>
               </select>
-              <button type="button" class="btn btn-muted" data-action="startBrief">Matriculate to Brief</button>
+              <button type="button" class="btn btn-muted" data-action="startBrief">Promote to Brief</button>
               <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
             </div>
           </div>

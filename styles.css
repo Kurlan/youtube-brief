@@ -218,6 +218,102 @@ h1 {
   font-weight: 700;
 }
 
+.brief-list-board {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.brief-list-card {
+  border: 1px solid rgba(8, 33, 52, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  overflow: hidden;
+}
+
+.brief-list-hit {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  cursor: pointer;
+}
+
+.brief-list-hit:hover {
+  background: rgba(8, 33, 52, 0.05);
+}
+
+.brief-list-card.is-active .brief-list-hit {
+  background: rgba(13, 106, 113, 0.12);
+}
+
+.brief-list-main {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.brief-list-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.brief-list-meta {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.brief-list-side {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: end;
+}
+
+.brief-list-badge {
+  border: 1px solid rgba(8, 33, 52, 0.18);
+  border-radius: 999px;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  background: rgba(8, 33, 52, 0.06);
+  white-space: nowrap;
+}
+
+.brief-list-updated {
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+}
+
+.brief-source-grid {
+  align-items: stretch;
+}
+
+.brief-source-card {
+  margin: 0;
+  border: 1px solid rgba(8, 33, 52, 0.16);
+  border-radius: 14px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.brief-source-card h3 {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.brief-source-card p {
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
 .channel-modules {
   display: grid;
   gap: 0.75rem;
@@ -533,7 +629,7 @@ select:focus {
   color: inherit;
   cursor: pointer;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 30ch);
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 26ch) auto;
   align-items: center;
   gap: 0.55rem;
   padding: 0.62rem 0.72rem;
@@ -578,6 +674,21 @@ select:focus {
   text-overflow: ellipsis;
   max-width: 30ch;
   justify-self: end;
+}
+
+.pipeline-row-quick-promote {
+  justify-self: end;
+  border: 1px solid rgba(16, 36, 53, 0.22);
+  border-radius: 999px;
+  padding: 0.2rem 0.52rem;
+  font-size: 0.69rem;
+  font-weight: 700;
+  color: #16324a;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.pipeline-row-quick-promote:hover {
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .pipeline-row-details {
@@ -1049,6 +1160,12 @@ select:focus {
     max-width: none;
     padding-left: 1.1rem;
     justify-self: start;
+  }
+
+  .pipeline-row-quick-promote {
+    grid-column: 1 / -1;
+    justify-self: start;
+    margin-left: 1.1rem;
   }
 
   .pipeline-actions {
