@@ -25,13 +25,7 @@
       <div class="hero-actions">
         <div class="view-switch" role="tablist" aria-label="App navigation">
           <button id="showHomePageBtn" class="btn btn-muted" type="button" role="tab">Home</button>
-          <button id="showChannelPageBtn" class="btn btn-muted" type="button" role="tab">Channel</button>
-          <button id="showBriefsPageBtn" class="btn btn-muted" type="button" role="tab">Briefs</button>
-        </div>
-        <p id="activeChannelLabel" class="view-gate-hint"></p>
-        <div class="hero-action-row">
-          <button id="saveStateBtn" class="btn btn-muted">Save Snapshot</button>
-          <button id="resetStateBtn" class="btn btn-muted">Reset</button>
+          <button id="showChannelPageBtn" class="btn btn-muted" type="button" role="tab" disabled>Channel</button>
         </div>
       </div>
     </header>
@@ -357,6 +351,10 @@
           <button id="generateTitlesBtn" class="btn">Generate Titles</button>
         </div>
         <p class="hint">The generator combines curiosity, clarity, and novelty patterns.</p>
+        <div class="title-quick-entry">
+          <input id="quickTitleInput" placeholder="Add a potential title and hit Enter" />
+          <button id="addQuickTitleBtn" class="btn btn-muted" type="button">Add Title</button>
+        </div>
         <div id="titleBoard" class="idea-board"></div>
       </section>
 
@@ -471,6 +469,11 @@
     <template id="titleCardTemplate">
       <article class="idea-card">
         <h3 class="idea-title"></h3>
+        <div class="idea-actions">
+          <button type="button" class="btn btn-muted" data-action="toggleStrong">Mark Strong</button>
+          <button type="button" class="btn btn-muted" data-action="useTitle">Use as Video Title</button>
+          <button type="button" class="btn btn-muted" data-action="removeTitle">Remove</button>
+        </div>
         <div class="score-inputs">
           <label>
             Curiosity
@@ -545,8 +548,9 @@
             <div class="channel-card-copy">
               <h3 class="channel-card-title" data-role="channelName"></h3>
               <p class="channel-card-meta" data-role="channelHandle"></p>
+              <p class="channel-card-stats" data-role="channelStats"></p>
             </div>
-            <span class="channel-card-open" aria-hidden="true">Open</span>
+            <span class="channel-card-open" aria-hidden="true">Soon</span>
           </div>
         </button>
       </article>

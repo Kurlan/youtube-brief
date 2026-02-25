@@ -53,6 +53,12 @@ const DEFAULT_CHANNEL_ASSETS = [
     sourceUrl: DEFAULT_CHANNEL_ASSET_SOURCE_URL,
   },
 ];
+const DEFAULT_CHANNEL_STATS = {
+  subscribersText: "195K subscribers",
+  videosText: "217 videos",
+  viewsText: "9,761,233 views",
+  sourceUrl: "https://www.youtube.com/channel/UCEHFikgnRuLd1HYKTLrae9Q/about",
+};
 
 const VIEWER_STRATEGY = {
   channel: "@ALifeEngineered",
@@ -159,6 +165,8 @@ const refs = {
   step2Template: document.getElementById("step2CardTemplate"),
   step3Template: document.getElementById("step3CardTemplate"),
   titleBoard: document.getElementById("titleBoard"),
+  quickTitleInput: document.getElementById("quickTitleInput"),
+  addQuickTitleBtn: document.getElementById("addQuickTitleBtn"),
   thumbnailBoard: document.getElementById("thumbnailBoard"),
   comparableBoard: document.getElementById("comparableBoard"),
   comparableUrl: document.getElementById("comparableUrl"),
@@ -668,29 +676,33 @@ function normalizeScoreValue(value, fallback = 5) {
   return num;
 }
 
+function createTitleRecord(seed = {}) {
+  const text = toCleanText(seed?.text);
+  if (!text) {
+    return null;
+  }
+
+  const defaults = defaultTitleScores();
+  const scores = {
+    curiosity: normalizeScoreValue(seed?.scores?.curiosity, defaults.curiosity),
+    clarity: normalizeScoreValue(seed?.scores?.clarity, defaults.clarity),
+    uniqueness: normalizeScoreValue(seed?.scores?.uniqueness, defaults.uniqueness),
+    promise: normalizeScoreValue(seed?.scores?.promise, defaults.promise),
+  };
+
+  return {
+    text,
+    scores,
+    isStrong: Boolean(seed?.isStrong),
+  };
+}
+
 function normalizeTitleCollection(items) {
   if (!Array.isArray(items)) {
     return [];
   }
 
-  return items
-    .map((item) => {
-      const text = toCleanText(item?.text);
-      if (!text) {
-        return null;
-      }
-
-      const defaults = defaultTitleScores();
-      const scores = {
-        curiosity: normalizeScoreValue(item?.scores?.curiosity, defaults.curiosity),
-        clarity: normalizeScoreValue(item?.scores?.clarity, defaults.clarity),
-        uniqueness: normalizeScoreValue(item?.scores?.uniqueness, defaults.uniqueness),
-        promise: normalizeScoreValue(item?.scores?.promise, defaults.promise),
-      };
-
-      return { text, scores };
-    })
-    .filter(Boolean);
+  return items.map((item) => createTitleRecord(item)).filter(Boolean);
 }
 
 function normalizeThumbnailCollection(items) {
@@ -918,6 +930,24 @@ function getFirstChannelAssetUrl(channelAssets, kind) {
   return match ? match.url : "";
 }
 
+function createChannelStatsRecord(seed = {}) {
+  return {
+    subscribersText: toCleanText(seed.subscribersText),
+    videosText: toCleanText(seed.videosText),
+    viewsText: toCleanText(seed.viewsText),
+    sourceUrl: toCleanText(seed.sourceUrl),
+    updatedAt: normalizeTimestamp(seed.updatedAt),
+  };
+}
+
+function normalizeChannelStats(seed = {}) {
+  if (!seed || typeof seed !== "object") {
+    return createChannelStatsRecord();
+  }
+
+  return createChannelStatsRecord(seed);
+}
+
 function createChannelRecord(seed = {}) {
   const name = toCleanText(seed.name) || "Untitled Channel";
   const handle = toCleanText(seed.handle) || "";
@@ -935,6 +965,13 @@ function createChannelRecord(seed = {}) {
   if (isDefaultChannel && !bannerUrl) {
     bannerUrl = DEFAULT_CHANNEL_BANNER_URL;
   }
+  let channelStats = normalizeChannelStats(seed.channelStats || seed.stats);
+  if (isDefaultChannel && !channelStats.subscribersText && !channelStats.videosText && !channelStats.viewsText) {
+    channelStats = createChannelStatsRecord({
+      ...DEFAULT_CHANNEL_STATS,
+      updatedAt: seed.updatedAt,
+    });
+  }
   return {
     id: toCleanText(seed.id) || createRecordId("ch"),
     name,
@@ -944,6 +981,7 @@ function createChannelRecord(seed = {}) {
     avatarUrl,
     bannerUrl,
     channelAssets,
+    channelStats,
     createdAt: normalizeTimestamp(seed.createdAt),
     updatedAt: normalizeTimestamp(seed.updatedAt),
   };
@@ -960,6 +998,10 @@ function createDefaultChannelRecord() {
     avatarUrl: DEFAULT_CHANNEL_AVATAR_URL,
     bannerUrl: DEFAULT_CHANNEL_BANNER_URL,
     channelAssets: DEFAULT_CHANNEL_ASSETS,
+    channelStats: {
+      ...DEFAULT_CHANNEL_STATS,
+      updatedAt: now,
+    },
     createdAt: now,
     updatedAt: now,
   });
@@ -1261,6 +1303,12 @@ function getChannelCardInitials(channel) {
     .join("");
 }
 
+function formatChannelStatsLine(channel) {
+  const stats = normalizeChannelStats(channel?.channelStats || channel?.stats);
+  const pieces = [stats.videosText, stats.subscribersText, stats.viewsText].filter(Boolean);
+  return pieces.length ? pieces.join(" • ") : "Stats unavailable";
+}
+
 function renderChannelHomeBoard() {
   if (!refs.channelHomeBoard || !refs.channelCardTemplate) {
     return;
@@ -1289,12 +1337,16 @@ function renderChannelHomeBoard() {
     const avatarShellEl = fragment.querySelector(".channel-card-avatar-shell");
     const avatarImgEl = fragment.querySelector('[data-role="channelAvatar"]');
     const avatarFallbackEl = fragment.querySelector('[data-role="channelAvatarFallback"]');
+    const statsEl = fragment.querySelector('[data-role="channelStats"]');
     const avatarUrl = getChannelAssetUrl(channel, "avatar");
     const bannerUrl = getChannelAssetUrl(channel, "banner");
 
     nameEl.textContent = channel.name;
     handleEl.textContent = channel.handle || channel.platform;
     avatarFallbackEl.textContent = getChannelCardInitials(channel);
+    if (statsEl) {
+      statsEl.textContent = formatChannelStatsLine(channel);
+    }
 
     if (avatarUrl && avatarImgEl && avatarShellEl) {
       avatarImgEl.src = avatarUrl;
@@ -1316,9 +1368,8 @@ function renderChannelHomeBoard() {
       bannerWrapEl.classList.remove("has-image");
     }
 
-    openBtn.addEventListener("click", () => {
-      openChannelById(channel.id);
-    });
+    openBtn.disabled = true;
+    openBtn.title = "Channel workspace coming soon";
 
     refs.channelHomeBoard.appendChild(fragment);
   });
@@ -1373,17 +1424,25 @@ function renderPageView() {
 
   const activeChannel = getActiveChannelRecord();
   const hasActiveChannel = Boolean(activeChannel && canCurrentAccountAccessChannel(activeChannel.id));
-  refs.showHomePageBtn.classList.toggle("is-active", pageView === "home");
-  refs.showChannelPageBtn.classList.toggle("is-active", pageView === "channel");
-  refs.showBriefsPageBtn.classList.toggle("is-active", pageView === "briefs");
-  refs.showHomePageBtn.setAttribute("aria-selected", String(pageView === "home"));
-  refs.showChannelPageBtn.setAttribute("aria-selected", String(pageView === "channel"));
-  refs.showBriefsPageBtn.setAttribute("aria-selected", String(pageView === "briefs"));
-  refs.showChannelPageBtn.disabled = !hasActiveChannel;
-  refs.showBriefsPageBtn.disabled = !hasActiveChannel;
-  refs.activeChannelLabel.textContent = hasActiveChannel
-    ? `${activeChannel.name}${activeChannel.handle ? ` · ${activeChannel.handle}` : ""}`
-    : "Select a channel from Home.";
+  if (refs.showHomePageBtn) {
+    refs.showHomePageBtn.classList.toggle("is-active", pageView === "home");
+    refs.showHomePageBtn.setAttribute("aria-selected", String(pageView === "home"));
+  }
+  if (refs.showChannelPageBtn) {
+    refs.showChannelPageBtn.classList.toggle("is-active", pageView === "channel");
+    refs.showChannelPageBtn.setAttribute("aria-selected", String(pageView === "channel"));
+    refs.showChannelPageBtn.disabled = true;
+  }
+  if (refs.showBriefsPageBtn) {
+    refs.showBriefsPageBtn.classList.toggle("is-active", pageView === "briefs");
+    refs.showBriefsPageBtn.setAttribute("aria-selected", String(pageView === "briefs"));
+    refs.showBriefsPageBtn.disabled = !hasActiveChannel;
+  }
+  if (refs.activeChannelLabel) {
+    refs.activeChannelLabel.textContent = hasActiveChannel
+      ? `${activeChannel.name}${activeChannel.handle ? ` · ${activeChannel.handle}` : ""}`
+      : "Select a channel from Home.";
+  }
 }
 
 function setPageView(pageView, shouldPersist = true) {
@@ -2089,6 +2148,12 @@ function setBriefEditorEnabled(enabled) {
 
   if (refs.copyHtmlBtn) {
     refs.copyHtmlBtn.disabled = !enabled;
+  }
+  if (refs.quickTitleInput) {
+    refs.quickTitleInput.disabled = !enabled;
+  }
+  if (refs.addQuickTitleBtn) {
+    refs.addQuickTitleBtn.disabled = !enabled;
   }
   if (refs.comparableUrl) {
     refs.comparableUrl.disabled = !enabled;
@@ -2829,10 +2894,9 @@ function generateTitles(values) {
     `How to Turn One Logline Into a Click-Worthy Video Plan`,
   ];
 
-  return uniqueItems(patterns).map((text) => ({
-    text,
-    scores: defaultTitleScores(),
-  }));
+  return uniqueItems(patterns)
+    .map((text) => createTitleRecord({ text }))
+    .filter(Boolean);
 }
 
 function generateThumbnails(values) {
@@ -2967,16 +3031,53 @@ function renderTitleBoard() {
   }
 
   if (!state.titles.length) {
-    refs.titleBoard.innerHTML =
-      '<p class="hint">No title ideas yet. Add your logline and click "Generate Titles".</p>';
+    refs.titleBoard.innerHTML = '<p class="hint">No title ideas yet. Add one above or click "Generate Titles".</p>';
     return;
   }
 
+  const projectNameInput = document.getElementById("projectName");
+  const currentVideoTitle = toCleanText(projectNameInput?.value);
+
   state.titles.forEach((item, index) => {
     const fragment = refs.titleTemplate.content.cloneNode(true);
+    const card = fragment.querySelector(".idea-card");
     const titleEl = fragment.querySelector(".idea-title");
     const scorePill = fragment.querySelector(".score-pill");
+    const toggleStrongBtn = fragment.querySelector('button[data-action="toggleStrong"]');
+    const useTitleBtn = fragment.querySelector('button[data-action="useTitle"]');
+    const removeTitleBtn = fragment.querySelector('button[data-action="removeTitle"]');
     titleEl.textContent = item.text;
+    titleEl.classList.toggle("is-strong", Boolean(item.isStrong));
+    card.classList.toggle("is-strong", Boolean(item.isStrong));
+
+    if (toggleStrongBtn) {
+      toggleStrongBtn.textContent = item.isStrong ? "Unbold" : "Mark Strong";
+      toggleStrongBtn.addEventListener("click", () => {
+        state.titles[index].isStrong = !state.titles[index].isStrong;
+        updateBoardsAndBrief();
+      });
+    }
+
+    if (useTitleBtn) {
+      const isCurrentVideoTitle = currentVideoTitle === toCleanText(item.text);
+      useTitleBtn.textContent = isCurrentVideoTitle ? "Current Video Title" : "Use as Video Title";
+      useTitleBtn.disabled = isCurrentVideoTitle;
+      useTitleBtn.addEventListener("click", () => {
+        if (!projectNameInput) {
+          return;
+        }
+
+        projectNameInput.value = item.text;
+        updateBoardsAndBrief();
+      });
+    }
+
+    if (removeTitleBtn) {
+      removeTitleBtn.addEventListener("click", () => {
+        state.titles.splice(index, 1);
+        updateBoardsAndBrief();
+      });
+    }
 
     const scoreInputs = fragment.querySelectorAll("input[data-score]");
     scoreInputs.forEach((input) => {
@@ -3213,7 +3314,9 @@ function renderTitleListHtml(items) {
   const rows = items
     .map((item) => {
       const score = averageScore(item.scores).toFixed(1);
-      return `<li>${escapeHtml(item.text)} <span class=\"muted\">(Score: ${score}/10)</span></li>`;
+      const text = item.isStrong ? `<strong>${escapeHtml(item.text)}</strong>` : escapeHtml(item.text);
+      const strongTag = item.isStrong ? ' <span class="muted">(Strong)</span>' : "";
+      return `<li>${text}${strongTag} <span class=\"muted\">(Score: ${score}/10)</span></li>`;
     })
     .join("");
 
@@ -4187,6 +4290,36 @@ async function addComparable() {
   updateBoardsAndBrief();
 }
 
+function addTitleVariationFromQuickEntry() {
+  if (!getActiveBriefRecord()) {
+    flashButtonText(refs.addQuickTitleBtn, "Create Brief First", 1200);
+    return;
+  }
+
+  const text = toCleanText(refs.quickTitleInput.value);
+  if (!text) {
+    flashButtonText(refs.addQuickTitleBtn, "Need title", 1000);
+    return;
+  }
+
+  const normalized = text.toLowerCase();
+  if (state.titles.some((item) => toCleanText(item.text).toLowerCase() === normalized)) {
+    flashButtonText(refs.addQuickTitleBtn, "Exists", 1000);
+    return;
+  }
+
+  const record = createTitleRecord({ text });
+  if (!record) {
+    flashButtonText(refs.addQuickTitleBtn, "Need title", 1000);
+    return;
+  }
+
+  state.titles.unshift(record);
+  refs.quickTitleInput.value = "";
+  refs.quickTitleInput.focus();
+  updateBoardsAndBrief();
+}
+
 function updateStep1ViewState(partial) {
   state.step1View = normalizeStep1View({
     ...state.step1View,
@@ -4275,28 +4408,37 @@ function addStep3IdeaFromQuickEntry() {
 }
 
 function bindEvents() {
-  refs.showHomePageBtn.addEventListener("click", () => {
-    setPageView("home");
-  });
+  if (refs.showHomePageBtn) {
+    refs.showHomePageBtn.addEventListener("click", () => {
+      setPageView("home");
+    });
+  }
 
-  refs.showChannelPageBtn.addEventListener("click", () => {
-    const activeChannel = getActiveChannelRecord();
-    if (!activeChannel) {
-      return;
-    }
+  if (refs.showChannelPageBtn) {
+    refs.showChannelPageBtn.addEventListener("click", () => {
+      if (refs.showChannelPageBtn.disabled) {
+        return;
+      }
+      const activeChannel = getActiveChannelRecord();
+      if (!activeChannel) {
+        return;
+      }
 
-    state.channelView = "dashboard";
-    setPageView("channel");
-  });
+      state.channelView = "dashboard";
+      setPageView("channel");
+    });
+  }
 
-  refs.showBriefsPageBtn.addEventListener("click", () => {
-    const activeChannel = getActiveChannelRecord();
-    if (!activeChannel) {
-      return;
-    }
+  if (refs.showBriefsPageBtn) {
+    refs.showBriefsPageBtn.addEventListener("click", () => {
+      const activeChannel = getActiveChannelRecord();
+      if (!activeChannel) {
+        return;
+      }
 
-    setPageView("briefs");
-  });
+      setPageView("briefs");
+    });
+  }
 
   refs.jumpToIdeationBtn.addEventListener("click", () => {
     state.channelView = "ideation";
@@ -4342,6 +4484,7 @@ function bindEvents() {
   refs.addStep1Btn.addEventListener("click", addStep1IdeaFromQuickEntry);
   refs.addStep2Btn.addEventListener("click", addStep2IdeaFromQuickEntry);
   refs.addStep3Btn.addEventListener("click", addStep3IdeaFromQuickEntry);
+  refs.addQuickTitleBtn.addEventListener("click", addTitleVariationFromQuickEntry);
 
   refs.step1FastIdea.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -4361,6 +4504,13 @@ function bindEvents() {
     if (event.key === "Enter") {
       event.preventDefault();
       addStep1IdeaFromQuickEntry();
+    }
+  });
+
+  refs.quickTitleInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addTitleVariationFromQuickEntry();
     }
   });
 
@@ -4412,13 +4562,19 @@ function bindEvents() {
     updateBoardsAndBrief();
   });
 
-  document.getElementById("saveStateBtn").addEventListener("click", async () => {
-    await saveSnapshot({ immediate: true });
-    await flushPersistQueue();
-    flashButtonText(document.getElementById("saveStateBtn"), "Saved", 900);
-  });
+  const saveStateBtn = document.getElementById("saveStateBtn");
+  if (saveStateBtn) {
+    saveStateBtn.addEventListener("click", async () => {
+      await saveSnapshot({ immediate: true });
+      await flushPersistQueue();
+      flashButtonText(saveStateBtn, "Saved", 900);
+    });
+  }
 
-  document.getElementById("resetStateBtn").addEventListener("click", resetAll);
+  const resetStateBtn = document.getElementById("resetStateBtn");
+  if (resetStateBtn) {
+    resetStateBtn.addEventListener("click", resetAll);
+  }
   document.getElementById("downloadBriefBtn").addEventListener("click", downloadBriefHtml);
   refs.copyHtmlBtn.addEventListener("click", copyBriefHtml);
 
