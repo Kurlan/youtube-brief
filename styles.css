@@ -588,6 +588,10 @@ select:focus {
   background: rgba(255, 255, 255, 0.84);
 }
 
+.pipeline-row-details[hidden] {
+  display: none;
+}
+
 .pipeline-card[data-status="green"] .pipeline-row-summary {
   background: rgba(43, 138, 62, 0.08);
 }

@@ -1525,8 +1525,13 @@ function renderStep1Board() {
     });
 
     promoteBtn.addEventListener("click", () => {
-      const record = state.step1Ideas.find((entry) => entry.id === itemId);
-      if (!record || !toCleanText(record.videoIdea)) {
+      const sourceIndex = state.step1Ideas.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      const record = state.step1Ideas[sourceIndex];
+      if (!toCleanText(record.videoIdea)) {
         flashButtonText(promoteBtn, "Need idea", 1000);
         return;
       }
@@ -1546,8 +1551,7 @@ function renderStep1Board() {
           status: "yellow",
         }),
       );
-      record.status = "green";
-      item.status = "green";
+      state.step1Ideas.splice(sourceIndex, 1);
       updateBoardsAndBrief();
     });
 
@@ -1662,7 +1666,7 @@ function renderStep2Board() {
           status: "yellow",
         }),
       );
-      item.status = "green";
+      state.step2Ideas.splice(index, 1);
       updateBoardsAndBrief();
     });
 
@@ -1707,6 +1711,11 @@ function matriculateStep3IdeaToBrief(item, button) {
 
   if (!toCleanText(loglineEl.value) && toCleanText(item.hypothesisMetric)) {
     loglineEl.value = item.hypothesisMetric;
+  }
+
+  const sourceIndex = state.step3Ideas.findIndex((entry) => entry.id === item.id);
+  if (sourceIndex >= 0) {
+    state.step3Ideas.splice(sourceIndex, 1);
   }
 
   updateBoardsAndBrief();
