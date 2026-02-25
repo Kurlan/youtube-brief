@@ -20,6 +20,7 @@ const IDEA_STATUSES = ["green", "yellow", "red"];
 const STEP3_LIFECYCLE_STATUSES = ["brainstorming", "in-brief"];
 const STEP1_SORT_OPTIONS = ["newest", "oldest", "title-asc", "title-desc", "name-asc"];
 const PAGE_OPTIONS = ["home", "channel", "briefs"];
+const CHANNEL_VIEW_OPTIONS = ["dashboard", "ideation"];
 const DEFAULT_CHANNEL_ID = "channel-alifeengineered";
 const DEFAULT_ACCOUNT_ID = "acct-steve-huynh";
 const CHANNEL_MEMBER_ROLES = ["owner", "editor", "viewer"];
@@ -175,6 +176,7 @@ const state = {
   channelWorkspaces: {},
   briefsByChannel: {},
   activeBriefId: "",
+  channelView: "dashboard",
   ideationStepView: 1,
   step1View: {
     query: "",
@@ -831,6 +833,10 @@ function normalizePageView(value) {
   return PAGE_OPTIONS.includes(value) ? value : "home";
 }
 
+function normalizeChannelView(value) {
+  return CHANNEL_VIEW_OPTIONS.includes(value) ? value : "dashboard";
+}
+
 function createChannelRecord(seed = {}) {
   const name = toCleanText(seed.name) || "Untitled Channel";
   const handle = toCleanText(seed.handle) || "";
@@ -1188,9 +1194,19 @@ function setIdeationStep(step, shouldPersist = true) {
 function renderPageView() {
   const pageView = normalizePageView(state.pageView);
   state.pageView = pageView;
+  state.channelView = normalizeChannelView(state.channelView);
 
   document.querySelectorAll("[data-page]").forEach((panel) => {
     panel.hidden = panel.dataset.page !== pageView;
+  });
+
+  document.querySelectorAll('[data-page="channel"][data-channel-view]').forEach((panel) => {
+    if (pageView !== "channel") {
+      panel.hidden = true;
+      return;
+    }
+
+    panel.hidden = panel.dataset.channelView !== state.channelView;
   });
 
   const activeChannel = getActiveChannelRecord();
@@ -1254,6 +1270,7 @@ function openChannelById(channelId, shouldPersist = true) {
 
   cacheActiveChannelWorkspace();
   state.activeChannelId = id;
+  state.channelView = "dashboard";
   ensureChannelWorkspace(id);
   ensureChannelBriefState(id);
   applyActiveChannelWorkspace(state.channelWorkspaces[id]);
@@ -3270,6 +3287,7 @@ function buildWorkspacePayload(values = getFieldValues()) {
     schemaVersion: 4,
     savedAt: Date.now(),
     pageView: state.pageView,
+    channelView: state.channelView,
     channels: state.channels,
     accounts: state.accounts,
     channelMemberships: state.channelMemberships,
@@ -3335,6 +3353,7 @@ function applyWorkspacePayload(payload = {}) {
 
   if (isChannelPayload) {
     state.pageView = normalizePageView(payload.pageView);
+    state.channelView = normalizeChannelView(payload.channelView);
     state.channels = normalizeChannels(payload.channels);
     state.accounts = normalizeAccounts(payload.accounts);
     state.channelMemberships = normalizeChannelMemberships(payload.channelMemberships);
@@ -3366,6 +3385,7 @@ function applyWorkspacePayload(payload = {}) {
 
   state.ideationStepView = normalizeIdeationStep(payload.ideationStepView);
   state.step1View = normalizeStep1View(payload.step1View);
+  state.channelView = "dashboard";
   state.channels = [createDefaultChannelRecord()];
   state.accounts = [];
   state.channelMemberships = [];
@@ -3537,6 +3557,7 @@ function applyLegacySnapshotPayload(parsed = {}) {
 
   if (isChannelPayload) {
     state.pageView = normalizePageView(parsed.pageView);
+    state.channelView = normalizeChannelView(parsed.channelView);
     state.channels = normalizeChannels(parsed.channels);
     state.accounts = normalizeAccounts(parsed.accounts);
     state.channelMemberships = normalizeChannelMemberships(parsed.channelMemberships);
@@ -3558,6 +3579,7 @@ function applyLegacySnapshotPayload(parsed = {}) {
 
   state.ideationStepView = normalizeIdeationStep(parsed.ideationStepView);
   state.step1View = normalizeStep1View(parsed.step1View);
+  state.channelView = "dashboard";
   state.step1Ideas = normalizeStep1Ideas(parsed.step1Ideas);
   state.step2Ideas = normalizeStep2Ideas(parsed.step2Ideas);
   state.step3Ideas = normalizeStep3Ideas(parsed.step3Ideas);
@@ -3757,6 +3779,7 @@ function resetAll() {
   ];
   state.currentAccountId = defaultAccount.id;
   state.activeChannelId = defaultChannel.id;
+  state.channelView = "dashboard";
   state.channelWorkspaces = {
     [defaultChannel.id]: normalizeChannelWorkspace(createEmptyChannelWorkspace()),
   };
@@ -4017,7 +4040,8 @@ function bindEvents() {
       return;
     }
 
-    openChannelById(activeChannel.id);
+    state.channelView = "dashboard";
+    setPageView("channel");
   });
 
   refs.showBriefsPageBtn.addEventListener("click", () => {
@@ -4030,6 +4054,7 @@ function bindEvents() {
   });
 
   refs.jumpToIdeationBtn.addEventListener("click", () => {
+    state.channelView = "ideation";
     setPageView("channel");
   });
 
@@ -4174,6 +4199,7 @@ async function init() {
   applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
   applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
   state.pageView = "home";
+  state.channelView = "dashboard";
   applyPipelineDefaults();
   bindEvents();
   updateBoardsAndBrief();
