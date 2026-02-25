@@ -4,11 +4,12 @@ A packaging-first YouTube brief generator focused on:
 
 - Pre-brief ideation pipeline with 3 phases (brainstorming, title/thumbnail ideation, hypothesis/experiment log)
 - Home view with channel cards (multi-channel capable, optimized for one primary owner channel)
-- Channel workspace view with ideation, viewer strategy, and brief authoring modules
+- Channel workspace view focused on ideation phases
+- Dedicated Briefs page for production-intent brief authoring
 - Account-to-channel membership model (owner/editor/viewer) for future multi-user channels
-- Split workspace views: ideation is separate from brief authoring
+- Briefs are a separate model per channel (manual or phase-3 promoted)
 - Fast inline editing and color status tracking (green/yellow/red) across stages
-- One-click promotion between ideation phases and matriculation handoff from phase 3
+- One-click promotion between ideation phases and explicit "Promote to Brief" from phase 3
 - Phase 1 backlog view with date-added records, filtering, sorting, and ultra-fast title capture
 - Ideation records use one-line rows with click-to-expand details and arrow navigation between phases
 - Static viewer strategy profile for `@ALifeEngineered`
@@ -49,5 +50,5 @@ Then open `http://localhost:4173`.
 
 ## Notes
 
-- Data is persisted in browser IndexedDB (`yt-brief-studio-local`), with localStorage fallback under `yt-brief-studio-v6`.
+- Data is persisted in browser IndexedDB (`yt-brief-studio-local`), with localStorage fallback under `yt-brief-studio-v7`.
 - This is a starter. The next layer is adding AI-assisted research and thumbnail image references.
