@@ -6,8 +6,8 @@
     </linearGradient>
   </defs>
   <rect x="4" y="9" width="56" height="46" rx="14" fill="url(#tubeRed)" />
-  <path d="M14 13.5L47 22L14 31Z" fill="#ffffff" />
-  <path d="M14 31L47 42L14 50.5Z" fill="#ffffff" />
-  <path d="M22 18L34 22L22 26Z" fill="#d22f11" />
-  <path d="M22 36.2L35 41.7L22 47.2Z" fill="#d22f11" />
+  <path d="M19 14L45 22.5L19 31Z" fill="#ffffff" />
+  <path d="M19 31L45 41.5L19 50Z" fill="#ffffff" />
+  <path d="M25.5 18.4L34.5 22.5L25.5 26.6Z" fill="#d22f11" />
+  <path d="M25.5 36.2L35.2 41.5L25.5 46.8Z" fill="#d22f11" />
 </svg>
