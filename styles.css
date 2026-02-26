@@ -187,6 +187,21 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
+.channel-page-banner-panel {
+  padding: 0.55rem;
+}
+
+.channel-page-banner {
+  min-height: clamp(130px, 24vw, 210px);
+  border-radius: 14px;
+  border: 1px solid rgba(8, 33, 52, 0.16);
+  border-bottom: 0;
+}
+
+.channel-page-banner .channel-card-banner-image {
+  min-height: clamp(130px, 24vw, 210px);
+}
+
 .channel-card {
   border: 1px solid rgba(8, 33, 52, 0.16);
   border-radius: 16px;
@@ -1295,6 +1310,10 @@ select:focus {
 
   .panel {
     padding: 1rem;
+  }
+
+  .channel-page-banner-panel {
+    padding: 0.5rem;
   }
 
   .hero-logo {

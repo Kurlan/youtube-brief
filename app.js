@@ -128,6 +128,8 @@ const refs = {
   showBriefsPageBtn: document.getElementById("showBriefsPageBtn"),
   activeChannelLabel: document.getElementById("activeChannelLabel"),
   channelHomeBoard: document.getElementById("channelHomeBoard"),
+  channelPageBanner: document.querySelector('[data-role="channelPageBanner"]'),
+  channelPageBannerImage: document.querySelector('[data-role="channelPageBannerImage"]'),
   channelCardTemplate: document.getElementById("channelCardTemplate"),
   briefListBoard: document.getElementById("briefListBoard"),
   briefListItemTemplate: document.getElementById("briefListItemTemplate"),
@@ -1307,6 +1309,27 @@ function formatChannelStatsLine(channel) {
   const stats = normalizeChannelStats(channel?.channelStats || channel?.stats);
   const pieces = [stats.videosText, stats.subscribersText, stats.viewsText].filter(Boolean);
   return pieces.length ? pieces.join(" • ") : "Stats unavailable";
+}
+
+function renderChannelPageBanner() {
+  if (!refs.channelPageBanner || !refs.channelPageBannerImage) {
+    return;
+  }
+
+  const activeChannel = getActiveChannelRecord();
+  const hasActiveChannel = Boolean(activeChannel && canCurrentAccountAccessChannel(activeChannel.id));
+  const bannerUrl = hasActiveChannel ? getChannelAssetUrl(activeChannel, "banner") : "";
+
+  if (bannerUrl) {
+    refs.channelPageBannerImage.src = bannerUrl;
+    refs.channelPageBannerImage.alt = `${activeChannel.name} banner`;
+    refs.channelPageBanner.classList.add("has-image");
+    return;
+  }
+
+  refs.channelPageBannerImage.removeAttribute("src");
+  refs.channelPageBannerImage.alt = "";
+  refs.channelPageBanner.classList.remove("has-image");
 }
 
 function renderChannelHomeBoard() {
@@ -4154,6 +4177,7 @@ function updateBoardsAndBrief(options = {}) {
   const values = getFieldValues();
   cacheActiveChannelWorkspace(values);
   renderPageView();
+  renderChannelPageBanner();
   renderChannelHomeBoard();
   renderIdeationStepView();
 
