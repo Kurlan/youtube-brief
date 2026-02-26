@@ -1427,14 +1427,15 @@ function renderPageView() {
 
   const activeChannel = getActiveChannelRecord();
   const hasActiveChannel = Boolean(activeChannel && canCurrentAccountAccessChannel(activeChannel.id));
+  const isChannelContext = hasActiveChannel && pageView !== "home";
   if (refs.showHomePageBtn) {
     refs.showHomePageBtn.classList.toggle("is-active", pageView === "home");
     refs.showHomePageBtn.setAttribute("aria-selected", String(pageView === "home"));
   }
   if (refs.showChannelPageBtn) {
-    refs.showChannelPageBtn.classList.toggle("is-active", pageView === "channel");
-    refs.showChannelPageBtn.setAttribute("aria-selected", String(pageView === "channel"));
-    refs.showChannelPageBtn.disabled = true;
+    refs.showChannelPageBtn.classList.toggle("is-active", isChannelContext);
+    refs.showChannelPageBtn.setAttribute("aria-selected", String(isChannelContext));
+    refs.showChannelPageBtn.disabled = pageView === "home" || !hasActiveChannel;
   }
   if (refs.showBriefsPageBtn) {
     refs.showBriefsPageBtn.classList.toggle("is-active", pageView === "briefs");
