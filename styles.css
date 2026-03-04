@@ -97,7 +97,28 @@ h1 {
 .hero-actions {
   display: flex;
   gap: 0.55rem;
-  align-items: center;
+  align-items: flex-end;
+  flex-direction: column;
+}
+
+.save-status {
+  margin: 0;
+  min-height: 1.1rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.save-status[data-state="saving"] {
+  color: #0b4b50;
+}
+
+.save-status[data-state="saved"] {
+  color: #0b5f3f;
+}
+
+.save-status[data-state="error"] {
+  color: #8b2f2f;
 }
 
 .view-switch {
@@ -1374,6 +1395,7 @@ select:focus {
   .hero-actions {
     width: 100%;
     justify-content: flex-start;
+    align-items: flex-start;
   }
 
   .view-switch {

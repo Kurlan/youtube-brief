@@ -15,6 +15,8 @@ const LOCAL_DB_KEY_IDEAS = "ideas";
 const LOCAL_DB_KEY_BRIEFS = "briefs";
 const LOCAL_DB_KEY_VIEWER = "viewer";
 const SAVE_DEBOUNCE_MS = 180;
+const INSPIRATION_NOTES_SAVE_DEBOUNCE_MS = 700;
+const MAX_LOCAL_STORAGE_SNAPSHOT_CHARS = 900000;
 const DEFAULT_OWNER_NAME = "Steve Huynh";
 const IDEA_STATUSES = ["none", "red"];
 const BRIEF_STATUSES = ["draft", "review", "in-production"];
@@ -126,6 +128,7 @@ const fieldIds = [
 const refs = {
   showHomePageBtn: document.getElementById("showHomePageBtn"),
   showChannelPageBtn: document.getElementById("showChannelPageBtn"),
+  saveStatus: document.getElementById("saveStatus"),
   showBriefsPageBtn: document.getElementById("showBriefsPageBtn"),
   activeChannelLabel: document.getElementById("activeChannelLabel"),
   channelHomeBoard: document.getElementById("channelHomeBoard"),
@@ -243,6 +246,7 @@ const state = {
 
 let localDbPromise = null;
 let pendingSaveTimer = null;
+let inspirationNotesSaveTimer = null;
 let queuedSnapshotPayload = null;
 let persistQueue = Promise.resolve();
 
@@ -478,8 +482,12 @@ async function deleteFromLocalDb(key) {
 
 function enqueuePersistTask(task) {
   persistQueue = persistQueue
-    .then(task)
+    .then(async () => {
+      await task();
+      setSaveStatus("saved", Date.now());
+    })
     .catch((error) => {
+      setSaveStatus("error");
       console.warn("Failed to persist snapshot to local database.", error);
     });
 
@@ -488,6 +496,7 @@ function enqueuePersistTask(task) {
 
 function scheduleSnapshotPersist(snapshotPayload, immediate = false) {
   queuedSnapshotPayload = snapshotPayload;
+  setSaveStatus("saving");
 
   if (pendingSaveTimer) {
     clearTimeout(pendingSaveTimer);
@@ -578,6 +587,38 @@ function safeText(value, fallback = "N/A") {
 
 function formatDateTime() {
   return new Date().toLocaleString();
+}
+
+function formatClockTime(value) {
+  return new Date(normalizeTimestamp(value)).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function setSaveStatus(status, timestamp = Date.now()) {
+  if (!refs.saveStatus) {
+    return;
+  }
+
+  const normalized = toCleanText(status).toLowerCase();
+  refs.saveStatus.dataset.state = normalized;
+  if (normalized === "saving") {
+    refs.saveStatus.textContent = "Saving...";
+    return;
+  }
+
+  if (normalized === "saved") {
+    refs.saveStatus.textContent = `Saved ${formatClockTime(timestamp)}`;
+    return;
+  }
+
+  if (normalized === "error") {
+    refs.saveStatus.textContent = "Save failed";
+    return;
+  }
+
+  refs.saveStatus.textContent = "";
 }
 
 function createRecordId(prefix) {
@@ -3534,15 +3575,19 @@ function renderComparableBoard() {
       notesEl.addEventListener("input", () => {
         state.comparables[index].notes = toCleanText(notesEl.textContent);
         state.comparables[index].updatedAt = Date.now();
+        queueInspirationNotesSave();
       });
       notesEl.addEventListener("blur", () => {
-        updateBoardsAndBrief();
+        void flushInspirationNotesSave().then(() => {
+          updateBoardsAndBrief({ persist: false });
+        });
       });
     }
 
     removeBtn.addEventListener("click", () => {
       state.comparables.splice(index, 1);
-      updateBoardsAndBrief();
+      updateBoardsAndBrief({ persist: false });
+      void saveSnapshot({ immediate: true });
     });
 
     refs.comparableBoard.appendChild(fragment);
@@ -4008,6 +4053,50 @@ function buildLegacySnapshotPayload(values = getFieldValues()) {
   };
 }
 
+function buildLocalStorageLegacyPayload(values = getFieldValues()) {
+  const payload = buildLegacySnapshotPayload(values);
+  const byChannel = payload?.briefs?.byChannel;
+  if (!byChannel || typeof byChannel !== "object") {
+    return payload;
+  }
+
+  const sanitizedByChannel = {};
+  Object.entries(byChannel).forEach(([channelId, briefState]) => {
+    const briefs = Array.isArray(briefState?.briefs)
+      ? briefState.briefs.map((brief) => {
+          const comparables = Array.isArray(brief?.comparables)
+            ? brief.comparables.map((item) => {
+                const videoId = toCleanText(item?.videoId);
+                return {
+                  ...item,
+                  imageSrc: videoId ? getThumbUrl(videoId, "hq") : "",
+                };
+              })
+            : [];
+
+          return {
+            ...brief,
+            comparables,
+            latestBriefHtml: "",
+          };
+        })
+      : [];
+
+    sanitizedByChannel[channelId] = {
+      activeBriefId: toCleanText(briefState?.activeBriefId),
+      briefs,
+    };
+  });
+
+  return {
+    ...payload,
+    briefs: {
+      ...payload.briefs,
+      byChannel: sanitizedByChannel,
+    },
+  };
+}
+
 function buildWorkspacePayload(values = getFieldValues()) {
   cacheActiveChannelWorkspace(values);
   return {
@@ -4376,10 +4465,21 @@ function saveSnapshot(options = {}) {
   const values = getFieldValues();
   ensureChannelModel();
   cacheActiveChannelWorkspace(values);
-  const legacyPayload = buildLegacySnapshotPayload(values);
+  const legacyPayload = buildLocalStorageLegacyPayload(values);
   const dbPayload = buildDbSnapshotPayload(values);
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(legacyPayload));
+  try {
+    const serializedLegacy = JSON.stringify(legacyPayload);
+    if (serializedLegacy.length <= MAX_LOCAL_STORAGE_SNAPSHOT_CHARS) {
+      localStorage.setItem(STORAGE_KEY, serializedLegacy);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Could not persist legacy localStorage snapshot.", error);
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
   return scheduleSnapshotPersist(dbPayload, Boolean(options.immediate));
 }
 
@@ -4719,8 +4819,31 @@ async function addInspirationFiles(files, options = {}) {
   }
 
   if (addedCount) {
-    updateBoardsAndBrief();
+    updateBoardsAndBrief({ persist: false });
+    void saveSnapshot({ immediate: true });
   }
+}
+
+function queueInspirationNotesSave() {
+  if (inspirationNotesSaveTimer) {
+    clearTimeout(inspirationNotesSaveTimer);
+  }
+
+  setSaveStatus("saving");
+  inspirationNotesSaveTimer = setTimeout(() => {
+    inspirationNotesSaveTimer = null;
+    void saveSnapshot({ immediate: true });
+  }, INSPIRATION_NOTES_SAVE_DEBOUNCE_MS);
+}
+
+function flushInspirationNotesSave() {
+  if (inspirationNotesSaveTimer) {
+    clearTimeout(inspirationNotesSaveTimer);
+    inspirationNotesSaveTimer = null;
+    return saveSnapshot({ immediate: true });
+  }
+
+  return Promise.resolve();
 }
 
 async function addComparable() {
@@ -4758,7 +4881,8 @@ async function addComparable() {
 
   state.comparables.unshift(record);
   refs.comparableUrl.value = "";
-  updateBoardsAndBrief();
+  updateBoardsAndBrief({ persist: false });
+  void saveSnapshot({ immediate: true });
 
   const meta = await fetchComparableMetadata(sourceUrl);
   if (meta) {
@@ -4769,7 +4893,8 @@ async function addComparable() {
   }
   record.updatedAt = Date.now();
 
-  updateBoardsAndBrief();
+  updateBoardsAndBrief({ persist: false });
+  void saveSnapshot();
 }
 
 function addTitleVariationFromQuickEntry() {
@@ -5206,12 +5331,14 @@ async function init() {
     const savedNav = getNavigationStateFromCurrentState();
     applyNavigationState(savedNav, { persist: false, syncHistory: false });
     syncNavigationHistory("replace");
+    setSaveStatus("saved", Date.now());
     return;
   }
 
   const locationNav = getNavigationStateFromLocation();
   applyNavigationState(locationNav, { persist: false, syncHistory: false });
   syncNavigationHistory("replace");
+  setSaveStatus("saved", Date.now());
 }
 
 void init();
