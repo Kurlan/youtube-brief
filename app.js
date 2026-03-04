@@ -915,6 +915,153 @@ function normalizeChannelView(value) {
   return CHANNEL_VIEW_OPTIONS.includes(value) ? value : "dashboard";
 }
 
+function createNavigationState(seed = {}) {
+  const source = seed && typeof seed === "object" ? seed : {};
+  const pageView = normalizePageView(source.pageView);
+  const channelId = toCleanText(source.channelId);
+  const channelView = normalizeChannelView(source.channelView);
+  const briefId = toCleanText(source.briefId);
+
+  return {
+    pageView,
+    channelId,
+    channelView,
+    briefId,
+  };
+}
+
+function getNavigationStateFromCurrentState() {
+  const pageView = normalizePageView(state.pageView);
+  const nav = createNavigationState({
+    pageView,
+    channelId: pageView === "home" ? "" : state.activeChannelId,
+    channelView: state.channelView,
+    briefId: toCleanText(state.activeBriefId),
+  });
+
+  if (nav.pageView === "brief-detail" && !nav.briefId) {
+    return createNavigationState({
+      pageView: "briefs",
+      channelId: nav.channelId,
+    });
+  }
+
+  return nav;
+}
+
+function getNavigationStateFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  return createNavigationState({
+    pageView: params.get("view"),
+    channelId: params.get("channel"),
+    channelView: params.get("channelView"),
+    briefId: params.get("brief"),
+  });
+}
+
+function areNavigationStatesEqual(left = {}, right = {}) {
+  const a = createNavigationState(left);
+  const b = createNavigationState(right);
+  return (
+    a.pageView === b.pageView &&
+    a.channelId === b.channelId &&
+    a.channelView === b.channelView &&
+    a.briefId === b.briefId
+  );
+}
+
+function buildNavigationHref(navigationState) {
+  const nav = createNavigationState(navigationState);
+  const params = new URLSearchParams();
+  params.set("view", nav.pageView);
+
+  if (nav.pageView !== "home" && nav.channelId) {
+    params.set("channel", nav.channelId);
+  }
+
+  if (nav.pageView === "channel") {
+    params.set("channelView", nav.channelView);
+  }
+
+  if (nav.pageView === "brief-detail" && nav.briefId) {
+    params.set("brief", nav.briefId);
+  }
+
+  const query = params.toString();
+  return `${window.location.pathname}${query ? `?${query}` : ""}`;
+}
+
+function syncNavigationHistory(mode = "push") {
+  const nav = getNavigationStateFromCurrentState();
+  const href = buildNavigationHref(nav);
+  const currentHref = `${window.location.pathname}${window.location.search}`;
+  const currentNav = history.state && typeof history.state === "object" ? history.state.nav : null;
+  const shouldReplace = mode === "replace" || currentHref === href || areNavigationStatesEqual(currentNav, nav);
+  const payload = { nav };
+
+  if (shouldReplace) {
+    history.replaceState(payload, "", href);
+    return;
+  }
+
+  history.pushState(payload, "", href);
+}
+
+function getResolvedNavigationChannelId(requestedChannelId = "") {
+  const requestedId = toCleanText(requestedChannelId);
+  const accessibleChannels = getAccessibleChannels();
+  if (!accessibleChannels.length) {
+    return "";
+  }
+
+  if (requestedId && accessibleChannels.some((channel) => channel.id === requestedId)) {
+    return requestedId;
+  }
+
+  const currentId = toCleanText(state.activeChannelId);
+  if (currentId && accessibleChannels.some((channel) => channel.id === currentId)) {
+    return currentId;
+  }
+
+  return accessibleChannels[0].id;
+}
+
+function applyNavigationState(navigationState, options = {}) {
+  const nav = createNavigationState(navigationState);
+  const shouldPersist = options.persist !== false;
+  const syncHistory = options.syncHistory !== false;
+  const historyMode = options.historyMode === "replace" ? "replace" : "push";
+
+  if (nav.pageView === "home") {
+    setPageView("home", shouldPersist, { syncHistory, historyMode });
+    return;
+  }
+
+  const resolvedChannelId = getResolvedNavigationChannelId(nav.channelId);
+  if (!resolvedChannelId) {
+    setPageView("home", shouldPersist, { syncHistory, historyMode });
+    return;
+  }
+
+  state.activeChannelId = resolvedChannelId;
+
+  if (nav.pageView === "channel") {
+    state.channelView = nav.channelView;
+  }
+
+  if (nav.pageView === "brief-detail" && nav.briefId) {
+    ensureChannelBriefState(resolvedChannelId);
+    const briefState = normalizeChannelBriefState(state.briefsByChannel[resolvedChannelId], resolvedChannelId);
+    if (briefState.briefs.some((brief) => brief.id === nav.briefId)) {
+      state.activeBriefId = nav.briefId;
+      briefState.activeBriefId = nav.briefId;
+      state.briefsByChannel[resolvedChannelId] = briefState;
+    }
+  }
+
+  setPageView(nav.pageView, shouldPersist, { syncHistory, historyMode });
+}
+
 function normalizeChannelAssetKind(value) {
   const kind = toCleanText(value).toLowerCase();
   return CHANNEL_ASSET_KINDS.includes(kind) ? kind : "other";
@@ -1538,7 +1685,9 @@ function renderPageView() {
   }
 }
 
-function setPageView(pageView, shouldPersist = true) {
+function setPageView(pageView, shouldPersist = true, options = {}) {
+  const syncHistory = options.syncHistory !== false;
+  const historyMode = options.historyMode === "replace" ? "replace" : "push";
   state.pageView = normalizePageView(pageView);
 
   if (state.pageView === "channel" || state.pageView === "briefs" || state.pageView === "brief-detail") {
@@ -1554,9 +1703,12 @@ function setPageView(pageView, shouldPersist = true) {
       const resolvedChannel = getActiveChannelRecord();
       if (!resolvedChannel || !canCurrentAccountAccessChannel(resolvedChannel.id)) {
         state.pageView = "home";
-        updateBoardsAndBrief({ persist: false });
+        updateBoardsAndBrief({ persist: false, syncHistory });
         if (shouldPersist) {
           saveSnapshot();
+        }
+        if (syncHistory) {
+          syncNavigationHistory(historyMode);
         }
         return;
       }
@@ -1569,14 +1721,20 @@ function setPageView(pageView, shouldPersist = true) {
     }
   }
 
-  updateBoardsAndBrief({ persist: false });
+  updateBoardsAndBrief({ persist: false, syncHistory });
 
   if (shouldPersist) {
     saveSnapshot();
   }
+
+  if (syncHistory) {
+    syncNavigationHistory(historyMode);
+  }
 }
 
-function openChannelById(channelId, shouldPersist = true) {
+function openChannelById(channelId, shouldPersist = true, options = {}) {
+  const syncHistory = options.syncHistory !== false;
+  const historyMode = options.historyMode === "replace" ? "replace" : "push";
   const id = toCleanText(channelId);
   if (!id || !state.channels.some((channel) => channel.id === id) || !canCurrentAccountAccessChannel(id)) {
     return;
@@ -1591,10 +1749,14 @@ function openChannelById(channelId, shouldPersist = true) {
   applyActiveChannelBriefState(state.briefsByChannel[id]);
   applyPipelineDefaults();
   state.pageView = "channel";
-  updateBoardsAndBrief({ persist: false });
+  updateBoardsAndBrief({ persist: false, syncHistory });
 
   if (shouldPersist) {
     saveSnapshot();
+  }
+
+  if (syncHistory) {
+    syncNavigationHistory(historyMode);
   }
 }
 
@@ -4299,6 +4461,7 @@ function resetAll() {
 }
 
 function updateBoardsAndBrief(options = {}) {
+  const syncHistory = options.syncHistory !== false;
   const values = getFieldValues();
   cacheActiveChannelWorkspace(values);
   renderPageView();
@@ -4319,6 +4482,9 @@ function updateBoardsAndBrief(options = {}) {
       renderPageView();
       renderBriefListBoard();
       setBriefEditorEnabled(false);
+      if (syncHistory) {
+        syncNavigationHistory("replace");
+      }
     } else {
       setBriefEditorEnabled(true);
       renderBriefSourceSnapshot();
@@ -4787,22 +4953,36 @@ function bindEvents() {
       updateBoardsAndBrief();
     });
   }
+
+  window.addEventListener("popstate", (event) => {
+    const fromHistory = event.state && typeof event.state === "object" ? event.state.nav : null;
+    const nextNav = fromHistory || getNavigationStateFromLocation();
+    applyNavigationState(nextNav, { persist: false, syncHistory: true, historyMode: "replace" });
+  });
 }
 
 async function init() {
   renderViewerSnapshot();
   await ensureViewerProfilePersistence();
-  await loadSnapshot();
+  const loadedSnapshot = await loadSnapshot();
   ensureChannelModel();
   ensureChannelWorkspace(state.activeChannelId);
   ensureChannelBriefState(state.activeChannelId);
   applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
   applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
-  state.pageView = "home";
-  state.channelView = "dashboard";
   applyPipelineDefaults();
   bindEvents();
-  updateBoardsAndBrief();
+
+  if (loadedSnapshot) {
+    const savedNav = getNavigationStateFromCurrentState();
+    applyNavigationState(savedNav, { persist: false, syncHistory: false });
+    syncNavigationHistory("replace");
+    return;
+  }
+
+  const locationNav = getNavigationStateFromLocation();
+  applyNavigationState(locationNav, { persist: false, syncHistory: false });
+  syncNavigationHistory("replace");
 }
 
 void init();
