@@ -176,6 +176,9 @@ const refs = {
   comparableBoard: document.getElementById("comparableBoard"),
   comparableUrl: document.getElementById("comparableUrl"),
   addComparableBtn: document.getElementById("addComparableBtn"),
+  addInspirationUploadBtn: document.getElementById("addInspirationUploadBtn"),
+  inspirationFileInput: document.getElementById("inspirationFileInput"),
+  inspirationPasteZone: document.getElementById("inspirationPasteZone"),
   titleTemplate: document.getElementById("titleCardTemplate"),
   thumbTemplate: document.getElementById("thumbCardTemplate"),
   comparableTemplate: document.getElementById("comparableCardTemplate"),
@@ -746,16 +749,24 @@ function normalizeComparableCollection(items) {
 
   return items
     .map((item) => {
-      const videoId = toCleanText(item?.videoId);
-      if (!videoId) {
+      const sourceUrl = toCleanText(item?.sourceUrl || item?.url);
+      const parsedVideoId = parseYouTubeVideoId(sourceUrl);
+      const videoId = toCleanText(item?.videoId) || parsedVideoId || "";
+      const imageSrc = toCleanText(item?.imageSrc) || (videoId ? getThumbUrl(videoId, "hq") : "");
+      if (!imageSrc) {
         return null;
       }
 
       return {
-        videoId,
-        url: toCleanText(item?.url) || normalizeVideoUrl(videoId),
+        id: toCleanText(item?.id) || createRecordId("insp"),
+        imageSrc,
+        sourceUrl: sourceUrl || (videoId ? normalizeVideoUrl(videoId) : ""),
         title: toCleanText(item?.title),
         author: toCleanText(item?.author),
+        notes: toCleanText(item?.notes),
+        videoId,
+        createdAt: normalizeTimestamp(item?.createdAt),
+        updatedAt: normalizeTimestamp(item?.updatedAt || item?.createdAt),
       };
     })
     .filter(Boolean);
@@ -2475,6 +2486,16 @@ function setBriefEditorEnabled(enabled) {
   if (refs.addComparableBtn) {
     refs.addComparableBtn.disabled = !enabled;
   }
+  if (refs.addInspirationUploadBtn) {
+    refs.addInspirationUploadBtn.disabled = !enabled;
+  }
+  if (refs.inspirationFileInput) {
+    refs.inspirationFileInput.disabled = !enabled;
+  }
+  if (refs.inspirationPasteZone) {
+    refs.inspirationPasteZone.classList.toggle("is-disabled", !enabled);
+    refs.inspirationPasteZone.tabIndex = enabled ? 0 : -1;
+  }
   if (refs.briefStatusSelect) {
     refs.briefStatusSelect.disabled = !enabled;
   }
@@ -3451,17 +3472,34 @@ function renderThumbBoard() {
   });
 }
 
+function getInspirationSourceMeta(item = {}) {
+  const sourceUrl = toCleanText(item.sourceUrl);
+  if (!sourceUrl) {
+    return item.author ? `Channel: ${item.author}` : "Uploaded or pasted image.";
+  }
+
+  try {
+    const host = new URL(sourceUrl).hostname.replace(/^www\./, "");
+    if (item.author) {
+      return `${host} · ${item.author}`;
+    }
+    return host;
+  } catch {
+    return item.author ? item.author : sourceUrl;
+  }
+}
+
 function renderComparableBoard() {
   refs.comparableBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
-    refs.comparableBoard.innerHTML = '<p class="hint">Create or select a brief to add comparable videos.</p>';
+    refs.comparableBoard.innerHTML = '<p class="hint">Create or select a brief to add thumbnail inspiration.</p>';
     return;
   }
 
   if (!state.comparables.length) {
     refs.comparableBoard.innerHTML =
-      '<p class="hint">No comparables yet. Add a YouTube URL to build your reference cluster.</p>';
+      '<p class="hint">No inspiration assets yet. Add a YouTube URL or paste/upload images.</p>';
     return;
   }
 
@@ -3471,19 +3509,36 @@ function renderComparableBoard() {
     const title = fragment.querySelector(".comparable-title");
     const meta = fragment.querySelector(".comparable-meta");
     const link = fragment.querySelector(".comparable-link");
+    const notesEl = fragment.querySelector('[data-role="comparableNotes"]');
     const removeBtn = fragment.querySelector(".comparable-remove");
 
-    image.src = getThumbUrl(item.videoId, "max");
-    image.onerror = () => {
-      image.onerror = null;
-      image.src = getThumbUrl(item.videoId, "hq");
-    };
+    image.src = item.imageSrc;
+    if (item.videoId) {
+      image.onerror = () => {
+        image.onerror = null;
+        image.src = getThumbUrl(item.videoId, "hq");
+      };
+    }
 
-    title.textContent = item.title || `Comparable: ${item.videoId}`;
-    meta.textContent = item.author
-      ? `Channel: ${item.author}`
-      : "Metadata unavailable. Thumbnail and URL still saved.";
-    link.href = item.url;
+    title.textContent = item.title || (item.videoId ? `YouTube inspiration · ${item.videoId}` : "Image inspiration");
+    meta.textContent = getInspirationSourceMeta(item);
+    if (item.sourceUrl) {
+      link.href = item.sourceUrl;
+      link.hidden = false;
+    } else {
+      link.hidden = true;
+    }
+
+    if (notesEl) {
+      notesEl.textContent = item.notes;
+      notesEl.addEventListener("input", () => {
+        state.comparables[index].notes = toCleanText(notesEl.textContent);
+        state.comparables[index].updatedAt = Date.now();
+      });
+      notesEl.addEventListener("blur", () => {
+        updateBoardsAndBrief();
+      });
+    }
 
     removeBtn.addEventListener("click", () => {
       state.comparables.splice(index, 1);
@@ -3657,12 +3712,20 @@ function renderThumbListHtml(items) {
 
 function renderComparableHtml(items) {
   if (!items.length) {
-    return "<p>No comparables added yet.</p>";
+    return "<p>No thumbnail inspiration assets added yet.</p>";
   }
 
   const cards = items
     .map((item) => {
-      return `<article class=\"comparable\">\n  <img src=\"${escapeHtml(getThumbUrl(item.videoId, "hq"))}\" alt=\"Comparable thumbnail\" />\n  <div>\n    <h3>${escapeHtml(item.title || `Comparable: ${item.videoId}`)}</h3>\n    <p>${escapeHtml(item.author || "Channel metadata unavailable")}</p>\n    <a href=\"${escapeHtml(item.url)}\" target=\"_blank\" rel=\"noreferrer noopener\">Open video</a>\n  </div>\n</article>`;
+      const imageSrc = toCleanText(item.imageSrc) || (item.videoId ? getThumbUrl(item.videoId, "hq") : "");
+      const title = toCleanText(item.title) || (item.videoId ? `YouTube inspiration · ${item.videoId}` : "Image inspiration");
+      const meta = getInspirationSourceMeta(item);
+      const notes = toCleanText(item.notes);
+      const linkHtml = item.sourceUrl
+        ? `<a href=\"${escapeHtml(item.sourceUrl)}\" target=\"_blank\" rel=\"noreferrer noopener\">Open source</a>`
+        : '<span class="muted">No source link</span>';
+
+      return `<article class=\"comparable\">\n  <img src=\"${escapeHtml(imageSrc)}\" alt=\"Thumbnail inspiration\" />\n  <div>\n    <h3>${escapeHtml(title)}</h3>\n    <p>${escapeHtml(meta)}</p>\n    ${linkHtml}\n    <p class=\"muted\">${safeText(notes, "No notes yet.")}</p>\n  </div>\n</article>`;
     })
     .join("");
 
@@ -3744,7 +3807,7 @@ function buildPreviewHtml(values) {
         </ul>
       </section>
       <section>
-        <h4>Comparable Videos</h4>
+        <h4>Thumbnail Inspiration Assets</h4>
         ${renderComparableHtml(state.comparables)}
       </section>
     </article>
@@ -3856,7 +3919,7 @@ function buildExportHtml(values) {
           </ul>
         </article>
         <article class="card">
-          <h2>Comparable Videos</h2>
+          <h2>Thumbnail Inspiration Assets</h2>
           ${renderComparableHtml(state.comparables)}
         </article>
       </section>
@@ -4578,6 +4641,88 @@ function copyBriefHtml() {
     });
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(toCleanText(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function getClipboardImageFiles(event) {
+  const clipboardItems = Array.from(event?.clipboardData?.items || []);
+  return clipboardItems
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+}
+
+function getDroppedImageFiles(event) {
+  return Array.from(event?.dataTransfer?.files || []).filter(
+    (file) => file && file.type && file.type.startsWith("image/"),
+  );
+}
+
+function isTextEditableElement(target) {
+  const element = target instanceof HTMLElement ? target : null;
+  if (!element) {
+    return false;
+  }
+
+  if (element.isContentEditable) {
+    return true;
+  }
+
+  const tag = element.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select";
+}
+
+async function addInspirationFiles(files, options = {}) {
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    const triggerBtn = options.triggerButton || refs.addInspirationUploadBtn;
+    flashButtonText(triggerBtn, "Create Brief First", 1300);
+    return;
+  }
+
+  const imageFiles = Array.from(files || []).filter(
+    (file) => file && file.type && file.type.startsWith("image/"),
+  );
+  if (!imageFiles.length) {
+    return;
+  }
+
+  let addedCount = 0;
+  for (const file of imageFiles) {
+    try {
+      const imageSrc = await readFileAsDataUrl(file);
+      if (!imageSrc) {
+        continue;
+      }
+
+      state.comparables.unshift({
+        id: createRecordId("insp"),
+        imageSrc,
+        sourceUrl: "",
+        title: toCleanText(file.name) || "Uploaded inspiration",
+        author: "",
+        notes: "",
+        videoId: "",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      addedCount += 1;
+    } catch {
+      continue;
+    }
+  }
+
+  if (addedCount) {
+    updateBoardsAndBrief();
+  }
+}
+
 async function addComparable() {
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
@@ -4598,25 +4743,31 @@ async function addComparable() {
     return;
   }
 
-  const url = normalizeVideoUrl(videoId);
+  const sourceUrl = normalizeVideoUrl(videoId);
   const record = {
+    id: createRecordId("insp"),
+    imageSrc: getThumbUrl(videoId, "hq"),
+    sourceUrl,
+    notes: "",
     videoId,
-    url,
-    title: "Loading metadata...",
+    title: "Loading YouTube metadata...",
     author: "",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
 
   state.comparables.unshift(record);
   refs.comparableUrl.value = "";
   updateBoardsAndBrief();
 
-  const meta = await fetchComparableMetadata(url);
+  const meta = await fetchComparableMetadata(sourceUrl);
   if (meta) {
-    record.title = meta.title || record.title;
+    record.title = meta.title || "YouTube inspiration";
     record.author = meta.author || "";
   } else {
-    record.title = `Comparable: ${videoId}`;
+    record.title = `YouTube inspiration · ${videoId}`;
   }
+  record.updatedAt = Date.now();
 
   updateBoardsAndBrief();
 }
@@ -4918,13 +5069,66 @@ function bindEvents() {
   document.getElementById("downloadBriefBtn").addEventListener("click", downloadBriefHtml);
   refs.copyHtmlBtn.addEventListener("click", copyBriefHtml);
 
-  refs.addComparableBtn.addEventListener("click", addComparable);
-  refs.comparableUrl.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
+  if (refs.addComparableBtn) {
+    refs.addComparableBtn.addEventListener("click", addComparable);
+  }
+
+  if (refs.comparableUrl) {
+    refs.comparableUrl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addComparable();
+      }
+    });
+  }
+
+  if (refs.addInspirationUploadBtn && refs.inspirationFileInput) {
+    refs.addInspirationUploadBtn.addEventListener("click", () => {
+      if (!getActiveBriefRecord()) {
+        flashButtonText(refs.addInspirationUploadBtn, "Create Brief First", 1300);
+        return;
+      }
+
+      refs.inspirationFileInput.click();
+    });
+
+    refs.inspirationFileInput.addEventListener("change", async () => {
+      await addInspirationFiles(refs.inspirationFileInput.files, {
+        triggerButton: refs.addInspirationUploadBtn,
+      });
+      refs.inspirationFileInput.value = "";
+    });
+  }
+
+  if (refs.inspirationPasteZone) {
+    refs.inspirationPasteZone.addEventListener("dragover", (event) => {
       event.preventDefault();
-      addComparable();
-    }
-  });
+      refs.inspirationPasteZone.classList.add("is-dragging");
+    });
+
+    refs.inspirationPasteZone.addEventListener("dragleave", () => {
+      refs.inspirationPasteZone.classList.remove("is-dragging");
+    });
+
+    refs.inspirationPasteZone.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      refs.inspirationPasteZone.classList.remove("is-dragging");
+      const droppedFiles = getDroppedImageFiles(event);
+      if (droppedFiles.length) {
+        await addInspirationFiles(droppedFiles, { triggerButton: refs.addInspirationUploadBtn });
+      }
+    });
+
+    refs.inspirationPasteZone.addEventListener("paste", async (event) => {
+      const pastedFiles = getClipboardImageFiles(event);
+      if (!pastedFiles.length) {
+        return;
+      }
+
+      event.preventDefault();
+      await addInspirationFiles(pastedFiles, { triggerButton: refs.addInspirationUploadBtn });
+    });
+  }
 
   fieldIds.forEach((id) => {
     const el = document.getElementById(id);
@@ -4961,6 +5165,28 @@ function bindEvents() {
     const fromHistory = event.state && typeof event.state === "object" ? event.state.nav : null;
     const nextNav = fromHistory || getNavigationStateFromLocation();
     applyNavigationState(nextNav, { persist: false, syncHistory: true, historyMode: "replace" });
+  });
+
+  document.addEventListener("paste", async (event) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    if (state.pageView !== "brief-detail" || !getActiveBriefRecord()) {
+      return;
+    }
+
+    if (isTextEditableElement(event.target)) {
+      return;
+    }
+
+    const pastedFiles = getClipboardImageFiles(event);
+    if (!pastedFiles.length) {
+      return;
+    }
+
+    event.preventDefault();
+    await addInspirationFiles(pastedFiles, { triggerButton: refs.addInspirationUploadBtn });
   });
 }
 

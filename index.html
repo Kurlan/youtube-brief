@@ -370,27 +370,43 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>9. Thumbnail Variations</h2>
+          <h2>9. Thumbnail Studio</h2>
           <button id="generateThumbsBtn" class="btn">Generate Thumbnails</button>
         </div>
-        <p class="hint">Each concept pushes emotion + visual contrast + minimal text overlay.</p>
-        <div id="thumbnailBoard" class="idea-board"></div>
+        <p class="hint">
+          Combine thumbnail inspiration assets with generated thumbnail variations in one workspace.
+        </p>
+        <div class="thumbnail-studio-grid">
+          <article class="thumbnail-studio-column">
+            <h3>Inspiration Assets</h3>
+            <p class="hint">
+              Add a YouTube URL, upload image files, drag/drop files, or paste an image directly.
+            </p>
+            <div class="compare-entry">
+              <input id="comparableUrl" placeholder="https://www.youtube.com/watch?v=..." />
+              <button id="addComparableBtn" class="btn" type="button">Add YouTube Inspiration</button>
+            </div>
+            <div class="inspiration-tools-row">
+              <button id="addInspirationUploadBtn" class="btn btn-muted" type="button">Upload Images</button>
+              <input id="inspirationFileInput" type="file" accept="image/*" multiple hidden />
+            </div>
+            <div id="inspirationPasteZone" class="inspiration-paste-zone" tabindex="0">
+              Paste an image here or drag/drop image files.
+            </div>
+            <div id="comparableBoard" class="comparable-board"></div>
+          </article>
+          <article class="thumbnail-studio-column">
+            <h3>Generated Variations</h3>
+            <p class="hint">Each concept pushes emotion + visual contrast + minimal text overlay.</p>
+            <div id="thumbnailBoard" class="idea-board"></div>
+          </article>
+        </div>
       </section>
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>10. Comparable Videos</h2>
+          <h2>10. Packaging Scorecard</h2>
         </div>
-        <p class="hint">Paste a YouTube URL and attach thumbnail + metadata to your brief.</p>
-        <div class="compare-entry">
-          <input id="comparableUrl" placeholder="https://www.youtube.com/watch?v=..." />
-          <button id="addComparableBtn" class="btn">Add Comparable</button>
-        </div>
-        <div id="comparableBoard" class="comparable-board"></div>
-      </section>
-
-      <section class="panel" data-page="brief-detail">
-        <h2>11. Packaging Scorecard</h2>
         <div class="score-grid">
           <article>
             <h3>Top Title</h3>
@@ -412,7 +428,7 @@
       </section>
 
       <section class="panel" data-page="brief-detail">
-        <h2>12. Accelerator Playbook Signals</h2>
+        <h2>11. Accelerator Playbook Signals</h2>
         <p class="hint">
           Integrated from Weeks 1-3: idea funnel, CCN fit, packaging stages, and traffic-aware strategy.
         </p>
@@ -466,7 +482,7 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>13. Brief Output (HTML)</h2>
+          <h2>12. Brief Output (HTML)</h2>
           <div class="row">
             <button id="copyHtmlBtn" class="btn btn-muted">Copy HTML</button>
             <button id="downloadBriefBtn" class="btn btn-muted">Download .html</button>
@@ -534,12 +550,19 @@
 
     <template id="comparableCardTemplate">
       <article class="comparable-card">
-        <img class="comparable-thumb" alt="Comparable video thumbnail" />
+        <img class="comparable-thumb" alt="Thumbnail inspiration" />
         <div class="comparable-content">
           <h3 class="comparable-title"></h3>
           <p class="comparable-meta"></p>
-          <a class="comparable-link" target="_blank" rel="noreferrer noopener">Open video</a>
-          <button class="btn btn-muted comparable-remove" type="button">Remove</button>
+          <a class="comparable-link" target="_blank" rel="noreferrer noopener">Open Source</a>
+          <p class="comparable-notes-label">Notes</p>
+          <p
+            class="comparable-notes"
+            data-role="comparableNotes"
+            contenteditable="true"
+            data-placeholder="Click to add notes"
+          ></p>
+          <button class="btn btn-muted comparable-remove" type="button">Delete</button>
         </div>
       </article>
     </template>

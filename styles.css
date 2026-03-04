@@ -971,6 +971,54 @@ select:focus {
   margin-bottom: 0.8rem;
 }
 
+.thumbnail-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+
+.thumbnail-studio-column {
+  border: 1px solid rgba(8, 33, 52, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.56);
+  padding: 0.8rem;
+}
+
+.thumbnail-studio-column h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.96rem;
+}
+
+.thumbnail-studio-column .hint {
+  margin-bottom: 0.6rem;
+}
+
+.inspiration-tools-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.6rem;
+}
+
+.inspiration-paste-zone {
+  margin-bottom: 0.8rem;
+  border: 1px dashed rgba(8, 33, 52, 0.28);
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.inspiration-paste-zone.is-dragging {
+  border-color: rgba(13, 106, 113, 0.62);
+  background: rgba(13, 106, 113, 0.1);
+}
+
+.inspiration-paste-zone.is-disabled {
+  opacity: 0.56;
+  pointer-events: none;
+}
+
 .title-quick-entry {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -980,8 +1028,8 @@ select:focus {
 
 .comparable-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.75rem;
 }
 
 .comparable-card {
@@ -990,14 +1038,14 @@ select:focus {
   border-radius: 14px;
   overflow: hidden;
   display: grid;
-  min-height: 430px;
+  min-height: 360px;
 }
 
 .comparable-thumb {
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
-  min-height: 300px;
+  min-height: 220px;
   background: linear-gradient(120deg, rgba(8, 33, 52, 0.18), rgba(13, 106, 113, 0.2));
 }
 
@@ -1016,14 +1064,44 @@ select:focus {
 
 .comparable-meta {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   color: var(--ink-soft);
 }
 
 .comparable-link {
   color: var(--sea);
   font-weight: 700;
-  font-size: 0.92rem;
+  font-size: 0.82rem;
+}
+
+.comparable-notes-label {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.comparable-notes {
+  margin: 0;
+  border: 1px solid rgba(8, 33, 52, 0.14);
+  border-radius: 10px;
+  min-height: 58px;
+  padding: 0.48rem 0.56rem;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.78);
+  white-space: pre-wrap;
+}
+
+.comparable-notes:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(63, 91, 109, 0.68);
+}
+
+.comparable-notes:focus {
+  outline: 2px solid rgba(255, 92, 53, 0.28);
+  border-color: rgba(255, 92, 53, 0.72);
 }
 
 .comparable-remove {
@@ -1312,6 +1390,10 @@ select:focus {
   }
 
   .comparable-board {
+    grid-template-columns: 1fr;
+  }
+
+  .thumbnail-studio-grid {
     grid-template-columns: 1fr;
   }
 
