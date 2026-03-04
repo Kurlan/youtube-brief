@@ -1267,27 +1267,88 @@ function formatBriefSourceType(value) {
 }
 
 function getChannelAssetUrl(channel, kind) {
+  const urls = getChannelAssetUrls(channel, kind);
+  return urls[0] || "";
+}
+
+function getChannelAssetUrls(channel, kind) {
   if (!channel) {
-    return "";
+    return [];
   }
+
+  const urls = [];
 
   if (kind === "avatar") {
     const avatarUrl = toCleanText(channel.avatarUrl);
     if (avatarUrl) {
-      return avatarUrl;
+      urls.push(avatarUrl);
     }
   }
 
   if (kind === "banner") {
     const bannerUrl = toCleanText(channel.bannerUrl);
     if (bannerUrl) {
-      return bannerUrl;
+      urls.push(bannerUrl);
     }
   }
 
   const channelAssets = normalizeChannelAssets(channel.channelAssets);
-  const fallback = channelAssets.find((asset) => asset.kind === kind && asset.url);
-  return fallback ? fallback.url : "";
+  channelAssets.forEach((asset) => {
+    if (asset.kind === kind && asset.url) {
+      urls.push(asset.url);
+    }
+  });
+
+  const seen = new Set();
+  return urls.filter((url) => {
+    const value = toCleanText(url);
+    if (!value || seen.has(value)) {
+      return false;
+    }
+    seen.add(value);
+    return true;
+  });
+}
+
+function clearChannelAssetImage(wrapperEl, imageEl) {
+  if (!wrapperEl || !imageEl) {
+    return;
+  }
+  imageEl.onerror = null;
+  imageEl.removeAttribute("src");
+  imageEl.alt = "";
+  wrapperEl.classList.remove("has-image");
+}
+
+function applyChannelAssetImage(wrapperEl, imageEl, urls, altText = "") {
+  if (!wrapperEl || !imageEl) {
+    return;
+  }
+
+  const candidates = (Array.isArray(urls) ? urls : [])
+    .map((url) => toCleanText(url))
+    .filter(Boolean);
+
+  if (!candidates.length) {
+    clearChannelAssetImage(wrapperEl, imageEl);
+    return;
+  }
+
+  let candidateIndex = 0;
+
+  const tryNext = () => {
+    if (candidateIndex >= candidates.length) {
+      clearChannelAssetImage(wrapperEl, imageEl);
+      return;
+    }
+    imageEl.src = candidates[candidateIndex];
+    candidateIndex += 1;
+  };
+
+  wrapperEl.classList.add("has-image");
+  imageEl.alt = toCleanText(altText);
+  imageEl.onerror = tryNext;
+  tryNext();
 }
 
 function getChannelCardInitials(channel) {
@@ -1318,18 +1379,13 @@ function renderChannelPageBanner() {
 
   const activeChannel = getActiveChannelRecord();
   const hasActiveChannel = Boolean(activeChannel && canCurrentAccountAccessChannel(activeChannel.id));
-  const bannerUrl = hasActiveChannel ? getChannelAssetUrl(activeChannel, "banner") : "";
-
-  if (bannerUrl) {
-    refs.channelPageBannerImage.src = bannerUrl;
-    refs.channelPageBannerImage.alt = `${activeChannel.name} banner`;
-    refs.channelPageBanner.classList.add("has-image");
-    return;
-  }
-
-  refs.channelPageBannerImage.removeAttribute("src");
-  refs.channelPageBannerImage.alt = "";
-  refs.channelPageBanner.classList.remove("has-image");
+  const bannerUrls = hasActiveChannel ? getChannelAssetUrls(activeChannel, "banner") : [];
+  applyChannelAssetImage(
+    refs.channelPageBanner,
+    refs.channelPageBannerImage,
+    bannerUrls,
+    hasActiveChannel ? `${activeChannel.name} banner` : "",
+  );
 }
 
 function renderChannelHomeBoard() {
@@ -1361,8 +1417,8 @@ function renderChannelHomeBoard() {
     const avatarImgEl = fragment.querySelector('[data-role="channelAvatar"]');
     const avatarFallbackEl = fragment.querySelector('[data-role="channelAvatarFallback"]');
     const statsEl = fragment.querySelector('[data-role="channelStats"]');
-    const avatarUrl = getChannelAssetUrl(channel, "avatar");
-    const bannerUrl = getChannelAssetUrl(channel, "banner");
+    const avatarUrls = getChannelAssetUrls(channel, "avatar");
+    const bannerUrls = getChannelAssetUrls(channel, "banner");
 
     nameEl.textContent = channel.name;
     handleEl.textContent = channel.handle || channel.platform;
@@ -1371,25 +1427,8 @@ function renderChannelHomeBoard() {
       statsEl.textContent = formatChannelStatsLine(channel);
     }
 
-    if (avatarUrl && avatarImgEl && avatarShellEl) {
-      avatarImgEl.src = avatarUrl;
-      avatarImgEl.alt = `${channel.name} avatar`;
-      avatarShellEl.classList.add("has-image");
-    } else if (avatarImgEl && avatarShellEl) {
-      avatarImgEl.removeAttribute("src");
-      avatarImgEl.alt = "";
-      avatarShellEl.classList.remove("has-image");
-    }
-
-    if (bannerUrl && bannerWrapEl && bannerImgEl) {
-      bannerImgEl.src = bannerUrl;
-      bannerImgEl.alt = `${channel.name} banner`;
-      bannerWrapEl.classList.add("has-image");
-    } else if (bannerWrapEl && bannerImgEl) {
-      bannerImgEl.removeAttribute("src");
-      bannerImgEl.alt = "";
-      bannerWrapEl.classList.remove("has-image");
-    }
+    applyChannelAssetImage(avatarShellEl, avatarImgEl, avatarUrls, `${channel.name} avatar`);
+    applyChannelAssetImage(bannerWrapEl, bannerImgEl, bannerUrls, `${channel.name} banner`);
 
     openBtn.disabled = false;
     openBtn.title = `Open ${channel.name}`;
