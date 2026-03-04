@@ -133,6 +133,7 @@ const refs = {
   channelCardTemplate: document.getElementById("channelCardTemplate"),
   briefListBoard: document.getElementById("briefListBoard"),
   briefListItemTemplate: document.getElementById("briefListItemTemplate"),
+  briefDetailPanels: document.querySelectorAll('[data-page="briefs"][data-brief-detail="true"]'),
   createBriefBtn: document.getElementById("createBriefBtn"),
   jumpToIdeationBtn: document.getElementById("jumpToIdeationBtn"),
   jumpToBriefsBtn: document.getElementById("jumpToBriefsBtn"),
@@ -861,7 +862,7 @@ function normalizeChannelBriefState(stateValue = {}, channelId = "") {
   const activeBriefId =
     requestedActiveBriefId && parsedBriefs.some((brief) => brief.id === requestedActiveBriefId)
       ? requestedActiveBriefId
-      : parsedBriefs[0]?.id || "";
+      : "";
 
   return {
     activeBriefId,
@@ -2200,6 +2201,13 @@ function renderBriefListBoard() {
     });
 
     refs.briefListBoard.appendChild(fragment);
+  });
+}
+
+function setBriefDetailPanelsVisible(visible) {
+  const isVisible = Boolean(visible);
+  refs.briefDetailPanels.forEach((panel) => {
+    panel.hidden = !isVisible;
   });
 }
 
@@ -4226,14 +4234,20 @@ function updateBoardsAndBrief(options = {}) {
 
   if (state.pageView === "briefs") {
     renderBriefListBoard();
-    renderBriefSourceSnapshot();
-    setBriefEditorEnabled(Boolean(getActiveBriefRecord()));
-    renderTitleBoard();
-    renderThumbBoard();
-    renderComparableBoard();
-    updateScoreboard(values);
-    updateBriefOutput(values);
+    const hasActiveBrief = Boolean(getActiveBriefRecord());
+    setBriefDetailPanelsVisible(hasActiveBrief);
+    setBriefEditorEnabled(hasActiveBrief);
+
+    if (hasActiveBrief) {
+      renderBriefSourceSnapshot();
+      renderTitleBoard();
+      renderThumbBoard();
+      renderComparableBoard();
+      updateScoreboard(values);
+      updateBriefOutput(values);
+    }
   } else {
+    setBriefDetailPanelsVisible(false);
     setBriefEditorEnabled(false);
   }
 
