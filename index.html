@@ -189,19 +189,31 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>Brief Detail · Source Snapshot</h2>
-          <button id="backToBriefListBtn" class="btn btn-muted" type="button">Back to Briefs List</button>
+          <h2>Brief Detail</h2>
+          <div class="panel-header-tools">
+            <label class="brief-status-inline" for="briefStatus">
+              Status
+              <select id="briefStatus">
+                <option value="draft">Draft</option>
+                <option value="review">Review</option>
+                <option value="in-production">In production</option>
+              </select>
+            </label>
+            <button
+              id="toggleBriefDetailBtn"
+              class="btn btn-muted"
+              type="button"
+              aria-expanded="false"
+              aria-controls="briefDetailContent"
+            >
+              Expand
+            </button>
+            <button id="backToBriefListBtn" class="btn btn-muted" type="button">Back to Briefs List</button>
+          </div>
         </div>
-        <p class="hint">Reference context captured when the brief was created.</p>
-        <div class="grid two-up brief-source-grid">
-          <article class="brief-source-card">
-            <h3>Status</h3>
-            <select id="briefStatus">
-              <option value="draft">Draft</option>
-              <option value="review">Review</option>
-              <option value="in-production">In production</option>
-            </select>
-          </article>
+        <div id="briefDetailContent" hidden>
+          <p class="hint">Reference context captured when the brief was created.</p>
+          <div class="grid two-up brief-source-grid">
           <article class="brief-source-card">
             <h3>Source</h3>
             <p id="briefSourceType">Manual brief</p>
@@ -226,21 +238,34 @@
             <h3>Phase 3 Insights Snapshot</h3>
             <p id="briefSourceInsights">No phase 3 snapshot data.</p>
           </article>
+          </div>
         </div>
       </section>
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
           <h2>Viewer Strategy Snapshot</h2>
-          <a class="btn btn-muted link-btn" href="viewer-strategy.html" target="_blank" rel="noreferrer">
-            Open Strategy Page
-          </a>
+          <div class="panel-header-tools">
+            <button
+              id="toggleViewerSnapshotBtn"
+              class="btn btn-muted"
+              type="button"
+              aria-expanded="false"
+              aria-controls="viewerSnapshotContent"
+            >
+              Expand
+            </button>
+            <a class="btn btn-muted link-btn" href="viewer-strategy.html" target="_blank" rel="noreferrer">
+              Open Strategy Page
+            </a>
+          </div>
         </div>
-        <p class="hint">
-          Static profile for <strong>@ALifeEngineered</strong> (from your worksheet + deep viewer signals). This
-          strategy is referenced by every brief.
-        </p>
-        <div class="snapshot-grid">
+        <div id="viewerSnapshotContent" hidden>
+          <p class="hint">
+            Static profile for <strong>@ALifeEngineered</strong> (from your worksheet + deep viewer signals). This
+            strategy is referenced by every brief.
+          </p>
+          <div class="snapshot-grid">
           <article>
             <h3>Niche</h3>
             <p id="snapNiche"></p>
@@ -293,6 +318,7 @@
             <h3>What They Want</h3>
             <p id="snapUnlock"></p>
           </article>
+          </div>
         </div>
       </section>
 
@@ -359,9 +385,8 @@
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
           <h2>Title Variations</h2>
-          <button id="generateTitlesBtn" class="btn">Generate Titles</button>
         </div>
-        <p class="hint">The generator combines curiosity, clarity, and novelty patterns.</p>
+        <p class="hint">Add and score potential titles. Highest-scoring options rise to the top.</p>
         <div class="title-quick-entry">
           <input id="quickTitleInput" placeholder="Add a potential title and hit Enter" />
           <button id="addQuickTitleBtn" class="btn btn-muted" type="button">Add Title</button>

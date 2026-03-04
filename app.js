@@ -139,6 +139,10 @@ const refs = {
   briefListItemTemplate: document.getElementById("briefListItemTemplate"),
   backToBriefListBtn: document.getElementById("backToBriefListBtn"),
   briefStatusSelect: document.getElementById("briefStatus"),
+  toggleBriefDetailBtn: document.getElementById("toggleBriefDetailBtn"),
+  briefDetailContent: document.getElementById("briefDetailContent"),
+  toggleViewerSnapshotBtn: document.getElementById("toggleViewerSnapshotBtn"),
+  viewerSnapshotContent: document.getElementById("viewerSnapshotContent"),
   createBriefBtn: document.getElementById("createBriefBtn"),
   jumpToIdeationBtn: document.getElementById("jumpToIdeationBtn"),
   jumpToBriefsBtn: document.getElementById("jumpToBriefsBtn"),
@@ -242,6 +246,8 @@ const state = {
   thumbnails: [],
   comparables: [],
   latestBriefHtml: "",
+  briefDetailExpanded: false,
+  viewerSnapshotExpanded: false,
 };
 
 let localDbPromise = null;
@@ -249,6 +255,8 @@ let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
 let queuedSnapshotPayload = null;
 let persistQueue = Promise.resolve();
+let animateTitleReorderOnNextRender = false;
+let animateThumbReorderOnNextRender = false;
 
 const BRIEF_EXPORT_STYLES = `
   :root {
@@ -748,6 +756,7 @@ function createTitleRecord(seed = {}) {
   }
 
   return {
+    id: toCleanText(seed?.id) || createRecordId("title"),
     text,
     scores,
     isStrong: Boolean(seed?.isStrong),
@@ -786,6 +795,7 @@ function normalizeThumbnailCollection(items) {
       }
 
       return {
+        id: toCleanText(item?.id) || createRecordId("thumb"),
         title,
         meta: toCleanText(item?.meta),
         scores,
@@ -1751,10 +1761,40 @@ function renderPageView() {
   }
 }
 
+function renderBriefDetailCollapseState() {
+  const expanded = Boolean(state.briefDetailExpanded);
+  if (refs.briefDetailContent) {
+    refs.briefDetailContent.hidden = !expanded;
+  }
+
+  if (refs.toggleBriefDetailBtn) {
+    refs.toggleBriefDetailBtn.textContent = expanded ? "Collapse" : "Expand";
+    refs.toggleBriefDetailBtn.setAttribute("aria-expanded", String(expanded));
+  }
+}
+
+function renderViewerSnapshotCollapseState() {
+  const expanded = Boolean(state.viewerSnapshotExpanded);
+  if (refs.viewerSnapshotContent) {
+    refs.viewerSnapshotContent.hidden = !expanded;
+  }
+
+  if (refs.toggleViewerSnapshotBtn) {
+    refs.toggleViewerSnapshotBtn.textContent = expanded ? "Collapse" : "Expand";
+    refs.toggleViewerSnapshotBtn.setAttribute("aria-expanded", String(expanded));
+  }
+}
+
 function setPageView(pageView, shouldPersist = true, options = {}) {
   const syncHistory = options.syncHistory !== false;
   const historyMode = options.historyMode === "replace" ? "replace" : "push";
+  const previousPageView = normalizePageView(state.pageView);
   state.pageView = normalizePageView(pageView);
+
+  if (state.pageView === "brief-detail" && previousPageView !== "brief-detail") {
+    state.briefDetailExpanded = false;
+    state.viewerSnapshotExpanded = false;
+  }
 
   if (state.pageView === "channel" || state.pageView === "briefs" || state.pageView === "brief-detail") {
     const accessibleChannels = getAccessibleChannels();
@@ -3276,6 +3316,53 @@ function sortActiveBriefVariationsByScore() {
   state.thumbnails = sortThumbnailVariationsByScore(state.thumbnails);
 }
 
+function captureVariationPositions(container) {
+  if (!container) {
+    return new Map();
+  }
+
+  const positions = new Map();
+  container.querySelectorAll(".idea-card[data-variation-id]").forEach((card) => {
+    positions.set(card.dataset.variationId, card.getBoundingClientRect());
+  });
+  return positions;
+}
+
+function animateVariationReorder(container, previousPositions) {
+  if (!container || !previousPositions || !previousPositions.size) {
+    return;
+  }
+
+  const cards = container.querySelectorAll(".idea-card[data-variation-id]");
+  cards.forEach((card) => {
+    const id = card.dataset.variationId;
+    const previousRect = previousPositions.get(id);
+    if (!previousRect) {
+      return;
+    }
+
+    const nextRect = card.getBoundingClientRect();
+    const deltaX = previousRect.left - nextRect.left;
+    const deltaY = previousRect.top - nextRect.top;
+    if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
+      return;
+    }
+
+    card.classList.add("is-reordering");
+    card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    requestAnimationFrame(() => {
+      card.style.transform = "translate(0, 0)";
+    });
+
+    const cleanup = () => {
+      card.classList.remove("is-reordering");
+      card.style.transform = "";
+      card.removeEventListener("transitionend", cleanup);
+    };
+    card.addEventListener("transitionend", cleanup);
+  });
+}
+
 function getTopScored(items) {
   if (!items.length) {
     return null;
@@ -3357,6 +3444,7 @@ function generateThumbnails(values) {
   ];
 
   return concepts.map((item) => ({
+    id: createRecordId("thumb"),
     ...item,
     scores: defaultThumbScores(),
   }));
@@ -3442,23 +3530,27 @@ function renderTitleBoard() {
     return;
   }
 
+  const shouldAnimate = animateTitleReorderOnNextRender;
+  const previousPositions = shouldAnimate ? captureVariationPositions(refs.titleBoard) : null;
   refs.titleBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
+    animateTitleReorderOnNextRender = false;
     refs.titleBoard.innerHTML = '<p class="hint">Create or select a brief to edit title variations.</p>';
     return;
   }
 
   if (!state.titles.length) {
-    refs.titleBoard.innerHTML = '<p class="hint">No title ideas yet. Add one above or click "Generate Titles".</p>';
+    animateTitleReorderOnNextRender = false;
+    refs.titleBoard.innerHTML = '<p class="hint">No title ideas yet. Add one above.</p>';
     return;
   }
 
   const projectNameInput = document.getElementById("projectName");
   const currentVideoTitle = toCleanText(projectNameInput?.value);
 
-  const sortedTitles = sortTitleVariationsByScore(state.titles);
-  sortedTitles.forEach((item) => {
+  state.titles.forEach((item) => {
+    const itemId = toCleanText(item.id);
     const fragment = refs.titleTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".idea-card");
     const titleEl = fragment.querySelector(".idea-title");
@@ -3466,6 +3558,8 @@ function renderTitleBoard() {
     const toggleStrongBtn = fragment.querySelector('button[data-action="toggleStrong"]');
     const useTitleBtn = fragment.querySelector('button[data-action="useTitle"]');
     const removeTitleBtn = fragment.querySelector('button[data-action="removeTitle"]');
+
+    card.dataset.variationId = itemId;
     titleEl.textContent = item.text;
     titleEl.classList.toggle("is-strong", Boolean(item.isStrong));
     card.classList.toggle("is-strong", Boolean(item.isStrong));
@@ -3473,7 +3567,7 @@ function renderTitleBoard() {
     if (toggleStrongBtn) {
       toggleStrongBtn.textContent = item.isStrong ? "Unbold" : "Mark Strong";
       toggleStrongBtn.addEventListener("click", () => {
-        const sourceIndex = state.titles.findIndex((entry) => entry === item);
+        const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
         if (sourceIndex < 0) {
           return;
         }
@@ -3499,7 +3593,7 @@ function renderTitleBoard() {
 
     if (removeTitleBtn) {
       removeTitleBtn.addEventListener("click", () => {
-        const sourceIndex = state.titles.findIndex((entry) => entry === item);
+        const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
         if (sourceIndex < 0) {
           return;
         }
@@ -3515,13 +3609,24 @@ function renderTitleBoard() {
       input.value = item.scores[key];
 
       input.addEventListener("input", () => {
-        const sourceIndex = state.titles.findIndex((entry) => entry === item);
+        const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
+        if (sourceIndex < 0) {
+          return;
+        }
+
+        state.titles[sourceIndex].scores[key] = Number(input.value);
+        scorePill.textContent = `Average Score: ${averageScore(state.titles[sourceIndex].scores).toFixed(1)} / 10`;
+      });
+
+      input.addEventListener("change", () => {
+        const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
         if (sourceIndex < 0) {
           return;
         }
 
         state.titles[sourceIndex].scores[key] = Number(input.value);
         sortActiveBriefVariationsByScore();
+        animateTitleReorderOnNextRender = true;
         updateBoardsAndBrief();
       });
     });
@@ -3529,6 +3634,11 @@ function renderTitleBoard() {
     scorePill.textContent = `Average Score: ${averageScore(item.scores).toFixed(1)} / 10`;
     refs.titleBoard.appendChild(fragment);
   });
+
+  if (shouldAnimate) {
+    animateTitleReorderOnNextRender = false;
+    animateVariationReorder(refs.titleBoard, previousPositions);
+  }
 }
 
 function renderThumbBoard() {
@@ -3536,25 +3646,31 @@ function renderThumbBoard() {
     return;
   }
 
+  const shouldAnimate = animateThumbReorderOnNextRender;
+  const previousPositions = shouldAnimate ? captureVariationPositions(refs.thumbnailBoard) : null;
   refs.thumbnailBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
+    animateThumbReorderOnNextRender = false;
     refs.thumbnailBoard.innerHTML = '<p class="hint">Create or select a brief to edit thumbnail variations.</p>';
     return;
   }
 
   if (!state.thumbnails.length) {
+    animateThumbReorderOnNextRender = false;
     refs.thumbnailBoard.innerHTML = '<p class="hint">No thumbnail concepts yet.</p>';
     return;
   }
 
-  const sortedThumbs = sortThumbnailVariationsByScore(state.thumbnails);
-  sortedThumbs.forEach((item) => {
+  state.thumbnails.forEach((item) => {
+    const itemId = toCleanText(item.id);
     const fragment = refs.thumbTemplate.content.cloneNode(true);
+    const card = fragment.querySelector(".idea-card");
     const titleEl = fragment.querySelector(".idea-title");
     const metaEl = fragment.querySelector(".idea-meta");
     const scorePill = fragment.querySelector(".score-pill");
 
+    card.dataset.variationId = itemId;
     titleEl.textContent = item.title;
     metaEl.textContent = item.meta;
 
@@ -3564,13 +3680,24 @@ function renderThumbBoard() {
       input.value = item.scores[key];
 
       input.addEventListener("input", () => {
-        const sourceIndex = state.thumbnails.findIndex((entry) => entry === item);
+        const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+        if (sourceIndex < 0) {
+          return;
+        }
+
+        state.thumbnails[sourceIndex].scores[key] = Number(input.value);
+        scorePill.textContent = `Average Score: ${averageScore(state.thumbnails[sourceIndex].scores).toFixed(1)} / 10`;
+      });
+
+      input.addEventListener("change", () => {
+        const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
         if (sourceIndex < 0) {
           return;
         }
 
         state.thumbnails[sourceIndex].scores[key] = Number(input.value);
         sortActiveBriefVariationsByScore();
+        animateThumbReorderOnNextRender = true;
         updateBoardsAndBrief();
       });
     });
@@ -3578,6 +3705,11 @@ function renderThumbBoard() {
     scorePill.textContent = `Average Score: ${averageScore(item.scores).toFixed(1)} / 10`;
     refs.thumbnailBoard.appendChild(fragment);
   });
+
+  if (shouldAnimate) {
+    animateThumbReorderOnNextRender = false;
+    animateVariationReorder(refs.thumbnailBoard, previousPositions);
+  }
 }
 
 function getInspirationSourceMeta(item = {}) {
@@ -4682,6 +4814,10 @@ function resetAll() {
     [defaultChannel.id]: normalizeChannelBriefState(createEmptyChannelBriefState(), defaultChannel.id),
   };
   state.activeBriefId = "";
+  state.briefDetailExpanded = false;
+  state.viewerSnapshotExpanded = false;
+  animateTitleReorderOnNextRender = false;
+  animateThumbReorderOnNextRender = false;
   ensureChannelModel();
   applyActiveChannelWorkspace(state.channelWorkspaces[defaultChannel.id]);
   applyActiveChannelBriefState(state.briefsByChannel[defaultChannel.id]);
@@ -4720,6 +4856,8 @@ function updateBoardsAndBrief(options = {}) {
       }
     } else {
       setBriefEditorEnabled(true);
+      renderBriefDetailCollapseState();
+      renderViewerSnapshotCollapseState();
       renderBriefSourceSnapshot();
       renderTitleBoard();
       renderThumbBoard();
@@ -5136,6 +5274,20 @@ function bindEvents() {
   if (refs.backToBriefListBtn) {
     refs.backToBriefListBtn.addEventListener("click", () => {
       setPageView("briefs");
+    });
+  }
+
+  if (refs.toggleBriefDetailBtn) {
+    refs.toggleBriefDetailBtn.addEventListener("click", () => {
+      state.briefDetailExpanded = !state.briefDetailExpanded;
+      renderBriefDetailCollapseState();
+    });
+  }
+
+  if (refs.toggleViewerSnapshotBtn) {
+    refs.toggleViewerSnapshotBtn.addEventListener("click", () => {
+      state.viewerSnapshotExpanded = !state.viewerSnapshotExpanded;
+      renderViewerSnapshotCollapseState();
     });
   }
 
