@@ -950,7 +950,10 @@ function getNavigationStateFromCurrentState() {
 }
 
 function getNavigationStateFromLocation() {
-  const params = new URLSearchParams(window.location.search);
+  const hash = toCleanText(window.location.hash).replace(/^#/, "");
+  const hashParams = new URLSearchParams(hash);
+  const hasHashParams = Array.from(hashParams.keys()).length > 0;
+  const params = hasHashParams ? hashParams : new URLSearchParams(window.location.search);
   return createNavigationState({
     pageView: params.get("view"),
     channelId: params.get("channel"),
@@ -988,13 +991,13 @@ function buildNavigationHref(navigationState) {
   }
 
   const query = params.toString();
-  return `${window.location.pathname}${query ? `?${query}` : ""}`;
+  return `${window.location.pathname}${query ? `#${query}` : ""}`;
 }
 
 function syncNavigationHistory(mode = "push") {
   const nav = getNavigationStateFromCurrentState();
   const href = buildNavigationHref(nav);
-  const currentHref = `${window.location.pathname}${window.location.search}`;
+  const currentHref = `${window.location.pathname}${window.location.hash}`;
   const currentNav = history.state && typeof history.state === "object" ? history.state.nav : null;
   const shouldReplace = mode === "replace" || currentHref === href || areNavigationStatesEqual(currentNav, nav);
   const payload = { nav };
