@@ -392,6 +392,23 @@ h1 {
   background: rgba(13, 106, 113, 0.12);
 }
 
+.brief-list-card[data-brief-status="draft"] .brief-list-badge {
+  border-color: rgba(8, 33, 52, 0.18);
+  background: rgba(8, 33, 52, 0.06);
+}
+
+.brief-list-card[data-brief-status="review"] .brief-list-badge {
+  border-color: rgba(199, 132, 1, 0.45);
+  background: rgba(199, 132, 1, 0.14);
+  color: #7d5201;
+}
+
+.brief-list-card[data-brief-status="in-production"] .brief-list-badge {
+  border-color: rgba(13, 106, 113, 0.42);
+  background: rgba(13, 106, 113, 0.16);
+  color: #0b4b50;
+}
+
 .brief-list-main {
   display: grid;
   gap: 0.3rem;
@@ -453,6 +470,10 @@ h1 {
   font-size: 0.82rem;
   line-height: 1.4;
   white-space: pre-wrap;
+}
+
+.brief-source-card select {
+  margin-top: 0.35rem;
 }
 
 .channel-modules {

@@ -17,9 +17,10 @@ const LOCAL_DB_KEY_VIEWER = "viewer";
 const SAVE_DEBOUNCE_MS = 180;
 const DEFAULT_OWNER_NAME = "Steve Huynh";
 const IDEA_STATUSES = ["none", "red"];
+const BRIEF_STATUSES = ["draft", "review", "in-production"];
 const STEP3_LIFECYCLE_STATUSES = ["brainstorming", "in-brief"];
 const STEP1_SORT_OPTIONS = ["newest", "oldest", "title-asc", "title-desc", "name-asc"];
-const PAGE_OPTIONS = ["home", "channel", "briefs"];
+const PAGE_OPTIONS = ["home", "channel", "briefs", "brief-detail"];
 const CHANNEL_VIEW_OPTIONS = ["dashboard", "ideation"];
 const DEFAULT_CHANNEL_ID = "channel-alifeengineered";
 const DEFAULT_ACCOUNT_ID = "acct-steve-huynh";
@@ -133,7 +134,8 @@ const refs = {
   channelCardTemplate: document.getElementById("channelCardTemplate"),
   briefListBoard: document.getElementById("briefListBoard"),
   briefListItemTemplate: document.getElementById("briefListItemTemplate"),
-  briefDetailPanels: document.querySelectorAll('[data-page="briefs"][data-brief-detail="true"]'),
+  backToBriefListBtn: document.getElementById("backToBriefListBtn"),
+  briefStatusSelect: document.getElementById("briefStatus"),
   createBriefBtn: document.getElementById("createBriefBtn"),
   jumpToIdeationBtn: document.getElementById("jumpToIdeationBtn"),
   jumpToBriefsBtn: document.getElementById("jumpToBriefsBtn"),
@@ -792,6 +794,22 @@ function normalizeBriefSourceSnapshot(snapshot = {}) {
   };
 }
 
+function normalizeBriefStatus(value) {
+  const parsed = toCleanText(value).toLowerCase();
+  return BRIEF_STATUSES.includes(parsed) ? parsed : "draft";
+}
+
+function formatBriefStatus(value) {
+  const normalized = normalizeBriefStatus(value);
+  if (normalized === "review") {
+    return "Review";
+  }
+  if (normalized === "in-production") {
+    return "In production";
+  }
+  return "Draft";
+}
+
 function createStep3Snapshot(step3Idea = {}) {
   return normalizeBriefSourceSnapshot({
     videoIdea: step3Idea.videoIdea,
@@ -810,6 +828,7 @@ function createBriefRecord(seed = {}) {
   return {
     id: toCleanText(seed.id) || createRecordId("brief"),
     channelId,
+    status: normalizeBriefStatus(seed.status),
     sourceType: toCleanText(seed.sourceType) === "phase3" ? "phase3" : "manual",
     sourceIdeaId: toCleanText(seed.sourceIdeaId),
     sourceSnapshot: normalizeBriefSourceSnapshot(seed.sourceSnapshot),
@@ -846,7 +865,13 @@ function normalizeBriefRecords(items, channelId = "") {
     }
   });
 
-  return Array.from(deduped.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+  return Array.from(deduped.values()).sort((left, right) => {
+    if (right.createdAt !== left.createdAt) {
+      return right.createdAt - left.createdAt;
+    }
+
+    return right.updatedAt - left.updatedAt;
+  });
 }
 
 function createEmptyChannelBriefState() {
@@ -1501,8 +1526,9 @@ function renderPageView() {
     refs.showChannelPageBtn.disabled = pageView === "home" || !hasActiveChannel;
   }
   if (refs.showBriefsPageBtn) {
-    refs.showBriefsPageBtn.classList.toggle("is-active", pageView === "briefs");
-    refs.showBriefsPageBtn.setAttribute("aria-selected", String(pageView === "briefs"));
+    const isBriefContext = pageView === "briefs" || pageView === "brief-detail";
+    refs.showBriefsPageBtn.classList.toggle("is-active", isBriefContext);
+    refs.showBriefsPageBtn.setAttribute("aria-selected", String(isBriefContext));
     refs.showBriefsPageBtn.disabled = !hasActiveChannel;
   }
   if (refs.activeChannelLabel) {
@@ -1515,7 +1541,7 @@ function renderPageView() {
 function setPageView(pageView, shouldPersist = true) {
   state.pageView = normalizePageView(pageView);
 
-  if (state.pageView === "channel" || state.pageView === "briefs") {
+  if (state.pageView === "channel" || state.pageView === "briefs" || state.pageView === "brief-detail") {
     const accessibleChannels = getAccessibleChannels();
     if (!accessibleChannels.length) {
       state.pageView = "home";
@@ -1997,6 +2023,14 @@ function formatBriefUpdatedAt(value) {
   });
 }
 
+function formatBriefCreatedAt(value) {
+  return new Date(normalizeTimestamp(value)).toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function getBriefDisplayTitle(brief, index = 0) {
   const projectName = toCleanText(brief?.values?.projectName);
   if (projectName) {
@@ -2033,6 +2067,51 @@ function setActiveBrief(briefId, shouldPersist = true) {
     saveSnapshot();
   }
 
+  return true;
+}
+
+function updateActiveBriefStatus(statusValue) {
+  const channelId = toCleanText(state.activeChannelId);
+  if (!channelId) {
+    return false;
+  }
+
+  cacheActiveChannelBriefState();
+  const briefState = normalizeChannelBriefState(state.briefsByChannel[channelId], channelId);
+  const activeBriefId = toCleanText(state.activeBriefId) || briefState.activeBriefId;
+  if (!activeBriefId) {
+    return false;
+  }
+
+  const nextStatus = normalizeBriefStatus(statusValue);
+  let changed = false;
+  const nextBriefs = briefState.briefs.map((brief) => {
+    if (brief.id !== activeBriefId) {
+      return brief;
+    }
+
+    changed = true;
+    return createBriefRecord({
+      ...brief,
+      status: nextStatus,
+      updatedAt: Date.now(),
+    });
+  });
+
+  if (!changed) {
+    return false;
+  }
+
+  const nextState = normalizeChannelBriefState(
+    {
+      activeBriefId,
+      briefs: nextBriefs,
+    },
+    channelId,
+  );
+  state.briefsByChannel[channelId] = nextState;
+  state.activeBriefId = activeBriefId;
+  applyActiveChannelBriefState(nextState);
   return true;
 }
 
@@ -2103,8 +2182,7 @@ function promoteStep3IdeaToBrief(step3Idea, button) {
 
   const existingBriefId = toCleanText(step3Idea.promotedBriefId);
   if (existingBriefId && setActiveBrief(existingBriefId, false)) {
-    state.pageView = "briefs";
-    updateBoardsAndBrief();
+    setPageView("brief-detail");
     return;
   }
 
@@ -2136,13 +2214,15 @@ function promoteStep3IdeaToBrief(step3Idea, button) {
   step3Idea.promotedAt = Date.now();
   step3Idea.status = "none";
   applyActiveChannelBriefState(nextState);
-  state.pageView = "briefs";
-  updateBoardsAndBrief();
+  setPageView("brief-detail");
 }
 
 function renderBriefSourceSnapshot() {
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
+    if (refs.briefStatusSelect) {
+      refs.briefStatusSelect.value = "draft";
+    }
     refs.briefSourceType.textContent = "Manual brief";
     refs.briefSourceIdea.textContent = "Not linked to a phase 3 idea.";
     refs.briefSourceNotes.textContent = "No phase 3 snapshot data.";
@@ -2153,6 +2233,9 @@ function renderBriefSourceSnapshot() {
   }
 
   const snapshot = activeBrief.sourceSnapshot || {};
+  if (refs.briefStatusSelect) {
+    refs.briefStatusSelect.value = normalizeBriefStatus(activeBrief.status);
+  }
   refs.briefSourceType.textContent = formatBriefSourceType(activeBrief.sourceType);
   refs.briefSourceIdea.textContent = toCleanText(snapshot.videoIdea) || "Not linked to a phase 3 idea.";
   refs.briefSourceNotes.textContent = toCleanText(snapshot.notes) || "No phase 3 notes captured.";
@@ -2184,30 +2267,22 @@ function renderBriefListBoard() {
     const openBtn = fragment.querySelector('button[data-action="openBrief"]');
     const titleEl = fragment.querySelector('[data-role="briefTitle"]');
     const metaEl = fragment.querySelector('[data-role="briefMeta"]');
-    const sourceEl = fragment.querySelector('[data-role="briefSource"]');
+    const statusEl = fragment.querySelector('[data-role="briefStatus"]');
     const updatedEl = fragment.querySelector('[data-role="briefUpdated"]');
 
     titleEl.textContent = getBriefDisplayTitle(brief, index);
-    metaEl.textContent = brief.sourceSnapshot?.videoIdea
-      ? summarizeLine(brief.sourceSnapshot.videoIdea, "No linked idea")
-      : "No linked phase 3 idea";
-    sourceEl.textContent = formatBriefSourceType(brief.sourceType);
+    metaEl.textContent = `Created ${formatBriefCreatedAt(brief.createdAt)}`;
+    statusEl.textContent = formatBriefStatus(brief.status);
     updatedEl.textContent = `Updated ${formatBriefUpdatedAt(brief.updatedAt)}`;
     card.classList.toggle("is-active", brief.id === activeBriefId);
+    card.dataset.briefStatus = normalizeBriefStatus(brief.status);
 
     openBtn.addEventListener("click", () => {
-      setActiveBrief(brief.id);
-      updateBoardsAndBrief({ persist: false });
+      setActiveBrief(brief.id, false);
+      setPageView("brief-detail");
     });
 
     refs.briefListBoard.appendChild(fragment);
-  });
-}
-
-function setBriefDetailPanelsVisible(visible) {
-  const isVisible = Boolean(visible);
-  refs.briefDetailPanels.forEach((panel) => {
-    panel.hidden = !isVisible;
   });
 }
 
@@ -2234,6 +2309,9 @@ function setBriefEditorEnabled(enabled) {
   }
   if (refs.addComparableBtn) {
     refs.addComparableBtn.disabled = !enabled;
+  }
+  if (refs.briefStatusSelect) {
+    refs.briefStatusSelect.disabled = !enabled;
   }
 }
 
@@ -4234,11 +4312,15 @@ function updateBoardsAndBrief(options = {}) {
 
   if (state.pageView === "briefs") {
     renderBriefListBoard();
-    const hasActiveBrief = Boolean(getActiveBriefRecord());
-    setBriefDetailPanelsVisible(hasActiveBrief);
-    setBriefEditorEnabled(hasActiveBrief);
-
-    if (hasActiveBrief) {
+    setBriefEditorEnabled(false);
+  } else if (state.pageView === "brief-detail") {
+    if (!getActiveBriefRecord()) {
+      state.pageView = "briefs";
+      renderPageView();
+      renderBriefListBoard();
+      setBriefEditorEnabled(false);
+    } else {
+      setBriefEditorEnabled(true);
       renderBriefSourceSnapshot();
       renderTitleBoard();
       renderThumbBoard();
@@ -4247,7 +4329,6 @@ function updateBoardsAndBrief(options = {}) {
       updateBriefOutput(values);
     }
   } else {
-    setBriefDetailPanelsVisible(false);
     setBriefEditorEnabled(false);
   }
 
@@ -4531,10 +4612,19 @@ function bindEvents() {
   });
 
   refs.createBriefBtn.addEventListener("click", () => {
-    createManualBrief();
-    setPageView("briefs");
-    updateBoardsAndBrief();
+    const brief = createManualBrief();
+    if (!brief) {
+      return;
+    }
+
+    setPageView("brief-detail");
   });
+
+  if (refs.backToBriefListBtn) {
+    refs.backToBriefListBtn.addEventListener("click", () => {
+      setPageView("briefs");
+    });
+  }
 
   refs.prevStepViewBtn.addEventListener("click", () => {
     setIdeationStep(state.ideationStepView - 1);
@@ -4686,6 +4776,17 @@ function bindEvents() {
     el.addEventListener("input", onChange);
     el.addEventListener("change", onChange);
   });
+
+  if (refs.briefStatusSelect) {
+    refs.briefStatusSelect.addEventListener("change", () => {
+      if (!getActiveBriefRecord()) {
+        return;
+      }
+
+      updateActiveBriefStatus(refs.briefStatusSelect.value);
+      updateBoardsAndBrief();
+    });
+  }
 }
 
 async function init() {
