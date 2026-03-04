@@ -708,14 +708,14 @@ function normalizeStep3Ideas(items) {
   return items.map((item) => createStep3Idea(item));
 }
 
-function normalizeScoreValue(value, fallback = 5) {
+function normalizeScoreValue(value, fallback = 0) {
   const num = Number(value);
   if (!Number.isFinite(num)) {
     return fallback;
   }
 
-  if (num < 1) {
-    return 1;
+  if (num < 0) {
+    return 0;
   }
 
   if (num > 10) {
@@ -725,6 +725,11 @@ function normalizeScoreValue(value, fallback = 5) {
   return num;
 }
 
+function hasLegacyNeutralScores(scores = {}, legacyValue = 5) {
+  const values = Object.values(scores);
+  return values.length > 0 && values.every((value) => Number(value) === Number(legacyValue));
+}
+
 function createTitleRecord(seed = {}) {
   const text = toCleanText(seed?.text);
   if (!text) {
@@ -732,12 +737,15 @@ function createTitleRecord(seed = {}) {
   }
 
   const defaults = defaultTitleScores();
-  const scores = {
+  let scores = {
     curiosity: normalizeScoreValue(seed?.scores?.curiosity, defaults.curiosity),
     clarity: normalizeScoreValue(seed?.scores?.clarity, defaults.clarity),
     uniqueness: normalizeScoreValue(seed?.scores?.uniqueness, defaults.uniqueness),
     promise: normalizeScoreValue(seed?.scores?.promise, defaults.promise),
   };
+  if (hasLegacyNeutralScores(scores, 5)) {
+    scores = defaultTitleScores();
+  }
 
   return {
     text,
@@ -767,12 +775,15 @@ function normalizeThumbnailCollection(items) {
       }
 
       const defaults = defaultThumbScores();
-      const scores = {
+      let scores = {
         emotion: normalizeScoreValue(item?.scores?.emotion, defaults.emotion),
         contrast: normalizeScoreValue(item?.scores?.contrast, defaults.contrast),
         clarity: normalizeScoreValue(item?.scores?.clarity, defaults.clarity),
         intent: normalizeScoreValue(item?.scores?.intent, defaults.intent),
       };
+      if (hasLegacyNeutralScores(scores, 5)) {
+        scores = defaultThumbScores();
+      }
 
       return {
         title,
@@ -1950,6 +1961,7 @@ function applyActiveChannelBriefState(briefState = {}) {
   setFieldValues(activeBrief.values || {});
   state.titles = normalizeTitleCollection(activeBrief.titles);
   state.thumbnails = normalizeThumbnailCollection(activeBrief.thumbnails);
+  sortActiveBriefVariationsByScore();
   state.comparables = normalizeComparableCollection(activeBrief.comparables);
   state.latestBriefHtml = toCleanText(activeBrief.latestBriefHtml);
 }
@@ -3178,19 +3190,19 @@ function renderStep3Board() {
 
 function defaultTitleScores() {
   return {
-    curiosity: 5,
-    clarity: 5,
-    uniqueness: 5,
-    promise: 5,
+    curiosity: 0,
+    clarity: 0,
+    uniqueness: 0,
+    promise: 0,
   };
 }
 
 function defaultThumbScores() {
   return {
-    emotion: 5,
-    contrast: 5,
-    clarity: 5,
-    intent: 5,
+    emotion: 0,
+    contrast: 0,
+    clarity: 0,
+    intent: 0,
   };
 }
 
@@ -3238,6 +3250,30 @@ function averageScore(scores) {
   const values = Object.values(scores);
   const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
   return total / values.length;
+}
+
+function compareByAverageScoreDesc(left, right) {
+  const scoreDiff = averageScore(right.scores) - averageScore(left.scores);
+  if (scoreDiff !== 0) {
+    return scoreDiff;
+  }
+
+  const leftLabel = toCleanText(left?.text || left?.title);
+  const rightLabel = toCleanText(right?.text || right?.title);
+  return leftLabel.localeCompare(rightLabel);
+}
+
+function sortTitleVariationsByScore(items = []) {
+  return [...items].sort(compareByAverageScoreDesc);
+}
+
+function sortThumbnailVariationsByScore(items = []) {
+  return [...items].sort(compareByAverageScoreDesc);
+}
+
+function sortActiveBriefVariationsByScore() {
+  state.titles = sortTitleVariationsByScore(state.titles);
+  state.thumbnails = sortThumbnailVariationsByScore(state.thumbnails);
 }
 
 function getTopScored(items) {
@@ -3402,6 +3438,10 @@ async function fetchComparableMetadata(url) {
 }
 
 function renderTitleBoard() {
+  if (!refs.titleBoard || !refs.titleTemplate) {
+    return;
+  }
+
   refs.titleBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
@@ -3417,7 +3457,8 @@ function renderTitleBoard() {
   const projectNameInput = document.getElementById("projectName");
   const currentVideoTitle = toCleanText(projectNameInput?.value);
 
-  state.titles.forEach((item, index) => {
+  const sortedTitles = sortTitleVariationsByScore(state.titles);
+  sortedTitles.forEach((item) => {
     const fragment = refs.titleTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".idea-card");
     const titleEl = fragment.querySelector(".idea-title");
@@ -3432,7 +3473,12 @@ function renderTitleBoard() {
     if (toggleStrongBtn) {
       toggleStrongBtn.textContent = item.isStrong ? "Unbold" : "Mark Strong";
       toggleStrongBtn.addEventListener("click", () => {
-        state.titles[index].isStrong = !state.titles[index].isStrong;
+        const sourceIndex = state.titles.findIndex((entry) => entry === item);
+        if (sourceIndex < 0) {
+          return;
+        }
+
+        state.titles[sourceIndex].isStrong = !state.titles[sourceIndex].isStrong;
         updateBoardsAndBrief();
       });
     }
@@ -3453,7 +3499,12 @@ function renderTitleBoard() {
 
     if (removeTitleBtn) {
       removeTitleBtn.addEventListener("click", () => {
-        state.titles.splice(index, 1);
+        const sourceIndex = state.titles.findIndex((entry) => entry === item);
+        if (sourceIndex < 0) {
+          return;
+        }
+
+        state.titles.splice(sourceIndex, 1);
         updateBoardsAndBrief();
       });
     }
@@ -3464,7 +3515,13 @@ function renderTitleBoard() {
       input.value = item.scores[key];
 
       input.addEventListener("input", () => {
-        state.titles[index].scores[key] = Number(input.value);
+        const sourceIndex = state.titles.findIndex((entry) => entry === item);
+        if (sourceIndex < 0) {
+          return;
+        }
+
+        state.titles[sourceIndex].scores[key] = Number(input.value);
+        sortActiveBriefVariationsByScore();
         updateBoardsAndBrief();
       });
     });
@@ -3475,6 +3532,10 @@ function renderTitleBoard() {
 }
 
 function renderThumbBoard() {
+  if (!refs.thumbnailBoard || !refs.thumbTemplate) {
+    return;
+  }
+
   refs.thumbnailBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
@@ -3483,12 +3544,12 @@ function renderThumbBoard() {
   }
 
   if (!state.thumbnails.length) {
-    refs.thumbnailBoard.innerHTML =
-      '<p class="hint">No thumbnail concepts yet. Click "Generate Thumbnails" to start.</p>';
+    refs.thumbnailBoard.innerHTML = '<p class="hint">No thumbnail concepts yet.</p>';
     return;
   }
 
-  state.thumbnails.forEach((item, index) => {
+  const sortedThumbs = sortThumbnailVariationsByScore(state.thumbnails);
+  sortedThumbs.forEach((item) => {
     const fragment = refs.thumbTemplate.content.cloneNode(true);
     const titleEl = fragment.querySelector(".idea-title");
     const metaEl = fragment.querySelector(".idea-meta");
@@ -3503,7 +3564,13 @@ function renderThumbBoard() {
       input.value = item.scores[key];
 
       input.addEventListener("input", () => {
-        state.thumbnails[index].scores[key] = Number(input.value);
+        const sourceIndex = state.thumbnails.findIndex((entry) => entry === item);
+        if (sourceIndex < 0) {
+          return;
+        }
+
+        state.thumbnails[sourceIndex].scores[key] = Number(input.value);
+        sortActiveBriefVariationsByScore();
         updateBoardsAndBrief();
       });
     });
@@ -3632,9 +3699,9 @@ function evaluatePlaybookSignals(topTitle, topThumb, values) {
 
   if (!topTitle || !topThumb) {
     return {
-      titleLengthText: "Title length check: generate ideas first.",
-      thumbTextRuleText: "Thumbnail text check: generate ideas first.",
-      packagingStagesText: "Stage check (Stop Scroll > Interest > Click): generate ideas first.",
+      titleLengthText: "Title length check: add ideas first.",
+      thumbTextRuleText: "Thumbnail text check: add ideas first.",
+      packagingStagesText: "Stage check (Stop Scroll > Interest > Click): add ideas first.",
       ccnText,
       stopScroll: 0,
       createInterest: 0,
@@ -3695,9 +3762,9 @@ function updateChecks(topTitle, topThumb, values) {
   refs.checkCCN.textContent = playbook.ccnText;
 
   if (!topTitle || !topThumb) {
-    refs.checkCuriosity.textContent = "Curiosity: generate ideas to evaluate";
-    refs.checkClarity.textContent = "Clarity: generate ideas to evaluate";
-    refs.checkUniqueness.textContent = "Uniqueness: generate ideas to evaluate";
+    refs.checkCuriosity.textContent = "Curiosity: add ideas to evaluate";
+    refs.checkClarity.textContent = "Clarity: add ideas to evaluate";
+    refs.checkUniqueness.textContent = "Uniqueness: add ideas to evaluate";
     return;
   }
 
@@ -3998,11 +4065,11 @@ function updateScoreboard(values) {
 
   refs.topTitle.textContent = topTitle
     ? `${topTitle.text} (${averageScore(topTitle.scores).toFixed(1)}/10)`
-    : "Generate and score titles first.";
+    : "Add and score titles first.";
 
   refs.topThumb.textContent = topThumb
     ? `${topThumb.title} (${averageScore(topThumb.scores).toFixed(1)}/10)`
-    : "Generate and score thumbnails first.";
+    : "Add and score thumbnails first.";
 
   updateChecks(topTitle, topThumb, values);
 }
@@ -4922,6 +4989,7 @@ function addTitleVariationFromQuickEntry() {
   }
 
   state.titles.unshift(record);
+  sortActiveBriefVariationsByScore();
   refs.quickTitleInput.value = "";
   refs.quickTitleInput.focus();
   updateBoardsAndBrief();
@@ -5156,27 +5224,33 @@ function bindEvents() {
     }
   });
 
-  document.getElementById("generateTitlesBtn").addEventListener("click", () => {
-    if (!getActiveBriefRecord()) {
-      flashButtonText(document.getElementById("generateTitlesBtn"), "Create Brief First", 1000);
-      return;
-    }
+  const generateTitlesBtn = document.getElementById("generateTitlesBtn");
+  if (generateTitlesBtn) {
+    generateTitlesBtn.addEventListener("click", () => {
+      if (!getActiveBriefRecord()) {
+        flashButtonText(generateTitlesBtn, "Create Brief First", 1000);
+        return;
+      }
 
-    const values = getFieldValues();
-    state.titles = generateTitles(values);
-    updateBoardsAndBrief();
-  });
+      const values = getFieldValues();
+      state.titles = sortTitleVariationsByScore(generateTitles(values));
+      updateBoardsAndBrief();
+    });
+  }
 
-  document.getElementById("generateThumbsBtn").addEventListener("click", () => {
-    if (!getActiveBriefRecord()) {
-      flashButtonText(document.getElementById("generateThumbsBtn"), "Create Brief First", 1000);
-      return;
-    }
+  const generateThumbsBtn = document.getElementById("generateThumbsBtn");
+  if (generateThumbsBtn) {
+    generateThumbsBtn.addEventListener("click", () => {
+      if (!getActiveBriefRecord()) {
+        flashButtonText(generateThumbsBtn, "Create Brief First", 1000);
+        return;
+      }
 
-    const values = getFieldValues();
-    state.thumbnails = generateThumbnails(values);
-    updateBoardsAndBrief();
-  });
+      const values = getFieldValues();
+      state.thumbnails = sortThumbnailVariationsByScore(generateThumbnails(values));
+      updateBoardsAndBrief();
+    });
+  }
 
   const saveStateBtn = document.getElementById("saveStateBtn");
   if (saveStateBtn) {
