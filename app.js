@@ -460,6 +460,11 @@ const BRIEF_EXPORT_STYLES = `
     font-weight: 700;
     margin-bottom: 0.25rem;
   }
+
+  .page-break {
+    break-after: page;
+    page-break-after: always;
+  }
 `;
 
 function hasIndexedDbSupport() {
@@ -4756,6 +4761,14 @@ function buildThumbnailBriefExportHtml(values) {
   const directionNotes = toCleanText(values.thumbnailDirectionNotes);
   const topInspiration = state.comparables.slice(0, 3);
   const referenceInspiration = state.comparables.slice(3);
+  const topInspirationHtml = topInspiration.length
+    ? topInspiration
+        .map(
+          (item, index) =>
+            `${renderComparableHtml([item], { showPriorityBadges: true, priorityStart: index + 1 })}<div class="page-break"></div>`,
+        )
+        .join("")
+    : "<p>No top-priority inspiration assets yet. Add up to three priority assets in Thumbnail Studio.</p>";
 
   return `<!doctype html>
 <html lang="en">
@@ -4814,14 +4827,11 @@ function buildThumbnailBriefExportHtml(values) {
         <h2>Thumbnail Text Candidates</h2>
         ${renderThumbnailTextListHtml(model.thumbnailTextList)}
       </section>
+      <div class="page-break"></div>
 
       <section class="card">
         <h2>Top 3 Inspiration Assets (Create Variations From These)</h2>
-        ${
-          topInspiration.length
-            ? renderComparableHtml(topInspiration, { showPriorityBadges: true, priorityStart: 1 })
-            : "<p>No top-priority inspiration assets yet. Add up to three priority assets in Thumbnail Studio.</p>"
-        }
+        ${topInspirationHtml}
       </section>
 
       <section class="card">
