@@ -1304,6 +1304,10 @@ select:focus {
   margin-bottom: 0.6rem;
 }
 
+.thumbnail-text-subsection {
+  margin-top: 0.9rem;
+}
+
 .thumbnail-variation-board {
   min-height: 420px;
 }

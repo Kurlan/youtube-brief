@@ -181,6 +181,9 @@ const refs = {
   titleBoard: document.getElementById("titleBoard"),
   quickTitleInput: document.getElementById("quickTitleInput"),
   addQuickTitleBtn: document.getElementById("addQuickTitleBtn"),
+  thumbnailTextBoard: document.getElementById("thumbnailTextBoard"),
+  quickThumbnailTextInput: document.getElementById("quickThumbnailTextInput"),
+  addQuickThumbnailTextBtn: document.getElementById("addQuickThumbnailTextBtn"),
   addThumbnailUploadBtn: document.getElementById("addThumbnailUploadBtn"),
   thumbnailFileInput: document.getElementById("thumbnailFileInput"),
   thumbnailPasteZone: document.getElementById("thumbnailPasteZone"),
@@ -250,12 +253,14 @@ const state = {
   step2Ideas: [],
   step3Ideas: [],
   titles: [],
+  thumbnailTexts: [],
   thumbnails: [],
   comparables: [],
   latestBriefHtml: "",
   briefDetailExpanded: false,
   viewerSnapshotExpanded: false,
   titleExpandedId: "",
+  thumbnailTextExpandedId: "",
   thumbnailExpandedId: "",
   comparableExpandedId: "",
   briefListExpandedId: "",
@@ -267,6 +272,7 @@ let inspirationNotesSaveTimer = null;
 let queuedSnapshotPayload = null;
 let persistQueue = Promise.resolve();
 let pendingTitleReorderPositions = null;
+let pendingThumbnailTextReorderPositions = null;
 let pendingThumbReorderPositions = null;
 let pendingComparableReorderPositions = null;
 let variationDragState = {
@@ -788,6 +794,40 @@ function normalizeTitleCollection(items) {
   return items.map((item) => createTitleRecord(item)).filter(Boolean);
 }
 
+function createThumbnailTextRecord(seed = {}) {
+  const text = toCleanText(seed?.text);
+  if (!text) {
+    return null;
+  }
+
+  const defaults = defaultTitleScores();
+  let scores = {
+    curiosity: normalizeScoreValue(seed?.scores?.curiosity, defaults.curiosity),
+    clarity: normalizeScoreValue(seed?.scores?.clarity, defaults.clarity),
+    uniqueness: normalizeScoreValue(seed?.scores?.uniqueness, defaults.uniqueness),
+    promise: normalizeScoreValue(seed?.scores?.promise, defaults.promise),
+  };
+  if (hasLegacyNeutralScores(scores, 5)) {
+    scores = defaultTitleScores();
+  }
+
+  return {
+    id: toCleanText(seed?.id) || createRecordId("thumbtext"),
+    text,
+    notes: toCleanText(seed?.notes),
+    scores,
+    isStrong: Boolean(seed?.isStrong),
+  };
+}
+
+function normalizeThumbnailTextCollection(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item) => createThumbnailTextRecord(item)).filter(Boolean);
+}
+
 function createThumbnailRecord(seed = {}) {
   const title = toCleanText(seed?.title);
   if (!title) {
@@ -930,6 +970,7 @@ function createBriefRecord(seed = {}) {
     updatedAt: normalizeTimestamp(seed.updatedAt || createdAt),
     values,
     titles: normalizeTitleCollection(seed.titles),
+    thumbnailTexts: normalizeThumbnailTextCollection(seed.thumbnailTexts),
     thumbnails: normalizeThumbnailCollection(seed.thumbnails),
     comparables: normalizeComparableCollection(seed.comparables),
     latestBriefHtml: toCleanText(seed.latestBriefHtml),
@@ -1405,6 +1446,7 @@ function normalizeChannelWorkspace(workspace = {}) {
 function extractLegacyBriefDraftFromWorkspace(workspace = {}, channelId = "") {
   const values = normalizeBriefValues(workspace.values);
   const titles = normalizeTitleCollection(workspace.titles);
+  const thumbnailTexts = normalizeThumbnailTextCollection(workspace.thumbnailTexts);
   const thumbnails = normalizeThumbnailCollection(workspace.thumbnails);
   const comparables = normalizeComparableCollection(workspace.comparables);
   const latestBriefHtml = toCleanText(workspace.latestBriefHtml);
@@ -1414,7 +1456,13 @@ function extractLegacyBriefDraftFromWorkspace(workspace = {}, channelId = "") {
 
   const hasMeaningfulValues = Object.values(values).some(Boolean);
   const hasData = Boolean(
-    hasMeaningfulValues || titles.length || thumbnails.length || comparables.length || latestBriefHtml || sourceIdeaId,
+    hasMeaningfulValues ||
+      titles.length ||
+      thumbnailTexts.length ||
+      thumbnails.length ||
+      comparables.length ||
+      latestBriefHtml ||
+      sourceIdeaId,
   );
 
   if (!hasData) {
@@ -1429,6 +1477,7 @@ function extractLegacyBriefDraftFromWorkspace(workspace = {}, channelId = "") {
     sourceSnapshot,
     values,
     titles,
+    thumbnailTexts,
     thumbnails,
     comparables,
     latestBriefHtml,
@@ -1976,6 +2025,7 @@ function buildActiveChannelBriefState(values = getFieldValues()) {
       channelId,
       values: normalizeBriefValues(values),
       titles: state.titles,
+      thumbnailTexts: state.thumbnailTexts,
       thumbnails: state.thumbnails,
       comparables: state.comparables,
       latestBriefHtml: state.latestBriefHtml,
@@ -1999,10 +2049,12 @@ function applyActiveChannelBriefState(briefState = {}) {
     setFieldValues({});
     state.activeBriefId = "";
     state.titles = [];
+    state.thumbnailTexts = [];
     state.thumbnails = [];
     state.comparables = [];
     state.latestBriefHtml = "";
     state.titleExpandedId = "";
+    state.thumbnailTextExpandedId = "";
     state.thumbnailExpandedId = "";
     state.comparableExpandedId = "";
     return;
@@ -2022,10 +2074,12 @@ function applyActiveChannelBriefState(briefState = {}) {
   if (!activeBrief) {
     setFieldValues({});
     state.titles = [];
+    state.thumbnailTexts = [];
     state.thumbnails = [];
     state.comparables = [];
     state.latestBriefHtml = "";
     state.titleExpandedId = "";
+    state.thumbnailTextExpandedId = "";
     state.thumbnailExpandedId = "";
     state.comparableExpandedId = "";
     return;
@@ -2033,11 +2087,13 @@ function applyActiveChannelBriefState(briefState = {}) {
 
   setFieldValues(activeBrief.values || {});
   state.titles = normalizeTitleCollection(activeBrief.titles);
+  state.thumbnailTexts = normalizeThumbnailTextCollection(activeBrief.thumbnailTexts);
   state.thumbnails = normalizeThumbnailCollection(activeBrief.thumbnails);
   syncProjectNameFromTopTitle();
   state.comparables = normalizeComparableCollection(activeBrief.comparables);
   state.latestBriefHtml = toCleanText(activeBrief.latestBriefHtml);
   state.titleExpandedId = "";
+  state.thumbnailTextExpandedId = "";
   state.thumbnailExpandedId = "";
   state.comparableExpandedId = "";
 }
@@ -2618,6 +2674,12 @@ function setBriefEditorEnabled(enabled) {
   }
   if (refs.addQuickTitleBtn) {
     refs.addQuickTitleBtn.disabled = !enabled;
+  }
+  if (refs.quickThumbnailTextInput) {
+    refs.quickThumbnailTextInput.disabled = !enabled;
+  }
+  if (refs.addQuickThumbnailTextBtn) {
+    refs.addQuickThumbnailTextBtn.disabled = !enabled;
   }
   if (refs.addThumbnailUploadBtn) {
     refs.addThumbnailUploadBtn.disabled = !enabled;
@@ -3792,6 +3854,158 @@ function renderTitleBoard() {
   }
 }
 
+function renderThumbnailTextBoard() {
+  if (!refs.thumbnailTextBoard || !refs.titleTemplate) {
+    return;
+  }
+
+  const previousPositions = pendingThumbnailTextReorderPositions;
+  pendingThumbnailTextReorderPositions = null;
+  refs.thumbnailTextBoard.innerHTML = "";
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    refs.thumbnailTextBoard.innerHTML = '<p class="hint">Create or select a brief to edit thumbnail text.</p>';
+    return;
+  }
+
+  if (!state.thumbnailTexts.length) {
+    refs.thumbnailTextBoard.innerHTML = '<p class="hint">No thumbnail text options yet. Add one above.</p>';
+    return;
+  }
+
+  state.thumbnailTexts.forEach((item, index) => {
+    const itemId = toCleanText(item.id);
+    const fragment = refs.titleTemplate.content.cloneNode(true);
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
+    const lineTitleEl = fragment.querySelector('[data-role="lineTitle"]');
+    const lineStatusEl = fragment.querySelector('[data-role="lineStatus"]');
+    const lineMetaEl = fragment.querySelector('[data-role="lineMeta"]');
+    const dragBtn = fragment.querySelector('[data-action="drag"]');
+    const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const titleInput = fragment.querySelector('[data-field="text"]');
+    const notesInput = fragment.querySelector('[data-field="notes"]');
+    const scoreInputs = fragment.querySelectorAll("input[data-score]");
+
+    card.dataset.variationId = itemId;
+    lineTitleEl.textContent = toCleanText(item.text) || "Untitled thumbnail text";
+    lineMetaEl.textContent = summarizeRowNotes(item.notes, "");
+    lineMetaEl.hidden = !toCleanText(lineMetaEl.textContent);
+    lineStatusEl.textContent = index === 0 ? "Lead Thumbnail Text" : "";
+    lineStatusEl.hidden = index !== 0;
+    card.classList.toggle("is-video-title", index === 0);
+    titleInput.value = item.text;
+    notesInput.value = item.notes;
+    setPipelineRowExpanded(card, detailsEl, arrowEl, state.thumbnailTextExpandedId === itemId);
+
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.thumbnailTextBoard, card, detailsEl, arrowEl);
+      state.thumbnailTextExpandedId = card.dataset.expanded === "true" ? itemId : "";
+    });
+
+    dragBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("dragstart", (event) => {
+      beginVariationDrag(event, "thumb-text", itemId);
+    });
+    dragBtn.addEventListener("dragend", () => {
+      clearVariationDropTargets();
+    });
+
+    card.addEventListener("dragover", (event) => {
+      if (canVariationDrop("thumb-text", itemId)) {
+        event.preventDefault();
+        card.classList.add("is-drop-target");
+      }
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("is-drop-target");
+    });
+    card.addEventListener("drop", (event) => {
+      if (!canVariationDrop("thumb-text", itemId)) {
+        return;
+      }
+
+      event.preventDefault();
+      const draggedId = variationDragState.id;
+      clearVariationDropTargets();
+      const fromIndex = state.thumbnailTexts.findIndex((entry) => entry.id === draggedId);
+      const toIndex = state.thumbnailTexts.findIndex((entry) => entry.id === itemId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+
+      pendingThumbnailTextReorderPositions = captureVariationPositions(refs.thumbnailTextBoard);
+      moveItemInArray(state.thumbnailTexts, fromIndex, toIndex);
+      state.thumbnailTextExpandedId = draggedId;
+      updateBoardsAndBrief();
+    });
+
+    removeBtn.addEventListener("click", () => {
+      const sourceIndex = state.thumbnailTexts.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnailTexts.splice(sourceIndex, 1);
+      if (state.thumbnailTextExpandedId === itemId) {
+        state.thumbnailTextExpandedId = "";
+      }
+      updateBoardsAndBrief();
+    });
+
+    titleInput.addEventListener("input", () => {
+      const sourceIndex = state.thumbnailTexts.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnailTexts[sourceIndex].text = titleInput.value;
+      lineTitleEl.textContent = toCleanText(titleInput.value) || "Untitled thumbnail text";
+      saveSnapshot();
+    });
+
+    notesInput.addEventListener("input", () => {
+      const sourceIndex = state.thumbnailTexts.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnailTexts[sourceIndex].notes = notesInput.value;
+      lineMetaEl.textContent = summarizeRowNotes(notesInput.value, "");
+      lineMetaEl.hidden = !toCleanText(lineMetaEl.textContent);
+      saveSnapshot();
+    });
+
+    scoreInputs.forEach((input) => {
+      const key = input.dataset.score;
+      input.value = item.scores[key];
+      input.addEventListener("input", () => {
+        const sourceIndex = state.thumbnailTexts.findIndex((entry) => entry.id === itemId);
+        if (sourceIndex < 0) {
+          return;
+        }
+
+        state.thumbnailTexts[sourceIndex].scores[key] = Number(input.value);
+        saveSnapshot();
+      });
+    });
+
+    refs.thumbnailTextBoard.appendChild(fragment);
+  });
+
+  if (previousPositions) {
+    animateVariationReorder(refs.thumbnailTextBoard, previousPositions);
+  }
+}
+
 function renderThumbBoard() {
   if (!refs.thumbnailBoard || !refs.thumbTemplate) {
     return;
@@ -4872,6 +5086,7 @@ function applyWorkspacePayload(payload = {}) {
     sourceIdeaId: toCleanText(payload.matriculatedIdeaId),
     values: legacyValues,
     titles: payload.titles,
+    thumbnailTexts: payload.thumbnailTexts,
     thumbnails: payload.thumbnails,
     comparables: payload.comparables,
     latestBriefHtml: payload.latestBriefHtml,
@@ -4879,6 +5094,7 @@ function applyWorkspacePayload(payload = {}) {
   const hasLegacyBriefData =
     Object.values(legacyValues).some(Boolean) ||
     legacyBrief.titles.length ||
+    legacyBrief.thumbnailTexts.length ||
     legacyBrief.thumbnails.length ||
     legacyBrief.comparables.length ||
     Boolean(legacyBrief.latestBriefHtml);
@@ -5068,6 +5284,7 @@ function applyLegacySnapshotPayload(parsed = {}) {
     sourceIdeaId: toCleanText(parsed.matriculatedIdeaId),
     values: legacyValues,
     titles: parsed.titles,
+    thumbnailTexts: parsed.thumbnailTexts,
     thumbnails: parsed.thumbnails,
     comparables: parsed.comparables,
     latestBriefHtml: parsed.latestBriefHtml,
@@ -5075,6 +5292,7 @@ function applyLegacySnapshotPayload(parsed = {}) {
   const hasLegacyBriefData =
     Object.values(legacyValues).some(Boolean) ||
     legacyBrief.titles.length ||
+    legacyBrief.thumbnailTexts.length ||
     legacyBrief.thumbnails.length ||
     legacyBrief.comparables.length ||
     Boolean(legacyBrief.latestBriefHtml);
@@ -5240,6 +5458,9 @@ function resetAll() {
   refs.step1Sort.value = "newest";
   refs.step2QuickIdea.value = "";
   refs.step3QuickIdea.value = "";
+  if (refs.quickThumbnailTextInput) {
+    refs.quickThumbnailTextInput.value = "";
+  }
   if (refs.thumbnailFileInput) {
     refs.thumbnailFileInput.value = "";
   }
@@ -5269,10 +5490,12 @@ function resetAll() {
   state.briefDetailExpanded = false;
   state.viewerSnapshotExpanded = false;
   state.titleExpandedId = "";
+  state.thumbnailTextExpandedId = "";
   state.thumbnailExpandedId = "";
   state.comparableExpandedId = "";
   state.briefListExpandedId = "";
   pendingTitleReorderPositions = null;
+  pendingThumbnailTextReorderPositions = null;
   pendingThumbReorderPositions = null;
   clearVariationDropTargets();
   ensureChannelModel();
@@ -5317,6 +5540,7 @@ function updateBoardsAndBrief(options = {}) {
       renderViewerSnapshotCollapseState();
       renderBriefSourceSnapshot();
       renderTitleBoard();
+      renderThumbnailTextBoard();
       renderThumbBoard();
       renderComparableBoard();
       updatePackagingPreview();
@@ -5649,6 +5873,36 @@ function addTitleVariationFromQuickEntry() {
   updateBoardsAndBrief();
 }
 
+function addThumbnailTextFromQuickEntry() {
+  if (!getActiveBriefRecord()) {
+    flashButtonText(refs.addQuickThumbnailTextBtn, "Create Brief First", 1200);
+    return;
+  }
+
+  const text = toCleanText(refs.quickThumbnailTextInput?.value);
+  if (!text) {
+    flashButtonText(refs.addQuickThumbnailTextBtn, "Need text", 1000);
+    return;
+  }
+
+  const normalized = text.toLowerCase();
+  if (state.thumbnailTexts.some((item) => toCleanText(item.text).toLowerCase() === normalized)) {
+    flashButtonText(refs.addQuickThumbnailTextBtn, "Exists", 1000);
+    return;
+  }
+
+  const record = createThumbnailTextRecord({ text });
+  if (!record) {
+    flashButtonText(refs.addQuickThumbnailTextBtn, "Need text", 1000);
+    return;
+  }
+
+  state.thumbnailTexts.push(record);
+  refs.quickThumbnailTextInput.value = "";
+  refs.quickThumbnailTextInput.focus();
+  updateBoardsAndBrief();
+}
+
 function updateStep1ViewState(partial) {
   state.step1View = normalizeStep1View({
     ...state.step1View,
@@ -5837,6 +6091,9 @@ function bindEvents() {
   refs.addStep2Btn.addEventListener("click", addStep2IdeaFromQuickEntry);
   refs.addStep3Btn.addEventListener("click", addStep3IdeaFromQuickEntry);
   refs.addQuickTitleBtn.addEventListener("click", addTitleVariationFromQuickEntry);
+  if (refs.addQuickThumbnailTextBtn) {
+    refs.addQuickThumbnailTextBtn.addEventListener("click", addThumbnailTextFromQuickEntry);
+  }
 
   refs.step1FastIdea.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -5865,6 +6122,15 @@ function bindEvents() {
       addTitleVariationFromQuickEntry();
     }
   });
+
+  if (refs.quickThumbnailTextInput) {
+    refs.quickThumbnailTextInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addThumbnailTextFromQuickEntry();
+      }
+    });
+  }
 
   refs.step1Search.addEventListener("input", () => {
     updateStep1ViewState({ query: refs.step1Search.value });
