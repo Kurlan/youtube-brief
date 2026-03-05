@@ -540,12 +540,25 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>Brief Output (HTML)</h2>
+          <h2>Brief Exports (PDF)</h2>
           <div class="row">
-            <button id="copyHtmlBtn" class="btn btn-muted">Copy HTML</button>
-            <button id="downloadBriefBtn" class="btn btn-muted">Download .html</button>
+            <button id="exportThumbnailBriefPdfBtn" class="btn btn-muted" type="button">
+              Export Thumbnail Brief PDF
+            </button>
+            <button id="exportPackagingBriefPdfBtn" class="btn btn-muted" type="button">
+              Export Packaging Brief PDF
+            </button>
           </div>
         </div>
+        <label class="full">
+          Thumbnail Brief Direction Notes
+          <textarea
+            id="thumbnailDirectionNotes"
+            rows="4"
+            placeholder="Direction for your thumbnail team: concepts to emphasize, do-not-use guardrails, visual style, and CTA intent."
+          ></textarea>
+        </label>
+        <p id="briefExportHint" class="hint"></p>
         <div id="briefOutput" class="brief-output"></div>
       </section>
     </main>

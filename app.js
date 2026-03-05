@@ -116,6 +116,7 @@ const fieldIds = [
   "uniquenessEdge",
   "treatment",
   "treatmentReferences",
+  "thumbnailDirectionNotes",
   "logline",
   "ideaSource",
   "targetTrafficSource",
@@ -206,12 +207,14 @@ const refs = {
   briefSourceHypothesis: document.getElementById("briefSourceHypothesis"),
   briefSourceInsights: document.getElementById("briefSourceInsights"),
   briefOutput: document.getElementById("briefOutput"),
+  briefExportHint: document.getElementById("briefExportHint"),
+  exportThumbnailBriefPdfBtn: document.getElementById("exportThumbnailBriefPdfBtn"),
+  exportPackagingBriefPdfBtn: document.getElementById("exportPackagingBriefPdfBtn"),
   topTitle: document.getElementById("topTitle"),
   topThumb: document.getElementById("topThumb"),
   checkCuriosity: document.getElementById("checkCuriosity"),
   checkClarity: document.getElementById("checkClarity"),
   checkUniqueness: document.getElementById("checkUniqueness"),
-  copyHtmlBtn: document.getElementById("copyHtmlBtn"),
   snapNiche: document.getElementById("snapNiche"),
   snapAgeRange: document.getElementById("snapAgeRange"),
   snapCountries: document.getElementById("snapCountries"),
@@ -2658,7 +2661,7 @@ function renderBriefListBoard() {
 }
 
 function setBriefEditorEnabled(enabled) {
-  const fieldControlIds = [...fieldIds, "downloadBriefBtn"];
+  const fieldControlIds = [...fieldIds];
   fieldControlIds.forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
@@ -2666,9 +2669,6 @@ function setBriefEditorEnabled(enabled) {
     }
   });
 
-  if (refs.copyHtmlBtn) {
-    refs.copyHtmlBtn.disabled = !enabled;
-  }
   if (refs.quickTitleInput) {
     refs.quickTitleInput.disabled = !enabled;
   }
@@ -2710,6 +2710,33 @@ function setBriefEditorEnabled(enabled) {
   if (refs.briefStatusSelect) {
     refs.briefStatusSelect.disabled = !enabled;
   }
+}
+
+function renderBriefExportControls() {
+  const activeBrief = getActiveBriefRecord();
+  const hasActiveBrief = Boolean(activeBrief);
+  const hasThumbnailVariations = state.thumbnails.length > 0;
+
+  if (refs.exportThumbnailBriefPdfBtn) {
+    refs.exportThumbnailBriefPdfBtn.disabled = !hasActiveBrief;
+  }
+  if (refs.exportPackagingBriefPdfBtn) {
+    refs.exportPackagingBriefPdfBtn.disabled = !hasActiveBrief || !hasThumbnailVariations;
+  }
+  if (!refs.briefExportHint) {
+    return;
+  }
+
+  if (!hasActiveBrief) {
+    refs.briefExportHint.textContent = "Select a brief to export.";
+    return;
+  }
+  if (!hasThumbnailVariations) {
+    refs.briefExportHint.textContent = "Packaging Brief unlocks after at least 1 thumbnail variation.";
+    return;
+  }
+
+  refs.briefExportHint.textContent = "Both PDF exports are ready.";
 }
 
 function renderViewerSnapshot() {
@@ -4559,6 +4586,21 @@ function renderThumbListHtml(items) {
   return `<ol>${rows}</ol>`;
 }
 
+function renderThumbnailTextListHtml(items) {
+  if (!items.length) {
+    return "<p>No thumbnail text ideas generated yet.</p>";
+  }
+
+  const rows = items
+    .map((item) => {
+      const score = averageScore(item.scores).toFixed(1);
+      return `<li>${escapeHtml(item.text)} <span class=\"muted\">(Score: ${score}/10)</span></li>`;
+    })
+    .join("");
+
+  return `<ol>${rows}</ol>`;
+}
+
 function renderComparableHtml(items) {
   if (!items.length) {
     return "<p>No thumbnail inspiration assets added yet.</p>";
@@ -4585,6 +4627,7 @@ function buildBriefViewModel(values) {
   const topTitle = state.titles[0] || null;
   const topThumb = state.thumbnails[0] || null;
   const titleList = [...state.titles];
+  const thumbnailTextList = [...state.thumbnailTexts];
   const thumbList = [...state.thumbnails];
 
   return {
@@ -4592,6 +4635,7 @@ function buildBriefViewModel(values) {
     topTitle,
     topThumb,
     titleList,
+    thumbnailTextList,
     thumbList,
     values,
   };
@@ -4661,7 +4705,89 @@ function buildPreviewHtml(values) {
   `;
 }
 
-function buildExportHtml(values) {
+function buildThumbnailBriefExportHtml(values) {
+  const model = buildBriefViewModel(values);
+  const directionNotes = toCleanText(values.thumbnailDirectionNotes);
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${safeText(values.projectName, "YouTube Thumbnail Brief")}</title>
+    <style>${BRIEF_EXPORT_STYLES}</style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="kicker">Thumbnail Brief</p>
+        <h1>${safeText(values.projectName, "YouTube Thumbnail Brief")}</h1>
+        <p>Generated ${escapeHtml(model.generatedAt)} · For thumbnail design team</p>
+      </section>
+
+      <section class="card">
+        <h2>1. Direction Notes</h2>
+        <p>${safeText(directionNotes, "No direction notes provided yet.")}</p>
+      </section>
+
+      <section class="grid two">
+        <article class="card">
+          <h2>2. Full Treatment</h2>
+          <p>${safeText(values.treatment, "No treatment yet.")}</p>
+        </article>
+        <article class="card">
+          <h2>3. Full Core Logline</h2>
+          <p>${safeText(values.logline, "No core logline yet.")}</p>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>4. Treatment + Logline Summary</h2>
+        <ul>
+          <li><strong>Idea focus:</strong> ${safeText(values.ideaFocus)}</li>
+          <li><strong>Core pain:</strong> ${safeText(values.painPoint)}</li>
+          <li><strong>Desired outcome:</strong> ${safeText(values.desiredOutcome)}</li>
+          <li><strong>Intrigue trigger:</strong> ${safeText(values.intrigueTrigger)}</li>
+          <li><strong>Curiosity gap:</strong> ${safeText(values.curiosityGap)}</li>
+          <li><strong>Uniqueness edge:</strong> ${safeText(values.uniquenessEdge)}</li>
+          <li><strong>Treatment references:</strong> ${safeText(values.treatmentReferences)}</li>
+        </ul>
+      </section>
+
+      <section class="grid two">
+        <article class="card">
+          <h2>5. Title Candidates</h2>
+          ${renderTitleListHtml(model.titleList)}
+        </article>
+        <article class="card">
+          <h2>6. Thumbnail Text Candidates</h2>
+          ${renderThumbnailTextListHtml(model.thumbnailTextList)}
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>7. Inspiration Assets</h2>
+        ${renderComparableHtml(state.comparables)}
+      </section>
+
+      <section class="card">
+        <h2>8. Viewer Strategy (Reference)</h2>
+        <ul>
+          <li><strong>Niche:</strong> ${escapeHtml(VIEWER_STRATEGY.niche)}</li>
+          <li><strong>Age range:</strong> ${escapeHtml(VIEWER_STRATEGY.ageRange)}</li>
+          <li><strong>Main countries:</strong> ${escapeHtml(VIEWER_STRATEGY.mainCountries)}</li>
+          <li><strong>Audience:</strong> ${escapeHtml(VIEWER_STRATEGY.audience)}</li>
+          <li><strong>Avatar:</strong> ${escapeHtml(VIEWER_STRATEGY.avatar)}</li>
+          <li><strong>Humor profile:</strong> ${escapeHtml(VIEWER_STRATEGY.humorStyle)}</li>
+          <li><strong>Anti-patterns:</strong> ${escapeHtml(VIEWER_STRATEGY.antiPatterns)}</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>`;
+}
+
+function buildPackagingBriefExportHtml(values) {
   const model = buildBriefViewModel(values);
   const playbook = evaluatePlaybookSignals(model.topTitle, model.topThumb, values);
 
@@ -4676,9 +4802,9 @@ function buildExportHtml(values) {
   <body>
     <main class="page">
       <section class="hero">
-        <p class="kicker">YouTube Brief</p>
+        <p class="kicker">Packaging Brief</p>
         <h1>${safeText(values.projectName, "YouTube Packaging Brief")}</h1>
-        <p>Generated ${escapeHtml(model.generatedAt)} · Channel Strategy: ${escapeHtml(VIEWER_STRATEGY.channel)}</p>
+        <p>Generated ${escapeHtml(model.generatedAt)} · Production + post-production reference</p>
       </section>
 
       <section class="card">
@@ -4781,6 +4907,11 @@ function buildExportHtml(values) {
           ${renderThumbListHtml(model.thumbList)}
         </article>
       </section>
+
+      <section class="card">
+        <h2>Thumbnail Text Variations</h2>
+        ${renderThumbnailTextListHtml(model.thumbnailTextList)}
+      </section>
     </main>
   </body>
 </html>`;
@@ -4869,13 +5000,13 @@ function updateBriefOutput(values) {
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
     refs.briefOutput.innerHTML =
-      '<p class="hint">Create or select a brief to generate the live brief preview and HTML export.</p>';
+      '<p class="hint">Create or select a brief to preview content and generate PDF exports.</p>';
     state.latestBriefHtml = "";
     return;
   }
 
   refs.briefOutput.innerHTML = buildPreviewHtml(values);
-  state.latestBriefHtml = buildExportHtml(values);
+  state.latestBriefHtml = buildPackagingBriefExportHtml(values);
 }
 
 function applyLegacyWorkspaceBriefDrafts(channelWorkspaces = {}) {
@@ -5521,12 +5652,14 @@ function updateBoardsAndBrief(options = {}) {
   if (state.pageView === "briefs") {
     renderBriefListBoard();
     setBriefEditorEnabled(false);
+    renderBriefExportControls();
   } else if (state.pageView === "brief-detail") {
     if (!getActiveBriefRecord()) {
       state.pageView = "briefs";
       renderPageView();
       renderBriefListBoard();
       setBriefEditorEnabled(false);
+      renderBriefExportControls();
       if (syncHistory) {
         syncNavigationHistory("replace");
       }
@@ -5542,9 +5675,11 @@ function updateBoardsAndBrief(options = {}) {
       updatePackagingPreview();
       updateScoreboard(values);
       updateBriefOutput(values);
+      renderBriefExportControls();
     }
   } else {
     setBriefEditorEnabled(false);
+    renderBriefExportControls();
   }
 
   if (options.persist !== false) {
@@ -5576,52 +5711,56 @@ function flashInlineText(el, text, ms = 1200) {
   }, ms);
 }
 
-function downloadBriefHtml() {
-  if (!getActiveBriefRecord()) {
-    flashButtonText(document.getElementById("downloadBriefBtn"), "No Brief", 1000);
+function openPdfPrintWindow(html, triggerButton) {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    flashButtonText(triggerButton, "Popup Blocked", 1500);
     return;
   }
 
-  if (!state.latestBriefHtml) {
-    state.latestBriefHtml = buildExportHtml(getFieldValues());
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.onafterprint = () => {
+    printWindow.close();
+  };
+
+  const triggerPrint = () => {
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  if (printWindow.document.readyState === "complete") {
+    setTimeout(triggerPrint, 180);
+  } else {
+    printWindow.addEventListener("load", () => setTimeout(triggerPrint, 180), { once: true });
   }
 
-  const blob = new Blob([state.latestBriefHtml], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const fileName = (getFieldValues().projectName || "youtube-brief")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  link.href = url;
-  link.download = `${fileName || "youtube-brief"}.html`;
-  link.click();
-  URL.revokeObjectURL(url);
+  flashButtonText(triggerButton, "Opening PDF", 900);
 }
 
-function copyBriefHtml() {
+function exportThumbnailBriefPdf() {
   if (!getActiveBriefRecord()) {
-    flashButtonText(refs.copyHtmlBtn, "No Brief", 1000);
+    flashButtonText(refs.exportThumbnailBriefPdfBtn, "No Brief", 1000);
     return;
   }
 
-  if (!navigator.clipboard) {
+  const html = buildThumbnailBriefExportHtml(getFieldValues());
+  openPdfPrintWindow(html, refs.exportThumbnailBriefPdfBtn);
+}
+
+function exportPackagingBriefPdf() {
+  if (!getActiveBriefRecord()) {
+    flashButtonText(refs.exportPackagingBriefPdfBtn, "No Brief", 1000);
+    return;
+  }
+  if (!state.thumbnails.length) {
+    flashButtonText(refs.exportPackagingBriefPdfBtn, "Need Thumbnail", 1200);
     return;
   }
 
-  if (!state.latestBriefHtml) {
-    state.latestBriefHtml = buildExportHtml(getFieldValues());
-  }
-
-  navigator.clipboard
-    .writeText(state.latestBriefHtml)
-    .then(() => {
-      flashButtonText(refs.copyHtmlBtn, "Copied", 1000);
-    })
-    .catch(() => {
-      // Clipboard permission can be denied; download remains available.
-    });
+  const html = buildPackagingBriefExportHtml(getFieldValues());
+  openPdfPrintWindow(html, refs.exportPackagingBriefPdfBtn);
 }
 
 function readFileAsDataUrl(file) {
@@ -6167,8 +6306,12 @@ function bindEvents() {
   if (resetStateBtn) {
     resetStateBtn.addEventListener("click", resetAll);
   }
-  document.getElementById("downloadBriefBtn").addEventListener("click", downloadBriefHtml);
-  refs.copyHtmlBtn.addEventListener("click", copyBriefHtml);
+  if (refs.exportThumbnailBriefPdfBtn) {
+    refs.exportThumbnailBriefPdfBtn.addEventListener("click", exportThumbnailBriefPdf);
+  }
+  if (refs.exportPackagingBriefPdfBtn) {
+    refs.exportPackagingBriefPdfBtn.addEventListener("click", exportPackagingBriefPdf);
+  }
 
   if (refs.addComparableBtn) {
     refs.addComparableBtn.addEventListener("click", addComparable);
