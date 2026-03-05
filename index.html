@@ -19,14 +19,15 @@
 
     <header class="hero">
       <div class="hero-brand">
-        <img class="hero-logo" src="favicon.svg" alt="" />
-        <h1>YouTube Brief Studio</h1>
+        <button id="showHomePageBtn" class="hero-logo-btn" type="button" aria-label="Go to Home">
+          <img class="hero-logo" src="favicon.svg" alt="" />
+        </button>
+        <div class="hero-brand-copy">
+          <h1>YouTube Brief Studio</h1>
+          <button id="showChannelPageBtn" class="brand-back-link" type="button">Back To Channel</button>
+        </div>
       </div>
       <div class="hero-actions">
-        <div class="view-switch" role="tablist" aria-label="App navigation">
-          <button id="showHomePageBtn" class="btn btn-muted" type="button" role="tab">Home</button>
-          <button id="showChannelPageBtn" class="btn btn-muted" type="button" role="tab">Channel</button>
-        </div>
         <p id="saveStatus" class="save-status" aria-live="polite"></p>
       </div>
     </header>
@@ -189,7 +190,16 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>Brief Detail</h2>
+          <button
+            id="toggleBriefDetailBtn"
+            class="section-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="briefDetailContent"
+          >
+            <span id="briefDetailArrow" class="section-toggle-arrow">▶</span>
+            <span>Brief Detail</span>
+          </button>
           <div class="panel-header-tools">
             <label class="brief-status-inline" for="briefStatus">
               Status
@@ -199,15 +209,6 @@
                 <option value="in-production">In production</option>
               </select>
             </label>
-            <button
-              id="toggleBriefDetailBtn"
-              class="btn btn-muted"
-              type="button"
-              aria-expanded="false"
-              aria-controls="briefDetailContent"
-            >
-              Expand
-            </button>
             <button id="backToBriefListBtn" class="btn btn-muted" type="button">Back to Briefs List</button>
           </div>
         </div>
@@ -244,17 +245,17 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>Viewer Strategy Snapshot</h2>
+          <button
+            id="toggleViewerSnapshotBtn"
+            class="section-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="viewerSnapshotContent"
+          >
+            <span id="viewerSnapshotArrow" class="section-toggle-arrow">▶</span>
+            <span>Viewer Strategy Snapshot</span>
+          </button>
           <div class="panel-header-tools">
-            <button
-              id="toggleViewerSnapshotBtn"
-              class="btn btn-muted"
-              type="button"
-              aria-expanded="false"
-              aria-controls="viewerSnapshotContent"
-            >
-              Expand
-            </button>
             <a class="btn btn-muted link-btn" href="viewer-strategy.html" target="_blank" rel="noreferrer">
               Open Strategy Page
             </a>
@@ -401,6 +402,15 @@
         <p class="hint">Collect thumbnail inspiration assets for this brief.</p>
         <div class="thumbnail-studio-grid">
           <article class="thumbnail-studio-column">
+            <h3>Thumbnail Variations</h3>
+            <p class="hint">Drag to rank. Top row is your lead thumbnail concept.</p>
+            <div class="title-quick-entry">
+              <input id="quickThumbTitleInput" placeholder="Add a thumbnail variation and hit Enter" />
+              <button id="addQuickThumbBtn" class="btn btn-muted" type="button">Add Variation</button>
+            </div>
+            <div id="thumbnailBoard" class="pipeline-board"></div>
+          </article>
+          <article class="thumbnail-studio-column">
             <h3>Inspiration Assets</h3>
             <p class="hint">
               Add a YouTube URL, upload image files, drag/drop files, or paste an image directly.
@@ -417,15 +427,6 @@
               Paste an image here or drag/drop image files.
             </div>
             <div id="comparableBoard" class="pipeline-board"></div>
-          </article>
-          <article class="thumbnail-studio-column">
-            <h3>Thumbnail Variations</h3>
-            <p class="hint">Drag to rank. Top row is your lead thumbnail concept.</p>
-            <div class="title-quick-entry">
-              <input id="quickThumbTitleInput" placeholder="Add a thumbnail variation and hit Enter" />
-              <button id="addQuickThumbBtn" class="btn btn-muted" type="button">Add Variation</button>
-            </div>
-            <div id="thumbnailBoard" class="pipeline-board"></div>
           </article>
         </div>
       </section>
@@ -523,13 +524,7 @@
       <article class="pipeline-card pipeline-row list-row">
         <div class="list-row-summary-shell">
           <button type="button" class="pipeline-row-summary list-row-summary" data-action="toggle">
-            <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
-            <span class="pipeline-row-title" data-role="lineTitle"></span>
-            <span class="pipeline-row-status" data-role="lineStatus"></span>
-            <span class="pipeline-row-meta" data-role="lineMeta"></span>
-          </button>
-          <div class="list-row-actions">
-            <button type="button" class="icon-btn drag-handle-btn" data-action="drag" draggable="true" aria-label="Drag to reorder">
+            <span class="icon-btn drag-handle-btn" data-action="drag" draggable="true" title="Drag to reorder">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="8" cy="6.5" r="1.5"></circle>
                 <circle cx="8" cy="12" r="1.5"></circle>
@@ -538,7 +533,13 @@
                 <circle cx="16" cy="12" r="1.5"></circle>
                 <circle cx="16" cy="17.5" r="1.5"></circle>
               </svg>
-            </button>
+            </span>
+            <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+            <span class="pipeline-row-title" data-role="lineTitle"></span>
+            <span class="pipeline-row-status" data-role="lineStatus"></span>
+            <span class="pipeline-row-meta" data-role="lineMeta"></span>
+          </button>
+          <div class="list-row-actions">
             <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove title">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
@@ -583,15 +584,7 @@
       <article class="pipeline-card pipeline-row list-row thumb-row">
         <div class="list-row-summary-shell">
           <button type="button" class="pipeline-row-summary list-row-summary thumb-row-summary" data-action="toggle">
-            <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
-            <span class="list-row-preview">
-              <img data-role="previewImage" alt="Thumbnail preview" />
-            </span>
-            <span class="pipeline-row-title" data-role="lineTitle"></span>
-            <span class="pipeline-row-meta" data-role="lineMeta"></span>
-          </button>
-          <div class="list-row-actions">
-            <button type="button" class="icon-btn drag-handle-btn" data-action="drag" draggable="true" aria-label="Drag to reorder">
+            <span class="icon-btn drag-handle-btn" data-action="drag" draggable="true" title="Drag to reorder">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="8" cy="6.5" r="1.5"></circle>
                 <circle cx="8" cy="12" r="1.5"></circle>
@@ -600,7 +593,15 @@
                 <circle cx="16" cy="12" r="1.5"></circle>
                 <circle cx="16" cy="17.5" r="1.5"></circle>
               </svg>
-            </button>
+            </span>
+            <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+            <span class="list-row-preview">
+              <img data-role="previewImage" alt="Thumbnail preview" />
+            </span>
+            <span class="pipeline-row-title" data-role="lineTitle"></span>
+            <span class="pipeline-row-meta" data-role="lineMeta"></span>
+          </button>
+          <div class="list-row-actions">
             <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove thumbnail">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
@@ -653,6 +654,16 @@
       <article class="pipeline-card pipeline-row list-row comparable-row">
         <div class="list-row-summary-shell">
           <button type="button" class="pipeline-row-summary list-row-summary thumb-row-summary" data-action="toggle">
+            <span class="icon-btn drag-handle-btn" data-action="drag" draggable="true" title="Drag to reorder">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="8" cy="6.5" r="1.5"></circle>
+                <circle cx="8" cy="12" r="1.5"></circle>
+                <circle cx="8" cy="17.5" r="1.5"></circle>
+                <circle cx="16" cy="6.5" r="1.5"></circle>
+                <circle cx="16" cy="12" r="1.5"></circle>
+                <circle cx="16" cy="17.5" r="1.5"></circle>
+              </svg>
+            </span>
             <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
             <span class="list-row-preview">
               <img data-role="lineImage" alt="Inspiration preview" />

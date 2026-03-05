@@ -141,8 +141,10 @@ const refs = {
   briefStatusSelect: document.getElementById("briefStatus"),
   toggleBriefDetailBtn: document.getElementById("toggleBriefDetailBtn"),
   briefDetailContent: document.getElementById("briefDetailContent"),
+  briefDetailArrow: document.getElementById("briefDetailArrow"),
   toggleViewerSnapshotBtn: document.getElementById("toggleViewerSnapshotBtn"),
   viewerSnapshotContent: document.getElementById("viewerSnapshotContent"),
+  viewerSnapshotArrow: document.getElementById("viewerSnapshotArrow"),
   createBriefBtn: document.getElementById("createBriefBtn"),
   jumpToIdeationBtn: document.getElementById("jumpToIdeationBtn"),
   jumpToBriefsBtn: document.getElementById("jumpToBriefsBtn"),
@@ -263,6 +265,7 @@ let queuedSnapshotPayload = null;
 let persistQueue = Promise.resolve();
 let pendingTitleReorderPositions = null;
 let pendingThumbReorderPositions = null;
+let pendingComparableReorderPositions = null;
 let variationDragState = {
   type: "",
   id: "",
@@ -1754,12 +1757,12 @@ function renderPageView() {
   const isChannelContext = hasActiveChannel && pageView !== "home";
   if (refs.showHomePageBtn) {
     refs.showHomePageBtn.classList.toggle("is-active", pageView === "home");
-    refs.showHomePageBtn.setAttribute("aria-selected", String(pageView === "home"));
   }
   if (refs.showChannelPageBtn) {
     refs.showChannelPageBtn.classList.toggle("is-active", isChannelContext);
-    refs.showChannelPageBtn.setAttribute("aria-selected", String(isChannelContext));
-    refs.showChannelPageBtn.disabled = pageView === "home" || !hasActiveChannel;
+    const shouldHide = !hasActiveChannel || pageView === "channel";
+    refs.showChannelPageBtn.hidden = shouldHide;
+    refs.showChannelPageBtn.disabled = shouldHide;
   }
   if (refs.showBriefsPageBtn) {
     const isBriefContext = pageView === "briefs" || pageView === "brief-detail";
@@ -1781,8 +1784,10 @@ function renderBriefDetailCollapseState() {
   }
 
   if (refs.toggleBriefDetailBtn) {
-    refs.toggleBriefDetailBtn.textContent = expanded ? "Collapse" : "Expand";
     refs.toggleBriefDetailBtn.setAttribute("aria-expanded", String(expanded));
+  }
+  if (refs.briefDetailArrow) {
+    refs.briefDetailArrow.textContent = expanded ? "▼" : "▶";
   }
 }
 
@@ -1793,8 +1798,10 @@ function renderViewerSnapshotCollapseState() {
   }
 
   if (refs.toggleViewerSnapshotBtn) {
-    refs.toggleViewerSnapshotBtn.textContent = expanded ? "Collapse" : "Expand";
     refs.toggleViewerSnapshotBtn.setAttribute("aria-expanded", String(expanded));
+  }
+  if (refs.viewerSnapshotArrow) {
+    refs.viewerSnapshotArrow.textContent = expanded ? "▼" : "▶";
   }
 }
 
@@ -3648,7 +3655,7 @@ function renderTitleBoard() {
     const lineTitleEl = fragment.querySelector('[data-role="lineTitle"]');
     const lineStatusEl = fragment.querySelector('[data-role="lineStatus"]');
     const lineMetaEl = fragment.querySelector('[data-role="lineMeta"]');
-    const dragBtn = fragment.querySelector('button[data-action="drag"]');
+    const dragBtn = fragment.querySelector('[data-action="drag"]');
     const removeBtn = fragment.querySelector('button[data-action="remove"]');
     const titleInput = fragment.querySelector('[data-field="text"]');
     const notesInput = fragment.querySelector('[data-field="notes"]');
@@ -3668,6 +3675,13 @@ function renderTitleBoard() {
       state.titleExpandedId = card.dataset.expanded === "true" ? itemId : "";
     });
 
+    dragBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
     dragBtn.addEventListener("dragstart", (event) => {
       beginVariationDrag(event, "title", itemId);
     });
@@ -3795,7 +3809,7 @@ function renderThumbBoard() {
     const lineImage = fragment.querySelector('[data-role="previewImage"]');
     const lineTitle = fragment.querySelector('[data-role="lineTitle"]');
     const lineMeta = fragment.querySelector('[data-role="lineMeta"]');
-    const dragBtn = fragment.querySelector('button[data-action="drag"]');
+    const dragBtn = fragment.querySelector('[data-action="drag"]');
     const removeBtn = fragment.querySelector('button[data-action="remove"]');
     const titleInput = fragment.querySelector('[data-field="title"]');
     const imageInput = fragment.querySelector('[data-field="imageSrc"]');
@@ -3820,6 +3834,13 @@ function renderThumbBoard() {
       state.thumbnailExpandedId = card.dataset.expanded === "true" ? itemId : "";
     });
 
+    dragBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
     dragBtn.addEventListener("dragstart", (event) => {
       beginVariationDrag(event, "thumb", itemId);
     });
@@ -3958,6 +3979,8 @@ function renderComparableBoard() {
     return;
   }
 
+  const previousPositions = pendingComparableReorderPositions;
+  pendingComparableReorderPositions = null;
   refs.comparableBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
@@ -3982,6 +4005,7 @@ function renderComparableBoard() {
     const detailImage = fragment.querySelector('[data-role="detailImage"]');
     const lineTitle = fragment.querySelector('[data-role="lineTitle"]');
     const lineMeta = fragment.querySelector('[data-role="lineMeta"]');
+    const dragBtn = fragment.querySelector('[data-action="drag"]');
     const removeBtn = fragment.querySelector('button[data-action="remove"]');
     const titleInput = fragment.querySelector('[data-field="title"]');
     const sourceInput = fragment.querySelector('[data-field="sourceUrl"]');
@@ -4005,6 +4029,50 @@ function renderComparableBoard() {
     summaryBtn.addEventListener("click", () => {
       togglePipelineRow(refs.comparableBoard, card, detailsEl, arrowEl);
       state.comparableExpandedId = card.dataset.expanded === "true" ? itemId : "";
+    });
+
+    dragBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("dragstart", (event) => {
+      beginVariationDrag(event, "comparable", itemId);
+    });
+    dragBtn.addEventListener("dragend", () => {
+      clearVariationDropTargets();
+    });
+
+    card.addEventListener("dragover", (event) => {
+      if (canVariationDrop("comparable", itemId)) {
+        event.preventDefault();
+        card.classList.add("is-drop-target");
+      }
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("is-drop-target");
+    });
+    card.addEventListener("drop", (event) => {
+      if (!canVariationDrop("comparable", itemId)) {
+        return;
+      }
+
+      event.preventDefault();
+      const draggedId = variationDragState.id;
+      clearVariationDropTargets();
+      const fromIndex = state.comparables.findIndex((entry) => entry.id === draggedId);
+      const toIndex = state.comparables.findIndex((entry) => entry.id === itemId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+
+      pendingComparableReorderPositions = captureVariationPositions(refs.comparableBoard);
+      moveItemInArray(state.comparables, fromIndex, toIndex);
+      state.comparableExpandedId = draggedId;
+      updateBoardsAndBrief({ persist: false });
+      void saveSnapshot({ immediate: true });
     });
 
     titleInput.addEventListener("input", () => {
@@ -4066,6 +4134,10 @@ function renderComparableBoard() {
 
     refs.comparableBoard.appendChild(fragment);
   });
+
+  if (previousPositions) {
+    animateVariationReorder(refs.comparableBoard, previousPositions);
+  }
 }
 
 function looksTitleCase(text) {
