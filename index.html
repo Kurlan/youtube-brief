@@ -523,6 +523,25 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
+          <h2>Thumbnail Brief Export (PDF)</h2>
+          <div class="row">
+            <button id="exportThumbnailBriefPdfBtn" class="btn btn-muted" type="button">
+              Export Thumbnail Brief PDF
+            </button>
+          </div>
+        </div>
+        <label class="full">
+          Thumbnail Brief Direction Notes
+          <textarea
+            id="thumbnailDirectionNotes"
+            rows="4"
+            placeholder="Direction for your thumbnail team: concepts to emphasize, do-not-use guardrails, visual style, and CTA intent."
+          ></textarea>
+        </label>
+      </section>
+
+      <section class="panel" data-page="brief-detail">
+        <div class="panel-header">
           <h2>Packaging Preview</h2>
         </div>
         <p class="hint">Preview top-ranked packaging in both light and dark modes.</p>
@@ -540,24 +559,13 @@
 
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>Brief Exports (PDF)</h2>
+          <h2>Packaging Brief Export (PDF)</h2>
           <div class="row">
-            <button id="exportThumbnailBriefPdfBtn" class="btn btn-muted" type="button">
-              Export Thumbnail Brief PDF
-            </button>
             <button id="exportPackagingBriefPdfBtn" class="btn btn-muted" type="button">
               Export Packaging Brief PDF
             </button>
           </div>
         </div>
-        <label class="full">
-          Thumbnail Brief Direction Notes
-          <textarea
-            id="thumbnailDirectionNotes"
-            rows="4"
-            placeholder="Direction for your thumbnail team: concepts to emphasize, do-not-use guardrails, visual style, and CTA intent."
-          ></textarea>
-        </label>
         <p id="briefExportHint" class="hint"></p>
         <div id="briefOutput" class="brief-output"></div>
       </section>
