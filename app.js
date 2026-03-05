@@ -3786,7 +3786,6 @@ function renderTitleBoard() {
 
       pendingTitleReorderPositions = captureVariationPositions(refs.titleBoard);
       moveItemInArray(state.titles, fromIndex, toIndex);
-      state.titleExpandedId = draggedId;
       syncProjectNameFromTopTitle();
       updateBoardsAndBrief();
     });
@@ -3944,7 +3943,6 @@ function renderThumbnailTextBoard() {
 
       pendingThumbnailTextReorderPositions = captureVariationPositions(refs.thumbnailTextBoard);
       moveItemInArray(state.thumbnailTexts, fromIndex, toIndex);
-      state.thumbnailTextExpandedId = draggedId;
       updateBoardsAndBrief();
     });
 
@@ -4101,7 +4099,6 @@ function renderThumbBoard() {
 
       pendingThumbReorderPositions = captureVariationPositions(refs.thumbnailBoard);
       moveItemInArray(state.thumbnails, fromIndex, toIndex);
-      state.thumbnailExpandedId = draggedId;
       updateBoardsAndBrief();
     });
 
@@ -4323,7 +4320,6 @@ function renderComparableBoard() {
 
       pendingComparableReorderPositions = captureVariationPositions(refs.comparableBoard);
       moveItemInArray(state.comparables, fromIndex, toIndex);
-      state.comparableExpandedId = draggedId;
       updateBoardsAndBrief({ persist: false });
       void saveSnapshot({ immediate: true });
     });
