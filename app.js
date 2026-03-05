@@ -376,6 +376,11 @@ const BRIEF_EXPORT_STYLES = `
     grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   }
 
+  .comparables.compact {
+    gap: 0.6rem;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+
   .comparable {
     border: 1px solid var(--line);
     background: var(--panel);
@@ -400,6 +405,25 @@ const BRIEF_EXPORT_STYLES = `
   .comparable h3 {
     margin: 0;
     font-size: 0.95rem;
+  }
+
+  .comparable.compact h3 {
+    font-size: 0.82rem;
+    line-height: 1.26;
+  }
+
+  .comparable.compact div {
+    padding: 0.5rem;
+    gap: 0.24rem;
+  }
+
+  .comparable.compact p {
+    font-size: 0.76rem;
+    line-height: 1.32;
+  }
+
+  .comparable.compact a {
+    font-size: 0.74rem;
   }
 
   .priority-chip {
@@ -4618,6 +4642,7 @@ function renderComparableHtml(items, options = {}) {
 
   const showPriorityBadges = Boolean(options.showPriorityBadges);
   const priorityStart = Number.isFinite(options.priorityStart) ? Number(options.priorityStart) : 1;
+  const compact = Boolean(options.compact);
 
   const cards = items
     .map((item, index) => {
@@ -4631,12 +4656,17 @@ function renderComparableHtml(items, options = {}) {
       const priorityHtml = showPriorityBadges
         ? `<p class=\"priority-chip\">Top ${priorityStart + index} Priority</p>`
         : "";
+      const comparableClass = compact ? "comparable compact" : "comparable";
+      const detailsHtml = compact
+        ? `<p class=\"muted\">${safeText(notes || meta, "No notes yet.")}</p>`
+        : `<p>${escapeHtml(meta)}</p>\n    <p class=\"muted\">${safeText(notes, "No notes yet.")}</p>`;
 
-      return `<article class=\"comparable\">\n  <img src=\"${escapeHtml(imageSrc)}\" alt=\"Thumbnail inspiration\" />\n  <div>\n    ${priorityHtml}\n    <h3>${escapeHtml(title)}</h3>\n    <p>${escapeHtml(meta)}</p>\n    ${linkHtml}\n    <p class=\"muted\">${safeText(notes, "No notes yet.")}</p>\n  </div>\n</article>`;
+      return `<article class=\"${comparableClass}\">\n  <img src=\"${escapeHtml(imageSrc)}\" alt=\"Thumbnail inspiration\" />\n  <div>\n    ${priorityHtml}\n    <h3>${escapeHtml(title)}</h3>\n    ${detailsHtml}\n    ${linkHtml}\n  </div>\n</article>`;
     })
     .join("");
 
-  return `<div class=\"comparables\">${cards}</div>`;
+  const comparablesClass = compact ? "comparables compact" : "comparables";
+  return `<div class=\"${comparablesClass}\">${cards}</div>`;
 }
 
 function buildBriefViewModel(values) {
@@ -4756,24 +4786,6 @@ function buildThumbnailBriefExportHtml(values) {
         </p>
       </section>
 
-      <section class="card">
-        <h2>Top 3 Inspiration Assets (Create Variations From These)</h2>
-        ${
-          topInspiration.length
-            ? renderComparableHtml(topInspiration, { showPriorityBadges: true, priorityStart: 1 })
-            : "<p>No top-priority inspiration assets yet. Add up to three priority assets in Thumbnail Studio.</p>"
-        }
-      </section>
-
-      <section class="card">
-        <h2>Additional Inspiration (Reference Only)</h2>
-        ${
-          referenceInspiration.length
-            ? renderComparableHtml(referenceInspiration)
-            : '<p class="muted">No additional reference inspiration assets yet.</p>'
-        }
-      </section>
-
       <section class="grid two">
         <article class="card">
           <h2>Full Treatment</h2>
@@ -4798,15 +4810,32 @@ function buildThumbnailBriefExportHtml(values) {
         </ul>
       </section>
 
-      <section class="grid two">
-        <article class="card">
-          <h2>Title Candidates</h2>
-          ${renderTitleListHtml(model.titleList)}
-        </article>
-        <article class="card">
-          <h2>Thumbnail Text Candidates</h2>
-          ${renderThumbnailTextListHtml(model.thumbnailTextList)}
-        </article>
+      <section class="card">
+        <h2>Thumbnail Text Candidates</h2>
+        ${renderThumbnailTextListHtml(model.thumbnailTextList)}
+      </section>
+
+      <section class="card">
+        <h2>Top 3 Inspiration Assets (Create Variations From These)</h2>
+        ${
+          topInspiration.length
+            ? renderComparableHtml(topInspiration, { showPriorityBadges: true, priorityStart: 1 })
+            : "<p>No top-priority inspiration assets yet. Add up to three priority assets in Thumbnail Studio.</p>"
+        }
+      </section>
+
+      <section class="card">
+        <h2>Additional Inspiration (Reference Only)</h2>
+        ${
+          referenceInspiration.length
+            ? renderComparableHtml(referenceInspiration, { compact: true })
+            : '<p class="muted">No additional reference inspiration assets yet.</p>'
+        }
+      </section>
+
+      <section class="card">
+        <h2>Title Candidates</h2>
+        ${renderTitleListHtml(model.titleList)}
       </section>
 
       <section class="card">
