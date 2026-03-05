@@ -403,12 +403,15 @@
         <div class="thumbnail-studio-grid">
           <article class="thumbnail-studio-column">
             <h3>Thumbnail Variations</h3>
-            <p class="hint">Drag to rank. Top row is your lead thumbnail concept.</p>
-            <div class="title-quick-entry">
-              <input id="quickThumbTitleInput" placeholder="Add a thumbnail variation and hit Enter" />
-              <button id="addQuickThumbBtn" class="btn btn-muted" type="button">Add Variation</button>
+            <p class="hint">Upload files, drag/drop, or paste images. Top row is your lead thumbnail concept.</p>
+            <div class="inspiration-tools-row">
+              <button id="addThumbnailUploadBtn" class="btn btn-muted" type="button">Upload Thumbnails</button>
+              <input id="thumbnailFileInput" type="file" accept="image/*" multiple hidden />
             </div>
-            <div id="thumbnailBoard" class="pipeline-board"></div>
+            <div id="thumbnailPasteZone" class="inspiration-paste-zone" tabindex="0">
+              Paste an image here or drag/drop image files.
+            </div>
+            <div id="thumbnailBoard" class="pipeline-board thumbnail-variation-board"></div>
           </article>
           <article class="thumbnail-studio-column">
             <h3>Inspiration Assets</h3>
@@ -431,7 +434,7 @@
         </div>
       </section>
 
-      <section class="panel" data-page="brief-detail">
+      <section class="panel is-hidden" data-page="brief-detail">
         <div class="panel-header">
           <h2>Packaging Scorecard</h2>
         </div>
@@ -455,7 +458,7 @@
         </div>
       </section>
 
-      <section class="panel" data-page="brief-detail">
+      <section class="panel is-hidden" data-page="brief-detail">
         <h2>Accelerator Playbook Signals</h2>
         <p class="hint">
           Integrated from Weeks 1-3: idea funnel, CCN fit, packaging stages, and traffic-aware strategy.
@@ -505,6 +508,23 @@
           <p id="checkThumbTextRule">Thumbnail text check: pending</p>
           <p id="checkPackagingStages">Stage check (Stop Scroll > Interest > Click): pending</p>
           <p id="checkCCN">CCN balance: pending</p>
+        </div>
+      </section>
+
+      <section class="panel" data-page="brief-detail">
+        <div class="panel-header">
+          <h2>Packaging Preview</h2>
+        </div>
+        <p class="hint">Preview top-ranked packaging in both light and dark modes.</p>
+        <div class="packaging-preview-grid">
+          <article class="packaging-preview-card" data-theme="light">
+            <h3>Light</h3>
+            <div id="packagingPreviewLight" class="packaging-preview-shell"></div>
+          </article>
+          <article class="packaging-preview-card" data-theme="dark">
+            <h3>Dark</h3>
+            <div id="packagingPreviewDark" class="packaging-preview-shell"></div>
+          </article>
         </div>
       </section>
 
@@ -615,6 +635,10 @@
               Thumbnail title
               <input data-field="title" />
             </label>
+            <label>
+              Creator
+              <input data-field="creator" />
+            </label>
             <label class="full">
               Preview image URL
               <input data-field="imageSrc" />
@@ -653,7 +677,11 @@
     <template id="comparableRowTemplate">
       <article class="pipeline-card pipeline-row list-row comparable-row">
         <div class="list-row-summary-shell">
-          <button type="button" class="pipeline-row-summary list-row-summary thumb-row-summary" data-action="toggle">
+          <button
+            type="button"
+            class="pipeline-row-summary list-row-summary thumb-row-summary comparable-row-summary"
+            data-action="toggle"
+          >
             <span class="icon-btn drag-handle-btn" data-action="drag" draggable="true" title="Drag to reorder">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="8" cy="6.5" r="1.5"></circle>
@@ -668,8 +696,10 @@
             <span class="list-row-preview">
               <img data-role="lineImage" alt="Inspiration preview" />
             </span>
-            <span class="pipeline-row-title" data-role="lineTitle"></span>
-            <span class="pipeline-row-meta" data-role="lineMeta"></span>
+            <span class="list-row-copy">
+              <span class="pipeline-row-title" data-role="lineCreator"></span>
+              <span class="pipeline-row-meta list-row-subline" data-role="lineMeta"></span>
+            </span>
           </button>
           <div class="list-row-actions">
             <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove inspiration">
@@ -683,7 +713,11 @@
           <img class="comparable-detail-image" data-role="detailImage" alt="Thumbnail inspiration" />
           <div class="pipeline-fields">
             <label class="full">
-              Title
+              Creator
+              <input data-field="author" />
+            </label>
+            <label class="full">
+              Video title / asset title
               <input data-field="title" />
             </label>
             <label class="full">

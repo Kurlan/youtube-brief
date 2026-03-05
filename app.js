@@ -181,8 +181,9 @@ const refs = {
   titleBoard: document.getElementById("titleBoard"),
   quickTitleInput: document.getElementById("quickTitleInput"),
   addQuickTitleBtn: document.getElementById("addQuickTitleBtn"),
-  quickThumbTitleInput: document.getElementById("quickThumbTitleInput"),
-  addQuickThumbBtn: document.getElementById("addQuickThumbBtn"),
+  addThumbnailUploadBtn: document.getElementById("addThumbnailUploadBtn"),
+  thumbnailFileInput: document.getElementById("thumbnailFileInput"),
+  thumbnailPasteZone: document.getElementById("thumbnailPasteZone"),
   thumbnailBoard: document.getElementById("thumbnailBoard"),
   comparableBoard: document.getElementById("comparableBoard"),
   comparableUrl: document.getElementById("comparableUrl"),
@@ -190,6 +191,8 @@ const refs = {
   addInspirationUploadBtn: document.getElementById("addInspirationUploadBtn"),
   inspirationFileInput: document.getElementById("inspirationFileInput"),
   inspirationPasteZone: document.getElementById("inspirationPasteZone"),
+  packagingPreviewLight: document.getElementById("packagingPreviewLight"),
+  packagingPreviewDark: document.getElementById("packagingPreviewDark"),
   titleTemplate: document.getElementById("titleRowTemplate"),
   thumbTemplate: document.getElementById("thumbRowTemplate"),
   comparableTemplate: document.getElementById("comparableRowTemplate"),
@@ -805,6 +808,7 @@ function createThumbnailRecord(seed = {}) {
   return {
     id: toCleanText(seed?.id) || createRecordId("thumb"),
     title,
+    creator: toCleanText(seed?.creator || seed?.author),
     meta: toCleanText(seed?.meta),
     notes: toCleanText(seed?.notes),
     imageSrc: toCleanText(seed?.imageSrc),
@@ -2615,11 +2619,15 @@ function setBriefEditorEnabled(enabled) {
   if (refs.addQuickTitleBtn) {
     refs.addQuickTitleBtn.disabled = !enabled;
   }
-  if (refs.quickThumbTitleInput) {
-    refs.quickThumbTitleInput.disabled = !enabled;
+  if (refs.addThumbnailUploadBtn) {
+    refs.addThumbnailUploadBtn.disabled = !enabled;
   }
-  if (refs.addQuickThumbBtn) {
-    refs.addQuickThumbBtn.disabled = !enabled;
+  if (refs.thumbnailFileInput) {
+    refs.thumbnailFileInput.disabled = !enabled;
+  }
+  if (refs.thumbnailPasteZone) {
+    refs.thumbnailPasteZone.classList.toggle("is-disabled", !enabled);
+    refs.thumbnailPasteZone.tabIndex = enabled ? 0 : -1;
   }
   if (refs.comparableUrl) {
     refs.comparableUrl.disabled = !enabled;
@@ -3663,7 +3671,8 @@ function renderTitleBoard() {
 
     card.dataset.variationId = itemId;
     lineTitleEl.textContent = toCleanText(item.text) || "Untitled title";
-    lineMetaEl.textContent = summarizeRowNotes(item.notes, "No notes yet.");
+    lineMetaEl.textContent = summarizeRowNotes(item.notes, "");
+    lineMetaEl.hidden = !toCleanText(lineMetaEl.textContent);
     lineStatusEl.textContent = index === 0 ? "Video Title" : "";
     lineStatusEl.hidden = index !== 0;
     titleInput.value = item.text;
@@ -3744,6 +3753,7 @@ function renderTitleBoard() {
       if (sourceIndex === 0) {
         syncProjectNameFromTopTitle({ refresh: true });
       }
+      updatePackagingPreview();
       saveSnapshot();
     });
 
@@ -3754,7 +3764,8 @@ function renderTitleBoard() {
       }
 
       state.titles[sourceIndex].notes = notesInput.value;
-      lineMetaEl.textContent = summarizeRowNotes(notesInput.value, "No notes yet.");
+      lineMetaEl.textContent = summarizeRowNotes(notesInput.value, "");
+      lineMetaEl.hidden = !toCleanText(lineMetaEl.textContent);
       saveSnapshot();
     });
 
@@ -3790,12 +3801,12 @@ function renderThumbBoard() {
   refs.thumbnailBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
-    refs.thumbnailBoard.innerHTML = '<p class="hint">Create or select a brief to edit thumbnail variations.</p>';
+    refs.thumbnailBoard.innerHTML = '<p class="pipeline-empty pipeline-empty-centered">Create or select a brief to edit thumbnail variations.</p>';
     return;
   }
 
   if (!state.thumbnails.length) {
-    refs.thumbnailBoard.innerHTML = '<p class="hint">No thumbnail concepts yet.</p>';
+    refs.thumbnailBoard.innerHTML = '<p class="pipeline-empty pipeline-empty-centered">No thumbnail concepts yet.</p>';
     return;
   }
 
@@ -3812,6 +3823,7 @@ function renderThumbBoard() {
     const dragBtn = fragment.querySelector('[data-action="drag"]');
     const removeBtn = fragment.querySelector('button[data-action="remove"]');
     const titleInput = fragment.querySelector('[data-field="title"]');
+    const creatorInput = fragment.querySelector('[data-field="creator"]');
     const imageInput = fragment.querySelector('[data-field="imageSrc"]');
     const metaInput = fragment.querySelector('[data-field="meta"]');
     const notesInput = fragment.querySelector('[data-field="notes"]');
@@ -3821,9 +3833,10 @@ function renderThumbBoard() {
     const lineImageSrc = toCleanText(item.imageSrc) || fallbackImage || "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
     card.dataset.variationId = itemId;
     lineTitle.textContent = toCleanText(item.title) || "Untitled thumbnail";
-    lineMeta.textContent = summarizeRowNotes(item.notes || item.meta, "No notes yet.");
+    lineMeta.textContent = summarizeRowNotes(item.notes || item.meta || item.creator, "");
     lineImage.src = lineImageSrc;
     titleInput.value = item.title;
+    creatorInput.value = item.creator || "";
     imageInput.value = item.imageSrc;
     metaInput.value = item.meta;
     notesInput.value = item.notes;
@@ -3898,6 +3911,21 @@ function renderThumbBoard() {
 
       state.thumbnails[sourceIndex].title = titleInput.value;
       lineTitle.textContent = toCleanText(titleInput.value) || "Untitled thumbnail";
+      updatePackagingPreview();
+      saveSnapshot();
+    });
+
+    creatorInput.addEventListener("input", () => {
+      const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnails[sourceIndex].creator = creatorInput.value;
+      lineMeta.textContent = summarizeRowNotes(
+        state.thumbnails[sourceIndex].notes || state.thumbnails[sourceIndex].meta || creatorInput.value,
+        "",
+      );
       saveSnapshot();
     });
 
@@ -3910,6 +3938,7 @@ function renderThumbBoard() {
       state.thumbnails[sourceIndex].imageSrc = imageInput.value;
       lineImage.src =
         toCleanText(imageInput.value) || fallbackImage || "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
+      updatePackagingPreview();
       saveSnapshot();
     });
 
@@ -3920,7 +3949,10 @@ function renderThumbBoard() {
       }
 
       state.thumbnails[sourceIndex].meta = metaInput.value;
-      lineMeta.textContent = summarizeRowNotes(state.thumbnails[sourceIndex].notes || metaInput.value, "No notes yet.");
+      lineMeta.textContent = summarizeRowNotes(
+        state.thumbnails[sourceIndex].notes || metaInput.value || state.thumbnails[sourceIndex].creator,
+        "",
+      );
       saveSnapshot();
     });
 
@@ -3931,7 +3963,10 @@ function renderThumbBoard() {
       }
 
       state.thumbnails[sourceIndex].notes = notesInput.value;
-      lineMeta.textContent = summarizeRowNotes(notesInput.value || state.thumbnails[sourceIndex].meta, "No notes yet.");
+      lineMeta.textContent = summarizeRowNotes(
+        notesInput.value || state.thumbnails[sourceIndex].meta || state.thumbnails[sourceIndex].creator,
+        "",
+      );
       saveSnapshot();
     });
 
@@ -4003,22 +4038,25 @@ function renderComparableBoard() {
     const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
     const lineImage = fragment.querySelector('[data-role="lineImage"]');
     const detailImage = fragment.querySelector('[data-role="detailImage"]');
-    const lineTitle = fragment.querySelector('[data-role="lineTitle"]');
+    const lineCreator = fragment.querySelector('[data-role="lineCreator"]');
     const lineMeta = fragment.querySelector('[data-role="lineMeta"]');
     const dragBtn = fragment.querySelector('[data-action="drag"]');
     const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const authorInput = fragment.querySelector('[data-field="author"]');
     const titleInput = fragment.querySelector('[data-field="title"]');
     const sourceInput = fragment.querySelector('[data-field="sourceUrl"]');
     const notesInput = fragment.querySelector('[data-field="notes"]');
     const sourceLink = fragment.querySelector('[data-role="sourceLink"]');
 
-    const defaultTitle = item.videoId ? `YouTube inspiration · ${item.videoId}` : "Image inspiration";
     const imageSrc = toCleanText(item.imageSrc) || "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
+    const creator = toCleanText(item.author) || "Uploaded image";
+    const summaryLineTwo = toCleanText(item.notes) || toCleanText(item.title);
     card.dataset.variationId = itemId;
     lineImage.src = imageSrc;
     detailImage.src = imageSrc;
-    lineTitle.textContent = toCleanText(item.title) || defaultTitle;
-    lineMeta.textContent = summarizeRowNotes(item.notes, getInspirationSourceMeta(item));
+    lineCreator.textContent = creator;
+    lineMeta.textContent = summarizeRowNotes(summaryLineTwo, "");
+    authorInput.value = item.author;
     titleInput.value = item.title;
     sourceInput.value = item.sourceUrl;
     notesInput.value = item.notes;
@@ -4083,7 +4121,19 @@ function renderComparableBoard() {
 
       record.title = titleInput.value;
       record.updatedAt = Date.now();
-      lineTitle.textContent = toCleanText(record.title) || defaultTitle;
+      lineMeta.textContent = summarizeRowNotes(record.notes || record.title, "");
+      saveSnapshot();
+    });
+
+    authorInput.addEventListener("input", () => {
+      const record = state.comparables.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.author = authorInput.value;
+      record.updatedAt = Date.now();
+      lineCreator.textContent = toCleanText(record.author) || "Uploaded image";
       saveSnapshot();
     });
 
@@ -4097,7 +4147,6 @@ function renderComparableBoard() {
       record.updatedAt = Date.now();
       sourceLink.href = toCleanText(record.sourceUrl) || "#";
       sourceLink.hidden = !toCleanText(record.sourceUrl);
-      lineMeta.textContent = summarizeRowNotes(record.notes, getInspirationSourceMeta(record));
       saveSnapshot();
     });
 
@@ -4109,7 +4158,7 @@ function renderComparableBoard() {
 
       record.notes = notesInput.value;
       record.updatedAt = Date.now();
-      lineMeta.textContent = summarizeRowNotes(record.notes, getInspirationSourceMeta(record));
+      lineMeta.textContent = summarizeRowNotes(record.notes || record.title, "");
       queueInspirationNotesSave();
     });
     notesInput.addEventListener("blur", () => {
@@ -4547,6 +4596,58 @@ function updateScoreboard(values) {
     : "Add and score thumbnails first.";
 
   updateChecks(topTitle, topThumb, values);
+}
+
+function buildPackagingPreviewCardHtml(theme, model) {
+  const hasImage = Boolean(model.imageSrc);
+  const title = toCleanText(model.title) || "Video title placeholder";
+  const thumbnailLabel = toCleanText(model.thumbnailLabel) || "Thumbnail placeholder";
+  const channelName = toCleanText(model.channelName) || "Your channel";
+
+  const mediaHtml = hasImage
+    ? `<img src="${escapeHtml(model.imageSrc)}" alt="Top thumbnail preview" />`
+    : '<div class="thumbsup-placeholder">16:9 Thumbnail Placeholder</div>';
+
+  return `
+    <article class="thumbsup-preview thumbsup-preview--${escapeHtml(theme)}">
+      <div class="thumbsup-media">
+        ${mediaHtml}
+        <span class="thumbsup-duration">12:34</span>
+      </div>
+      <div class="thumbsup-copy">
+        <h4>${escapeHtml(title)}</h4>
+        <p>${escapeHtml(channelName)}</p>
+        <p>${escapeHtml(thumbnailLabel)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function updatePackagingPreview() {
+  if (!refs.packagingPreviewLight || !refs.packagingPreviewDark) {
+    return;
+  }
+
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    const emptyHtml = '<p class="pipeline-empty pipeline-empty-centered">Select a brief to preview packaging.</p>';
+    refs.packagingPreviewLight.innerHTML = emptyHtml;
+    refs.packagingPreviewDark.innerHTML = emptyHtml;
+    return;
+  }
+
+  const topTitle = state.titles[0] || null;
+  const topThumb = state.thumbnails[0] || null;
+  const activeChannel = getActiveChannelRecord();
+  const model = {
+    title: topTitle ? topTitle.text : "",
+    thumbnailLabel: topThumb ? topThumb.title : "",
+    imageSrc: toCleanText(topThumb?.imageSrc) || "",
+    channelName: toCleanText(activeChannel?.name) || VIEWER_STRATEGY.channel,
+  };
+
+  refs.packagingPreviewLight.innerHTML = buildPackagingPreviewCardHtml("light", model);
+  refs.packagingPreviewDark.innerHTML = buildPackagingPreviewCardHtml("dark", model);
 }
 
 function updateBriefOutput(values) {
@@ -5134,8 +5235,8 @@ function resetAll() {
   refs.step1Sort.value = "newest";
   refs.step2QuickIdea.value = "";
   refs.step3QuickIdea.value = "";
-  if (refs.quickThumbTitleInput) {
-    refs.quickThumbTitleInput.value = "";
+  if (refs.thumbnailFileInput) {
+    refs.thumbnailFileInput.value = "";
   }
   const defaultChannel = createDefaultChannelRecord();
   const defaultAccount = createDefaultAccountRecord();
@@ -5213,6 +5314,7 @@ function updateBoardsAndBrief(options = {}) {
       renderTitleBoard();
       renderThumbBoard();
       renderComparableBoard();
+      updatePackagingPreview();
       updateScoreboard(values);
       updateBriefOutput(values);
     }
@@ -5320,6 +5422,16 @@ function getDroppedImageFiles(event) {
   );
 }
 
+function getDisplayNameFromFile(file) {
+  const raw = toCleanText(file?.name);
+  if (!raw) {
+    return "Uploaded thumbnail";
+  }
+
+  const withoutExt = raw.replace(/\.[^.]+$/, "");
+  return toCleanText(withoutExt) || "Uploaded thumbnail";
+}
+
 function isTextEditableElement(target) {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) {
@@ -5368,6 +5480,54 @@ async function addInspirationFiles(files, options = {}) {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      addedCount += 1;
+    } catch {
+      continue;
+    }
+  }
+
+  if (addedCount) {
+    updateBoardsAndBrief({ persist: false });
+    void saveSnapshot({ immediate: true });
+  }
+}
+
+async function addThumbnailFiles(files, options = {}) {
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    const triggerBtn = options.triggerButton || refs.addThumbnailUploadBtn;
+    flashButtonText(triggerBtn, "Create Brief First", 1300);
+    return;
+  }
+
+  const imageFiles = Array.from(files || []).filter(
+    (file) => file && file.type && file.type.startsWith("image/"),
+  );
+  if (!imageFiles.length) {
+    return;
+  }
+
+  let addedCount = 0;
+  for (const file of imageFiles) {
+    try {
+      const imageSrc = await readFileAsDataUrl(file);
+      if (!imageSrc) {
+        continue;
+      }
+
+      const title = getDisplayNameFromFile(file);
+      const record = createThumbnailRecord({
+        title,
+        creator: "",
+        meta: "",
+        notes: "",
+        imageSrc,
+      });
+      if (!record) {
+        continue;
+      }
+
+      state.thumbnails.push(record);
       addedCount += 1;
     } catch {
       continue;
@@ -5430,7 +5590,7 @@ async function addComparable() {
     notes: "",
     videoId,
     title: "Loading YouTube metadata...",
-    author: "",
+    author: "Loading creator...",
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -5481,41 +5641,6 @@ function addTitleVariationFromQuickEntry() {
   refs.quickTitleInput.value = "";
   refs.quickTitleInput.focus();
   syncProjectNameFromTopTitle();
-  updateBoardsAndBrief();
-}
-
-function addThumbnailVariationFromQuickEntry() {
-  if (!getActiveBriefRecord()) {
-    flashButtonText(refs.addQuickThumbBtn, "Create Brief First", 1200);
-    return;
-  }
-
-  const title = toCleanText(refs.quickThumbTitleInput?.value);
-  if (!title) {
-    flashButtonText(refs.addQuickThumbBtn, "Need title", 1000);
-    return;
-  }
-
-  const normalized = title.toLowerCase();
-  if (state.thumbnails.some((item) => toCleanText(item.title).toLowerCase() === normalized)) {
-    flashButtonText(refs.addQuickThumbBtn, "Exists", 1000);
-    return;
-  }
-
-  const record = createThumbnailRecord({
-    title,
-    meta: "",
-    notes: "",
-    imageSrc: toCleanText(state.comparables[0]?.imageSrc),
-  });
-  if (!record) {
-    flashButtonText(refs.addQuickThumbBtn, "Need title", 1000);
-    return;
-  }
-
-  state.thumbnails.push(record);
-  refs.quickThumbTitleInput.value = "";
-  refs.quickThumbTitleInput.focus();
   updateBoardsAndBrief();
 }
 
@@ -5707,9 +5832,6 @@ function bindEvents() {
   refs.addStep2Btn.addEventListener("click", addStep2IdeaFromQuickEntry);
   refs.addStep3Btn.addEventListener("click", addStep3IdeaFromQuickEntry);
   refs.addQuickTitleBtn.addEventListener("click", addTitleVariationFromQuickEntry);
-  if (refs.addQuickThumbBtn) {
-    refs.addQuickThumbBtn.addEventListener("click", addThumbnailVariationFromQuickEntry);
-  }
 
   refs.step1FastIdea.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -5738,15 +5860,6 @@ function bindEvents() {
       addTitleVariationFromQuickEntry();
     }
   });
-
-  if (refs.quickThumbTitleInput) {
-    refs.quickThumbTitleInput.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        addThumbnailVariationFromQuickEntry();
-      }
-    });
-  }
 
   refs.step1Search.addEventListener("input", () => {
     updateStep1ViewState({ query: refs.step1Search.value });
@@ -5800,6 +5913,54 @@ function bindEvents() {
         event.preventDefault();
         addComparable();
       }
+    });
+  }
+
+  if (refs.addThumbnailUploadBtn && refs.thumbnailFileInput) {
+    refs.addThumbnailUploadBtn.addEventListener("click", () => {
+      if (!getActiveBriefRecord()) {
+        flashButtonText(refs.addThumbnailUploadBtn, "Create Brief First", 1300);
+        return;
+      }
+
+      refs.thumbnailFileInput.click();
+    });
+
+    refs.thumbnailFileInput.addEventListener("change", async () => {
+      await addThumbnailFiles(refs.thumbnailFileInput.files, {
+        triggerButton: refs.addThumbnailUploadBtn,
+      });
+      refs.thumbnailFileInput.value = "";
+    });
+  }
+
+  if (refs.thumbnailPasteZone) {
+    refs.thumbnailPasteZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      refs.thumbnailPasteZone.classList.add("is-dragging");
+    });
+
+    refs.thumbnailPasteZone.addEventListener("dragleave", () => {
+      refs.thumbnailPasteZone.classList.remove("is-dragging");
+    });
+
+    refs.thumbnailPasteZone.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      refs.thumbnailPasteZone.classList.remove("is-dragging");
+      const droppedFiles = getDroppedImageFiles(event);
+      if (droppedFiles.length) {
+        await addThumbnailFiles(droppedFiles, { triggerButton: refs.addThumbnailUploadBtn });
+      }
+    });
+
+    refs.thumbnailPasteZone.addEventListener("paste", async (event) => {
+      const pastedFiles = getClipboardImageFiles(event);
+      if (!pastedFiles.length) {
+        return;
+      }
+
+      event.preventDefault();
+      await addThumbnailFiles(pastedFiles, { triggerButton: refs.addThumbnailUploadBtn });
     });
   }
 
