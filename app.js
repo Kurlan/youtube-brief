@@ -5712,30 +5712,45 @@ function flashInlineText(el, text, ms = 1200) {
 }
 
 function openPdfPrintWindow(html, triggerButton) {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  const printWindow = window.open("", "_blank");
   if (!printWindow) {
     flashButtonText(triggerButton, "Popup Blocked", 1500);
     return;
   }
 
+  const autoPrintScript = `
+    <script>
+      (function () {
+        const runPrint = () => {
+          try {
+            window.focus();
+            window.print();
+          } catch {}
+        };
+
+        if (document.readyState === "complete") {
+          setTimeout(runPrint, 80);
+        } else {
+          window.addEventListener("load", () => setTimeout(runPrint, 80), { once: true });
+        }
+
+        window.addEventListener(
+          "afterprint",
+          () => {
+            setTimeout(() => window.close(), 50);
+          },
+          { once: true },
+        );
+      })();
+    </script>
+  `;
+  const htmlWithAutoPrint = html.includes("</body>")
+    ? html.replace("</body>", `${autoPrintScript}</body>`)
+    : `${html}${autoPrintScript}`;
+
   printWindow.document.open();
-  printWindow.document.write(html);
+  printWindow.document.write(htmlWithAutoPrint);
   printWindow.document.close();
-  printWindow.onafterprint = () => {
-    printWindow.close();
-  };
-
-  const triggerPrint = () => {
-    printWindow.focus();
-    printWindow.print();
-  };
-
-  if (printWindow.document.readyState === "complete") {
-    setTimeout(triggerPrint, 180);
-  } else {
-    printWindow.addEventListener("load", () => setTimeout(triggerPrint, 180), { once: true });
-  }
-
   flashButtonText(triggerButton, "Opening PDF", 900);
 }
 
