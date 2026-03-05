@@ -3675,6 +3675,7 @@ function renderTitleBoard() {
     lineMetaEl.hidden = !toCleanText(lineMetaEl.textContent);
     lineStatusEl.textContent = index === 0 ? "Video Title" : "";
     lineStatusEl.hidden = index !== 0;
+    card.classList.toggle("is-video-title", index === 0);
     titleInput.value = item.text;
     notesInput.value = item.notes;
     setPipelineRowExpanded(card, detailsEl, arrowEl, state.titleExpandedId === itemId);
@@ -4609,15 +4610,19 @@ function buildPackagingPreviewCardHtml(theme, model) {
     : '<div class="thumbsup-placeholder">16:9 Thumbnail Placeholder</div>';
 
   return `
-    <article class="thumbsup-preview thumbsup-preview--${escapeHtml(theme)}">
-      <div class="thumbsup-media">
-        ${mediaHtml}
-        <span class="thumbsup-duration">12:34</span>
-      </div>
-      <div class="thumbsup-copy">
-        <h4>${escapeHtml(title)}</h4>
-        <p>${escapeHtml(channelName)}</p>
-        <p>${escapeHtml(thumbnailLabel)}</p>
+    <article class="thumbsup-stage thumbsup-stage--${escapeHtml(theme)}">
+      <div class="thumbsup-stage-inner">
+        <article class="thumbsup-preview thumbsup-preview--${escapeHtml(theme)}">
+          <div class="thumbsup-media">
+            ${mediaHtml}
+            <span class="thumbsup-duration">12:34</span>
+          </div>
+          <div class="thumbsup-copy">
+            <h4>${escapeHtml(title)}</h4>
+            <p>${escapeHtml(channelName)}</p>
+            <p>${escapeHtml(thumbnailLabel)}</p>
+          </div>
+        </article>
       </div>
     </article>
   `;

@@ -1182,6 +1182,16 @@ select:focus {
   background: rgba(177, 42, 42, 0.2);
 }
 
+.list-row.is-video-title .list-row-summary {
+  background: rgba(13, 106, 113, 0.12);
+}
+
+.list-row.is-video-title .pipeline-row-status {
+  border-color: rgba(13, 106, 113, 0.55);
+  background: rgba(13, 106, 113, 0.22);
+  color: #0b4b50;
+}
+
 .pipeline-card-header {
   display: flex;
   justify-content: space-between;
@@ -1337,7 +1347,7 @@ select:focus {
 
 .packaging-preview-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.9rem;
 }
 
@@ -1360,7 +1370,28 @@ select:focus {
 
 .packaging-preview-shell {
   display: grid;
-  min-height: 220px;
+  min-height: 320px;
+}
+
+.thumbsup-stage {
+  border-radius: 12px;
+  min-height: 320px;
+  padding: 1.5rem 2rem;
+  display: grid;
+  align-items: center;
+}
+
+.thumbsup-stage--light {
+  background: #ffffff;
+}
+
+.thumbsup-stage--dark {
+  background: #000000;
+}
+
+.thumbsup-stage-inner {
+  width: min(640px, 100%);
+  margin: 0 auto;
 }
 
 .thumbsup-preview {
@@ -1874,6 +1905,15 @@ select:focus {
   .thumbnail-variation-board,
   .thumbnail-variation-board > .pipeline-empty {
     min-height: 300px;
+  }
+
+  .packaging-preview-shell,
+  .thumbsup-stage {
+    min-height: 260px;
+  }
+
+  .thumbsup-stage {
+    padding: 1rem;
   }
 
   .brief-list-hit {
