@@ -184,7 +184,7 @@
         <p class="hint">
           Briefs are production-intent records. Select a brief below to open the full workspace.
         </p>
-        <div id="briefListBoard" class="brief-list-board"></div>
+        <div id="briefListBoard" class="brief-list-board pipeline-board"></div>
       </section>
 
       <section class="panel" data-page="brief-detail">
@@ -391,7 +391,7 @@
           <input id="quickTitleInput" placeholder="Add a potential title and hit Enter" />
           <button id="addQuickTitleBtn" class="btn btn-muted" type="button">Add Title</button>
         </div>
-        <div id="titleBoard" class="idea-board"></div>
+        <div id="titleBoard" class="pipeline-board"></div>
       </section>
 
       <section class="panel" data-page="brief-detail">
@@ -416,7 +416,16 @@
             <div id="inspirationPasteZone" class="inspiration-paste-zone" tabindex="0">
               Paste an image here or drag/drop image files.
             </div>
-            <div id="comparableBoard" class="comparable-board"></div>
+            <div id="comparableBoard" class="pipeline-board"></div>
+          </article>
+          <article class="thumbnail-studio-column">
+            <h3>Thumbnail Variations</h3>
+            <p class="hint">Drag to rank. Top row is your lead thumbnail concept.</p>
+            <div class="title-quick-entry">
+              <input id="quickThumbTitleInput" placeholder="Add a thumbnail variation and hit Enter" />
+              <button id="addQuickThumbBtn" class="btn btn-muted" type="button">Add Variation</button>
+            </div>
+            <div id="thumbnailBoard" class="pipeline-board"></div>
           </article>
         </div>
       </section>
@@ -510,77 +519,172 @@
       </section>
     </main>
 
-    <template id="titleCardTemplate">
-      <article class="idea-card">
-        <h3 class="idea-title"></h3>
-        <div class="idea-actions">
-          <button type="button" class="btn btn-muted" data-action="toggleStrong">Mark Strong</button>
-          <button type="button" class="btn btn-muted" data-action="useTitle">Use as Video Title</button>
-          <button type="button" class="btn btn-muted" data-action="removeTitle">Remove</button>
+    <template id="titleRowTemplate">
+      <article class="pipeline-card pipeline-row list-row">
+        <div class="list-row-summary-shell">
+          <button type="button" class="pipeline-row-summary list-row-summary" data-action="toggle">
+            <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+            <span class="pipeline-row-title" data-role="lineTitle"></span>
+            <span class="pipeline-row-status" data-role="lineStatus"></span>
+            <span class="pipeline-row-meta" data-role="lineMeta"></span>
+          </button>
+          <div class="list-row-actions">
+            <button type="button" class="icon-btn drag-handle-btn" data-action="drag" draggable="true" aria-label="Drag to reorder">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="8" cy="6.5" r="1.5"></circle>
+                <circle cx="8" cy="12" r="1.5"></circle>
+                <circle cx="8" cy="17.5" r="1.5"></circle>
+                <circle cx="16" cy="6.5" r="1.5"></circle>
+                <circle cx="16" cy="12" r="1.5"></circle>
+                <circle cx="16" cy="17.5" r="1.5"></circle>
+              </svg>
+            </button>
+            <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove title">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
-        <div class="score-inputs">
-          <label>
-            Curiosity
-            <input type="range" min="0" max="10" value="0" data-score="curiosity" />
-          </label>
-          <label>
-            Clarity
-            <input type="range" min="0" max="10" value="0" data-score="clarity" />
-          </label>
-          <label>
-            Uniqueness
-            <input type="range" min="0" max="10" value="0" data-score="uniqueness" />
-          </label>
-          <label>
-            Promise Strength
-            <input type="range" min="0" max="10" value="0" data-score="promise" />
-          </label>
+        <div class="pipeline-row-details" data-role="details" hidden>
+          <div class="pipeline-fields">
+            <label class="full">
+              Title
+              <input data-field="text" />
+            </label>
+            <label class="full">
+              Notes / Thoughts
+              <textarea rows="2" data-field="notes"></textarea>
+            </label>
+          </div>
+          <div class="score-inputs">
+            <label>
+              Curiosity
+              <input type="range" min="0" max="10" value="0" data-score="curiosity" />
+            </label>
+            <label>
+              Clarity
+              <input type="range" min="0" max="10" value="0" data-score="clarity" />
+            </label>
+            <label>
+              Uniqueness
+              <input type="range" min="0" max="10" value="0" data-score="uniqueness" />
+            </label>
+            <label>
+              Promise Strength
+              <input type="range" min="0" max="10" value="0" data-score="promise" />
+            </label>
+          </div>
         </div>
-        <p class="score-pill"></p>
       </article>
     </template>
 
-    <template id="thumbCardTemplate">
-      <article class="idea-card">
-        <h3 class="idea-title"></h3>
-        <p class="idea-meta"></p>
-        <div class="score-inputs">
-          <label>
-            Emotion
-            <input type="range" min="0" max="10" value="0" data-score="emotion" />
-          </label>
-          <label>
-            Contrast
-            <input type="range" min="0" max="10" value="0" data-score="contrast" />
-          </label>
-          <label>
-            Clarity
-            <input type="range" min="0" max="10" value="0" data-score="clarity" />
-          </label>
-          <label>
-            Click Intent
-            <input type="range" min="0" max="10" value="0" data-score="intent" />
-          </label>
+    <template id="thumbRowTemplate">
+      <article class="pipeline-card pipeline-row list-row thumb-row">
+        <div class="list-row-summary-shell">
+          <button type="button" class="pipeline-row-summary list-row-summary thumb-row-summary" data-action="toggle">
+            <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+            <span class="list-row-preview">
+              <img data-role="previewImage" alt="Thumbnail preview" />
+            </span>
+            <span class="pipeline-row-title" data-role="lineTitle"></span>
+            <span class="pipeline-row-meta" data-role="lineMeta"></span>
+          </button>
+          <div class="list-row-actions">
+            <button type="button" class="icon-btn drag-handle-btn" data-action="drag" draggable="true" aria-label="Drag to reorder">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="8" cy="6.5" r="1.5"></circle>
+                <circle cx="8" cy="12" r="1.5"></circle>
+                <circle cx="8" cy="17.5" r="1.5"></circle>
+                <circle cx="16" cy="6.5" r="1.5"></circle>
+                <circle cx="16" cy="12" r="1.5"></circle>
+                <circle cx="16" cy="17.5" r="1.5"></circle>
+              </svg>
+            </button>
+            <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove thumbnail">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
-        <p class="score-pill"></p>
+        <div class="pipeline-row-details" data-role="details" hidden>
+          <div class="pipeline-fields">
+            <label class="full">
+              Thumbnail title
+              <input data-field="title" />
+            </label>
+            <label class="full">
+              Preview image URL
+              <input data-field="imageSrc" />
+            </label>
+            <label class="full">
+              Concept / Hook
+              <textarea rows="2" data-field="meta"></textarea>
+            </label>
+            <label class="full">
+              Notes / Thoughts
+              <textarea rows="2" data-field="notes"></textarea>
+            </label>
+          </div>
+          <div class="score-inputs">
+            <label>
+              Emotion
+              <input type="range" min="0" max="10" value="0" data-score="emotion" />
+            </label>
+            <label>
+              Contrast
+              <input type="range" min="0" max="10" value="0" data-score="contrast" />
+            </label>
+            <label>
+              Clarity
+              <input type="range" min="0" max="10" value="0" data-score="clarity" />
+            </label>
+            <label>
+              Click Intent
+              <input type="range" min="0" max="10" value="0" data-score="intent" />
+            </label>
+          </div>
+        </div>
       </article>
     </template>
 
-    <template id="comparableCardTemplate">
-      <article class="comparable-card">
-        <img class="comparable-thumb" alt="Thumbnail inspiration" />
-        <div class="comparable-content">
-          <h3 class="comparable-title"></h3>
-          <p class="comparable-meta"></p>
-          <a class="comparable-link" target="_blank" rel="noreferrer noopener">Open Source</a>
-          <p class="comparable-notes-label">Notes</p>
-          <p
-            class="comparable-notes"
-            data-role="comparableNotes"
-            contenteditable="true"
-            data-placeholder="Click to add notes"
-          ></p>
-          <button class="btn btn-muted comparable-remove" type="button">Delete</button>
+    <template id="comparableRowTemplate">
+      <article class="pipeline-card pipeline-row list-row comparable-row">
+        <div class="list-row-summary-shell">
+          <button type="button" class="pipeline-row-summary list-row-summary thumb-row-summary" data-action="toggle">
+            <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+            <span class="list-row-preview">
+              <img data-role="lineImage" alt="Inspiration preview" />
+            </span>
+            <span class="pipeline-row-title" data-role="lineTitle"></span>
+            <span class="pipeline-row-meta" data-role="lineMeta"></span>
+          </button>
+          <div class="list-row-actions">
+            <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove inspiration">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="pipeline-row-details" data-role="details" hidden>
+          <img class="comparable-detail-image" data-role="detailImage" alt="Thumbnail inspiration" />
+          <div class="pipeline-fields">
+            <label class="full">
+              Title
+              <input data-field="title" />
+            </label>
+            <label class="full">
+              Source Link
+              <input data-field="sourceUrl" />
+            </label>
+            <label class="full">
+              Notes / Thoughts
+              <textarea rows="3" data-field="notes"></textarea>
+            </label>
+          </div>
+          <a class="comparable-link" data-role="sourceLink" target="_blank" rel="noreferrer noopener">Open Source</a>
         </div>
       </article>
     </template>
@@ -608,17 +712,17 @@
     </template>
 
     <template id="briefListItemTemplate">
-      <article class="brief-list-card">
-        <button type="button" class="brief-list-hit" data-action="openBrief">
-          <div class="brief-list-main">
-            <h3 class="brief-list-title" data-role="briefTitle"></h3>
-            <p class="brief-list-meta" data-role="briefMeta"></p>
-          </div>
-          <div class="brief-list-side">
-            <span class="brief-list-badge" data-role="briefStatus"></span>
-            <span class="brief-list-updated" data-role="briefUpdated"></span>
-          </div>
+      <article class="pipeline-card pipeline-row list-row brief-list-row">
+        <button type="button" class="pipeline-row-summary list-row-summary brief-list-summary" data-action="toggle">
+          <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
+          <span class="pipeline-row-title" data-role="briefTitle"></span>
+          <span class="pipeline-row-status brief-list-badge" data-role="briefStatus"></span>
+          <span class="pipeline-row-meta" data-role="briefMeta"></span>
         </button>
+        <div class="pipeline-row-details" data-role="details" hidden>
+          <p class="brief-list-updated" data-role="briefUpdated"></p>
+          <button type="button" class="btn btn-muted" data-action="openBrief">Open Brief</button>
+        </div>
       </article>
     </template>
 
@@ -643,7 +747,11 @@
               <option value="red">Discard (red)</option>
             </select>
               <button type="button" class="btn btn-muted" data-action="promote">Send to Phase 2</button>
-              <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
+              <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove idea">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
+                </svg>
+              </button>
             </div>
           </div>
           <div class="pipeline-fields">
@@ -690,7 +798,11 @@
             </select>
               <button type="button" class="btn btn-muted" data-action="demote">Demote to Phase 1</button>
               <button type="button" class="btn btn-muted" data-action="promote">Promote to Phase 3</button>
-              <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
+              <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove idea">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
+                </svg>
+              </button>
             </div>
           </div>
           <div class="pipeline-fields">
@@ -733,7 +845,11 @@
               </select>
               <button type="button" class="btn btn-muted" data-action="demote">Demote to Phase 2</button>
               <button type="button" class="btn btn-muted" data-action="startBrief">Promote to Brief</button>
-              <button type="button" class="btn btn-muted" data-action="remove">Remove</button>
+              <button type="button" class="icon-btn icon-btn-danger" data-action="remove" aria-label="Remove idea">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path>
+                </svg>
+              </button>
             </div>
           </div>
           <div class="pipeline-fields">

@@ -179,6 +179,8 @@ const refs = {
   titleBoard: document.getElementById("titleBoard"),
   quickTitleInput: document.getElementById("quickTitleInput"),
   addQuickTitleBtn: document.getElementById("addQuickTitleBtn"),
+  quickThumbTitleInput: document.getElementById("quickThumbTitleInput"),
+  addQuickThumbBtn: document.getElementById("addQuickThumbBtn"),
   thumbnailBoard: document.getElementById("thumbnailBoard"),
   comparableBoard: document.getElementById("comparableBoard"),
   comparableUrl: document.getElementById("comparableUrl"),
@@ -186,9 +188,9 @@ const refs = {
   addInspirationUploadBtn: document.getElementById("addInspirationUploadBtn"),
   inspirationFileInput: document.getElementById("inspirationFileInput"),
   inspirationPasteZone: document.getElementById("inspirationPasteZone"),
-  titleTemplate: document.getElementById("titleCardTemplate"),
-  thumbTemplate: document.getElementById("thumbCardTemplate"),
-  comparableTemplate: document.getElementById("comparableCardTemplate"),
+  titleTemplate: document.getElementById("titleRowTemplate"),
+  thumbTemplate: document.getElementById("thumbRowTemplate"),
+  comparableTemplate: document.getElementById("comparableRowTemplate"),
   briefSourceType: document.getElementById("briefSourceType"),
   briefSourceIdea: document.getElementById("briefSourceIdea"),
   briefSourceNotes: document.getElementById("briefSourceNotes"),
@@ -248,6 +250,10 @@ const state = {
   latestBriefHtml: "",
   briefDetailExpanded: false,
   viewerSnapshotExpanded: false,
+  titleExpandedId: "",
+  thumbnailExpandedId: "",
+  comparableExpandedId: "",
+  briefListExpandedId: "",
 };
 
 let localDbPromise = null;
@@ -255,8 +261,12 @@ let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
 let queuedSnapshotPayload = null;
 let persistQueue = Promise.resolve();
-let animateTitleReorderOnNextRender = false;
-let animateThumbReorderOnNextRender = false;
+let pendingTitleReorderPositions = null;
+let pendingThumbReorderPositions = null;
+let variationDragState = {
+  type: "",
+  id: "",
+};
 
 const BRIEF_EXPORT_STYLES = `
   :root {
@@ -758,6 +768,7 @@ function createTitleRecord(seed = {}) {
   return {
     id: toCleanText(seed?.id) || createRecordId("title"),
     text,
+    notes: toCleanText(seed?.notes),
     scores,
     isStrong: Boolean(seed?.isStrong),
   };
@@ -771,37 +782,39 @@ function normalizeTitleCollection(items) {
   return items.map((item) => createTitleRecord(item)).filter(Boolean);
 }
 
+function createThumbnailRecord(seed = {}) {
+  const title = toCleanText(seed?.title);
+  if (!title) {
+    return null;
+  }
+
+  const defaults = defaultThumbScores();
+  let scores = {
+    emotion: normalizeScoreValue(seed?.scores?.emotion, defaults.emotion),
+    contrast: normalizeScoreValue(seed?.scores?.contrast, defaults.contrast),
+    clarity: normalizeScoreValue(seed?.scores?.clarity, defaults.clarity),
+    intent: normalizeScoreValue(seed?.scores?.intent, defaults.intent),
+  };
+  if (hasLegacyNeutralScores(scores, 5)) {
+    scores = defaultThumbScores();
+  }
+
+  return {
+    id: toCleanText(seed?.id) || createRecordId("thumb"),
+    title,
+    meta: toCleanText(seed?.meta),
+    notes: toCleanText(seed?.notes),
+    imageSrc: toCleanText(seed?.imageSrc),
+    scores,
+  };
+}
+
 function normalizeThumbnailCollection(items) {
   if (!Array.isArray(items)) {
     return [];
   }
 
-  return items
-    .map((item) => {
-      const title = toCleanText(item?.title);
-      if (!title) {
-        return null;
-      }
-
-      const defaults = defaultThumbScores();
-      let scores = {
-        emotion: normalizeScoreValue(item?.scores?.emotion, defaults.emotion),
-        contrast: normalizeScoreValue(item?.scores?.contrast, defaults.contrast),
-        clarity: normalizeScoreValue(item?.scores?.clarity, defaults.clarity),
-        intent: normalizeScoreValue(item?.scores?.intent, defaults.intent),
-      };
-      if (hasLegacyNeutralScores(scores, 5)) {
-        scores = defaultThumbScores();
-      }
-
-      return {
-        id: toCleanText(item?.id) || createRecordId("thumb"),
-        title,
-        meta: toCleanText(item?.meta),
-        scores,
-      };
-    })
-    .filter(Boolean);
+  return items.map((item) => createThumbnailRecord(item)).filter(Boolean);
 }
 
 function normalizeComparableCollection(items) {
@@ -1795,6 +1808,9 @@ function setPageView(pageView, shouldPersist = true, options = {}) {
     state.briefDetailExpanded = false;
     state.viewerSnapshotExpanded = false;
   }
+  if (state.pageView === "briefs" && previousPageView !== "briefs") {
+    state.briefListExpandedId = "";
+  }
 
   if (state.pageView === "channel" || state.pageView === "briefs" || state.pageView === "brief-detail") {
     const accessibleChannels = getAccessibleChannels();
@@ -1975,6 +1991,9 @@ function applyActiveChannelBriefState(briefState = {}) {
     state.thumbnails = [];
     state.comparables = [];
     state.latestBriefHtml = "";
+    state.titleExpandedId = "";
+    state.thumbnailExpandedId = "";
+    state.comparableExpandedId = "";
     return;
   }
 
@@ -1995,15 +2014,21 @@ function applyActiveChannelBriefState(briefState = {}) {
     state.thumbnails = [];
     state.comparables = [];
     state.latestBriefHtml = "";
+    state.titleExpandedId = "";
+    state.thumbnailExpandedId = "";
+    state.comparableExpandedId = "";
     return;
   }
 
   setFieldValues(activeBrief.values || {});
   state.titles = normalizeTitleCollection(activeBrief.titles);
   state.thumbnails = normalizeThumbnailCollection(activeBrief.thumbnails);
-  sortActiveBriefVariationsByScore();
+  syncProjectNameFromTopTitle();
   state.comparables = normalizeComparableCollection(activeBrief.comparables);
   state.latestBriefHtml = toCleanText(activeBrief.latestBriefHtml);
+  state.titleExpandedId = "";
+  state.thumbnailExpandedId = "";
+  state.comparableExpandedId = "";
 }
 
 function cacheActiveChannelWorkspace(values = getFieldValues()) {
@@ -2532,7 +2557,10 @@ function renderBriefListBoard() {
 
   briefState.briefs.forEach((brief, index) => {
     const fragment = refs.briefListItemTemplate.content.cloneNode(true);
-    const card = fragment.querySelector(".brief-list-card");
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
     const openBtn = fragment.querySelector('button[data-action="openBrief"]');
     const titleEl = fragment.querySelector('[data-role="briefTitle"]');
     const metaEl = fragment.querySelector('[data-role="briefMeta"]');
@@ -2545,9 +2573,16 @@ function renderBriefListBoard() {
     updatedEl.textContent = `Updated ${formatBriefUpdatedAt(brief.updatedAt)}`;
     card.classList.toggle("is-active", brief.id === activeBriefId);
     card.dataset.briefStatus = normalizeBriefStatus(brief.status);
+    setPipelineRowExpanded(card, detailsEl, arrowEl, state.briefListExpandedId === brief.id);
+
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.briefListBoard, card, detailsEl, arrowEl);
+      state.briefListExpandedId = card.dataset.expanded === "true" ? brief.id : "";
+    });
 
     openBtn.addEventListener("click", () => {
       setActiveBrief(brief.id, false);
+      state.briefListExpandedId = "";
       setPageView("brief-detail");
     });
 
@@ -2556,7 +2591,7 @@ function renderBriefListBoard() {
 }
 
 function setBriefEditorEnabled(enabled) {
-  const fieldControlIds = [...fieldIds, "generateTitlesBtn", "generateThumbsBtn", "downloadBriefBtn"];
+  const fieldControlIds = [...fieldIds, "downloadBriefBtn"];
   fieldControlIds.forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
@@ -2572,6 +2607,12 @@ function setBriefEditorEnabled(enabled) {
   }
   if (refs.addQuickTitleBtn) {
     refs.addQuickTitleBtn.disabled = !enabled;
+  }
+  if (refs.quickThumbTitleInput) {
+    refs.quickThumbTitleInput.disabled = !enabled;
+  }
+  if (refs.addQuickThumbBtn) {
+    refs.addQuickThumbBtn.disabled = !enabled;
   }
   if (refs.comparableUrl) {
     refs.comparableUrl.disabled = !enabled;
@@ -3292,39 +3333,25 @@ function averageScore(scores) {
   return total / values.length;
 }
 
-function compareByAverageScoreDesc(left, right) {
-  const scoreDiff = averageScore(right.scores) - averageScore(left.scores);
-  if (scoreDiff !== 0) {
-    return scoreDiff;
+function summarizeRowNotes(value, fallback = "") {
+  const cleaned = toCleanText(value).replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return fallback;
   }
 
-  const leftLabel = toCleanText(left?.text || left?.title);
-  const rightLabel = toCleanText(right?.text || right?.title);
-  return leftLabel.localeCompare(rightLabel);
-}
-
-function sortTitleVariationsByScore(items = []) {
-  return [...items].sort(compareByAverageScoreDesc);
-}
-
-function sortThumbnailVariationsByScore(items = []) {
-  return [...items].sort(compareByAverageScoreDesc);
-}
-
-function sortActiveBriefVariationsByScore() {
-  state.titles = sortTitleVariationsByScore(state.titles);
-  state.thumbnails = sortThumbnailVariationsByScore(state.thumbnails);
+  return summarizeLine(cleaned, "", 68);
 }
 
 function captureVariationPositions(container) {
   if (!container) {
-    return new Map();
+    return null;
   }
 
   const positions = new Map();
-  container.querySelectorAll(".idea-card[data-variation-id]").forEach((card) => {
-    positions.set(card.dataset.variationId, card.getBoundingClientRect());
+  container.querySelectorAll("[data-variation-id]").forEach((row) => {
+    positions.set(row.dataset.variationId, row.getBoundingClientRect());
   });
+
   return positions;
 }
 
@@ -3333,34 +3360,97 @@ function animateVariationReorder(container, previousPositions) {
     return;
   }
 
-  const cards = container.querySelectorAll(".idea-card[data-variation-id]");
-  cards.forEach((card) => {
-    const id = card.dataset.variationId;
+  container.querySelectorAll("[data-variation-id]").forEach((row) => {
+    const id = row.dataset.variationId;
     const previousRect = previousPositions.get(id);
     if (!previousRect) {
       return;
     }
 
-    const nextRect = card.getBoundingClientRect();
+    const nextRect = row.getBoundingClientRect();
     const deltaX = previousRect.left - nextRect.left;
     const deltaY = previousRect.top - nextRect.top;
     if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
       return;
     }
 
-    card.classList.add("is-reordering");
-    card.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    row.classList.add("is-reordering");
+    row.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
     requestAnimationFrame(() => {
-      card.style.transform = "translate(0, 0)";
+      row.style.transform = "translate(0, 0)";
     });
 
     const cleanup = () => {
-      card.classList.remove("is-reordering");
-      card.style.transform = "";
-      card.removeEventListener("transitionend", cleanup);
+      row.classList.remove("is-reordering");
+      row.style.transform = "";
+      row.removeEventListener("transitionend", cleanup);
     };
-    card.addEventListener("transitionend", cleanup);
+    row.addEventListener("transitionend", cleanup);
   });
+}
+
+function moveItemInArray(items = [], fromIndex = 0, toIndex = 0) {
+  if (!Array.isArray(items) || fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+    return false;
+  }
+
+  if (fromIndex >= items.length || toIndex >= items.length) {
+    return false;
+  }
+
+  const [moved] = items.splice(fromIndex, 1);
+  items.splice(toIndex, 0, moved);
+  return true;
+}
+
+function syncProjectNameFromTopTitle(options = {}) {
+  const projectNameInput = document.getElementById("projectName");
+  if (!projectNameInput) {
+    return false;
+  }
+
+  const topTitle = state.titles[0];
+  if (!topTitle) {
+    return false;
+  }
+
+  const nextTitle = toCleanText(topTitle.text);
+  if (toCleanText(projectNameInput.value) === nextTitle) {
+    return false;
+  }
+
+  projectNameInput.value = nextTitle;
+  if (options.refresh) {
+    updateScoreboard(getFieldValues());
+    updateBriefOutput(getFieldValues());
+  }
+  return true;
+}
+
+function beginVariationDrag(event, type, id) {
+  variationDragState.type = toCleanText(type);
+  variationDragState.id = toCleanText(id);
+  if (event?.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", variationDragState.id);
+  }
+}
+
+function canVariationDrop(type, targetId) {
+  return (
+    variationDragState.type === toCleanText(type) &&
+    Boolean(variationDragState.id) &&
+    variationDragState.id !== toCleanText(targetId)
+  );
+}
+
+function clearVariationDropTargets() {
+  document.querySelectorAll(".list-row.is-drop-target").forEach((row) => {
+    row.classList.remove("is-drop-target");
+  });
+
+  variationDragState.type = "";
+  variationDragState.id = "";
 }
 
 function getTopScored(items) {
@@ -3443,11 +3533,15 @@ function generateThumbnails(values) {
     },
   ];
 
-  return concepts.map((item) => ({
-    id: createRecordId("thumb"),
-    ...item,
-    scores: defaultThumbScores(),
-  }));
+  return concepts.map((item) =>
+    createThumbnailRecord({
+      title: item.title,
+      meta: item.meta,
+      notes: "",
+      imageSrc: "",
+      scores: defaultThumbScores(),
+    }),
+  );
 }
 
 function parseYouTubeVideoId(input) {
@@ -3530,84 +3624,129 @@ function renderTitleBoard() {
     return;
   }
 
-  const shouldAnimate = animateTitleReorderOnNextRender;
-  const previousPositions = shouldAnimate ? captureVariationPositions(refs.titleBoard) : null;
+  const previousPositions = pendingTitleReorderPositions;
+  pendingTitleReorderPositions = null;
   refs.titleBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
-    animateTitleReorderOnNextRender = false;
     refs.titleBoard.innerHTML = '<p class="hint">Create or select a brief to edit title variations.</p>';
     return;
   }
 
   if (!state.titles.length) {
-    animateTitleReorderOnNextRender = false;
     refs.titleBoard.innerHTML = '<p class="hint">No title ideas yet. Add one above.</p>';
     return;
   }
 
-  const projectNameInput = document.getElementById("projectName");
-  const currentVideoTitle = toCleanText(projectNameInput?.value);
-
-  state.titles.forEach((item) => {
+  state.titles.forEach((item, index) => {
     const itemId = toCleanText(item.id);
     const fragment = refs.titleTemplate.content.cloneNode(true);
-    const card = fragment.querySelector(".idea-card");
-    const titleEl = fragment.querySelector(".idea-title");
-    const scorePill = fragment.querySelector(".score-pill");
-    const toggleStrongBtn = fragment.querySelector('button[data-action="toggleStrong"]');
-    const useTitleBtn = fragment.querySelector('button[data-action="useTitle"]');
-    const removeTitleBtn = fragment.querySelector('button[data-action="removeTitle"]');
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
+    const lineTitleEl = fragment.querySelector('[data-role="lineTitle"]');
+    const lineStatusEl = fragment.querySelector('[data-role="lineStatus"]');
+    const lineMetaEl = fragment.querySelector('[data-role="lineMeta"]');
+    const dragBtn = fragment.querySelector('button[data-action="drag"]');
+    const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const titleInput = fragment.querySelector('[data-field="text"]');
+    const notesInput = fragment.querySelector('[data-field="notes"]');
+    const scoreInputs = fragment.querySelectorAll("input[data-score]");
 
     card.dataset.variationId = itemId;
-    titleEl.textContent = item.text;
-    titleEl.classList.toggle("is-strong", Boolean(item.isStrong));
-    card.classList.toggle("is-strong", Boolean(item.isStrong));
+    lineTitleEl.textContent = toCleanText(item.text) || "Untitled title";
+    lineMetaEl.textContent = summarizeRowNotes(item.notes, "No notes yet.");
+    lineStatusEl.textContent = index === 0 ? "Video Title" : "";
+    lineStatusEl.hidden = index !== 0;
+    titleInput.value = item.text;
+    notesInput.value = item.notes;
+    setPipelineRowExpanded(card, detailsEl, arrowEl, state.titleExpandedId === itemId);
 
-    if (toggleStrongBtn) {
-      toggleStrongBtn.textContent = item.isStrong ? "Unbold" : "Mark Strong";
-      toggleStrongBtn.addEventListener("click", () => {
-        const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
-        if (sourceIndex < 0) {
-          return;
-        }
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.titleBoard, card, detailsEl, arrowEl);
+      state.titleExpandedId = card.dataset.expanded === "true" ? itemId : "";
+    });
 
-        state.titles[sourceIndex].isStrong = !state.titles[sourceIndex].isStrong;
-        updateBoardsAndBrief();
-      });
-    }
+    dragBtn.addEventListener("dragstart", (event) => {
+      beginVariationDrag(event, "title", itemId);
+    });
+    dragBtn.addEventListener("dragend", () => {
+      clearVariationDropTargets();
+    });
 
-    if (useTitleBtn) {
-      const isCurrentVideoTitle = currentVideoTitle === toCleanText(item.text);
-      useTitleBtn.textContent = isCurrentVideoTitle ? "Current Video Title" : "Use as Video Title";
-      useTitleBtn.disabled = isCurrentVideoTitle;
-      useTitleBtn.addEventListener("click", () => {
-        if (!projectNameInput) {
-          return;
-        }
+    card.addEventListener("dragover", (event) => {
+      if (canVariationDrop("title", itemId)) {
+        event.preventDefault();
+        card.classList.add("is-drop-target");
+      }
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("is-drop-target");
+    });
+    card.addEventListener("drop", (event) => {
+      if (!canVariationDrop("title", itemId)) {
+        return;
+      }
 
-        projectNameInput.value = item.text;
-        updateBoardsAndBrief();
-      });
-    }
+      event.preventDefault();
+      const draggedId = variationDragState.id;
+      clearVariationDropTargets();
+      const fromIndex = state.titles.findIndex((entry) => entry.id === draggedId);
+      const toIndex = state.titles.findIndex((entry) => entry.id === itemId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
 
-    if (removeTitleBtn) {
-      removeTitleBtn.addEventListener("click", () => {
-        const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
-        if (sourceIndex < 0) {
-          return;
-        }
+      pendingTitleReorderPositions = captureVariationPositions(refs.titleBoard);
+      moveItemInArray(state.titles, fromIndex, toIndex);
+      state.titleExpandedId = draggedId;
+      syncProjectNameFromTopTitle();
+      updateBoardsAndBrief();
+    });
 
-        state.titles.splice(sourceIndex, 1);
-        updateBoardsAndBrief();
-      });
-    }
+    removeBtn.addEventListener("click", () => {
+      const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
 
-    const scoreInputs = fragment.querySelectorAll("input[data-score]");
+      state.titles.splice(sourceIndex, 1);
+      if (state.titleExpandedId === itemId) {
+        state.titleExpandedId = "";
+      }
+      syncProjectNameFromTopTitle();
+      updateBoardsAndBrief();
+    });
+
+    titleInput.addEventListener("input", () => {
+      const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.titles[sourceIndex].text = titleInput.value;
+      lineTitleEl.textContent = toCleanText(titleInput.value) || "Untitled title";
+      if (sourceIndex === 0) {
+        syncProjectNameFromTopTitle({ refresh: true });
+      }
+      saveSnapshot();
+    });
+
+    notesInput.addEventListener("input", () => {
+      const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.titles[sourceIndex].notes = notesInput.value;
+      lineMetaEl.textContent = summarizeRowNotes(notesInput.value, "No notes yet.");
+      saveSnapshot();
+    });
+
     scoreInputs.forEach((input) => {
       const key = input.dataset.score;
       input.value = item.scores[key];
-
       input.addEventListener("input", () => {
         const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
         if (sourceIndex < 0) {
@@ -3615,28 +3754,14 @@ function renderTitleBoard() {
         }
 
         state.titles[sourceIndex].scores[key] = Number(input.value);
-        scorePill.textContent = `Average Score: ${averageScore(state.titles[sourceIndex].scores).toFixed(1)} / 10`;
-      });
-
-      input.addEventListener("change", () => {
-        const sourceIndex = state.titles.findIndex((entry) => entry.id === itemId);
-        if (sourceIndex < 0) {
-          return;
-        }
-
-        state.titles[sourceIndex].scores[key] = Number(input.value);
-        sortActiveBriefVariationsByScore();
-        animateTitleReorderOnNextRender = true;
-        updateBoardsAndBrief();
+        saveSnapshot();
       });
     });
 
-    scorePill.textContent = `Average Score: ${averageScore(item.scores).toFixed(1)} / 10`;
     refs.titleBoard.appendChild(fragment);
   });
 
-  if (shouldAnimate) {
-    animateTitleReorderOnNextRender = false;
+  if (previousPositions) {
     animateVariationReorder(refs.titleBoard, previousPositions);
   }
 }
@@ -3646,18 +3771,16 @@ function renderThumbBoard() {
     return;
   }
 
-  const shouldAnimate = animateThumbReorderOnNextRender;
-  const previousPositions = shouldAnimate ? captureVariationPositions(refs.thumbnailBoard) : null;
+  const previousPositions = pendingThumbReorderPositions;
+  pendingThumbReorderPositions = null;
   refs.thumbnailBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
-    animateThumbReorderOnNextRender = false;
     refs.thumbnailBoard.innerHTML = '<p class="hint">Create or select a brief to edit thumbnail variations.</p>';
     return;
   }
 
   if (!state.thumbnails.length) {
-    animateThumbReorderOnNextRender = false;
     refs.thumbnailBoard.innerHTML = '<p class="hint">No thumbnail concepts yet.</p>';
     return;
   }
@@ -3665,20 +3788,135 @@ function renderThumbBoard() {
   state.thumbnails.forEach((item) => {
     const itemId = toCleanText(item.id);
     const fragment = refs.thumbTemplate.content.cloneNode(true);
-    const card = fragment.querySelector(".idea-card");
-    const titleEl = fragment.querySelector(".idea-title");
-    const metaEl = fragment.querySelector(".idea-meta");
-    const scorePill = fragment.querySelector(".score-pill");
-
-    card.dataset.variationId = itemId;
-    titleEl.textContent = item.title;
-    metaEl.textContent = item.meta;
-
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
+    const lineImage = fragment.querySelector('[data-role="previewImage"]');
+    const lineTitle = fragment.querySelector('[data-role="lineTitle"]');
+    const lineMeta = fragment.querySelector('[data-role="lineMeta"]');
+    const dragBtn = fragment.querySelector('button[data-action="drag"]');
+    const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const titleInput = fragment.querySelector('[data-field="title"]');
+    const imageInput = fragment.querySelector('[data-field="imageSrc"]');
+    const metaInput = fragment.querySelector('[data-field="meta"]');
+    const notesInput = fragment.querySelector('[data-field="notes"]');
     const scoreInputs = fragment.querySelectorAll("input[data-score]");
+
+    const fallbackImage = toCleanText(state.comparables[0]?.imageSrc);
+    const lineImageSrc = toCleanText(item.imageSrc) || fallbackImage || "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
+    card.dataset.variationId = itemId;
+    lineTitle.textContent = toCleanText(item.title) || "Untitled thumbnail";
+    lineMeta.textContent = summarizeRowNotes(item.notes || item.meta, "No notes yet.");
+    lineImage.src = lineImageSrc;
+    titleInput.value = item.title;
+    imageInput.value = item.imageSrc;
+    metaInput.value = item.meta;
+    notesInput.value = item.notes;
+    setPipelineRowExpanded(card, detailsEl, arrowEl, state.thumbnailExpandedId === itemId);
+
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.thumbnailBoard, card, detailsEl, arrowEl);
+      state.thumbnailExpandedId = card.dataset.expanded === "true" ? itemId : "";
+    });
+
+    dragBtn.addEventListener("dragstart", (event) => {
+      beginVariationDrag(event, "thumb", itemId);
+    });
+    dragBtn.addEventListener("dragend", () => {
+      clearVariationDropTargets();
+    });
+
+    card.addEventListener("dragover", (event) => {
+      if (canVariationDrop("thumb", itemId)) {
+        event.preventDefault();
+        card.classList.add("is-drop-target");
+      }
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("is-drop-target");
+    });
+    card.addEventListener("drop", (event) => {
+      if (!canVariationDrop("thumb", itemId)) {
+        return;
+      }
+
+      event.preventDefault();
+      const draggedId = variationDragState.id;
+      clearVariationDropTargets();
+      const fromIndex = state.thumbnails.findIndex((entry) => entry.id === draggedId);
+      const toIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+
+      pendingThumbReorderPositions = captureVariationPositions(refs.thumbnailBoard);
+      moveItemInArray(state.thumbnails, fromIndex, toIndex);
+      state.thumbnailExpandedId = draggedId;
+      updateBoardsAndBrief();
+    });
+
+    removeBtn.addEventListener("click", () => {
+      const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnails.splice(sourceIndex, 1);
+      if (state.thumbnailExpandedId === itemId) {
+        state.thumbnailExpandedId = "";
+      }
+      updateBoardsAndBrief();
+    });
+
+    titleInput.addEventListener("input", () => {
+      const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnails[sourceIndex].title = titleInput.value;
+      lineTitle.textContent = toCleanText(titleInput.value) || "Untitled thumbnail";
+      saveSnapshot();
+    });
+
+    imageInput.addEventListener("input", () => {
+      const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnails[sourceIndex].imageSrc = imageInput.value;
+      lineImage.src =
+        toCleanText(imageInput.value) || fallbackImage || "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
+      saveSnapshot();
+    });
+
+    metaInput.addEventListener("input", () => {
+      const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnails[sourceIndex].meta = metaInput.value;
+      lineMeta.textContent = summarizeRowNotes(state.thumbnails[sourceIndex].notes || metaInput.value, "No notes yet.");
+      saveSnapshot();
+    });
+
+    notesInput.addEventListener("input", () => {
+      const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.thumbnails[sourceIndex].notes = notesInput.value;
+      lineMeta.textContent = summarizeRowNotes(notesInput.value || state.thumbnails[sourceIndex].meta, "No notes yet.");
+      saveSnapshot();
+    });
+
     scoreInputs.forEach((input) => {
       const key = input.dataset.score;
       input.value = item.scores[key];
-
       input.addEventListener("input", () => {
         const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
         if (sourceIndex < 0) {
@@ -3686,28 +3924,14 @@ function renderThumbBoard() {
         }
 
         state.thumbnails[sourceIndex].scores[key] = Number(input.value);
-        scorePill.textContent = `Average Score: ${averageScore(state.thumbnails[sourceIndex].scores).toFixed(1)} / 10`;
-      });
-
-      input.addEventListener("change", () => {
-        const sourceIndex = state.thumbnails.findIndex((entry) => entry.id === itemId);
-        if (sourceIndex < 0) {
-          return;
-        }
-
-        state.thumbnails[sourceIndex].scores[key] = Number(input.value);
-        sortActiveBriefVariationsByScore();
-        animateThumbReorderOnNextRender = true;
-        updateBoardsAndBrief();
+        saveSnapshot();
       });
     });
 
-    scorePill.textContent = `Average Score: ${averageScore(item.scores).toFixed(1)} / 10`;
     refs.thumbnailBoard.appendChild(fragment);
   });
 
-  if (shouldAnimate) {
-    animateThumbReorderOnNextRender = false;
+  if (previousPositions) {
     animateVariationReorder(refs.thumbnailBoard, previousPositions);
   }
 }
@@ -3730,6 +3954,10 @@ function getInspirationSourceMeta(item = {}) {
 }
 
 function renderComparableBoard() {
+  if (!refs.comparableBoard || !refs.comparableTemplate) {
+    return;
+  }
+
   refs.comparableBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
@@ -3743,48 +3971,95 @@ function renderComparableBoard() {
     return;
   }
 
-  state.comparables.forEach((item, index) => {
+  state.comparables.forEach((item) => {
+    const itemId = toCleanText(item.id);
     const fragment = refs.comparableTemplate.content.cloneNode(true);
-    const image = fragment.querySelector(".comparable-thumb");
-    const title = fragment.querySelector(".comparable-title");
-    const meta = fragment.querySelector(".comparable-meta");
-    const link = fragment.querySelector(".comparable-link");
-    const notesEl = fragment.querySelector('[data-role="comparableNotes"]');
-    const removeBtn = fragment.querySelector(".comparable-remove");
+    const card = fragment.querySelector(".pipeline-card");
+    const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
+    const detailsEl = fragment.querySelector('[data-role="details"]');
+    const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
+    const lineImage = fragment.querySelector('[data-role="lineImage"]');
+    const detailImage = fragment.querySelector('[data-role="detailImage"]');
+    const lineTitle = fragment.querySelector('[data-role="lineTitle"]');
+    const lineMeta = fragment.querySelector('[data-role="lineMeta"]');
+    const removeBtn = fragment.querySelector('button[data-action="remove"]');
+    const titleInput = fragment.querySelector('[data-field="title"]');
+    const sourceInput = fragment.querySelector('[data-field="sourceUrl"]');
+    const notesInput = fragment.querySelector('[data-field="notes"]');
+    const sourceLink = fragment.querySelector('[data-role="sourceLink"]');
 
-    image.src = item.imageSrc;
-    if (item.videoId) {
-      image.onerror = () => {
-        image.onerror = null;
-        image.src = getThumbUrl(item.videoId, "hq");
-      };
-    }
+    const defaultTitle = item.videoId ? `YouTube inspiration · ${item.videoId}` : "Image inspiration";
+    const imageSrc = toCleanText(item.imageSrc) || "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
+    card.dataset.variationId = itemId;
+    lineImage.src = imageSrc;
+    detailImage.src = imageSrc;
+    lineTitle.textContent = toCleanText(item.title) || defaultTitle;
+    lineMeta.textContent = summarizeRowNotes(item.notes, getInspirationSourceMeta(item));
+    titleInput.value = item.title;
+    sourceInput.value = item.sourceUrl;
+    notesInput.value = item.notes;
+    sourceLink.href = item.sourceUrl || "#";
+    sourceLink.hidden = !toCleanText(item.sourceUrl);
+    setPipelineRowExpanded(card, detailsEl, arrowEl, state.comparableExpandedId === itemId);
 
-    title.textContent = item.title || (item.videoId ? `YouTube inspiration · ${item.videoId}` : "Image inspiration");
-    meta.textContent = getInspirationSourceMeta(item);
-    if (item.sourceUrl) {
-      link.href = item.sourceUrl;
-      link.hidden = false;
-    } else {
-      link.hidden = true;
-    }
+    summaryBtn.addEventListener("click", () => {
+      togglePipelineRow(refs.comparableBoard, card, detailsEl, arrowEl);
+      state.comparableExpandedId = card.dataset.expanded === "true" ? itemId : "";
+    });
 
-    if (notesEl) {
-      notesEl.textContent = item.notes;
-      notesEl.addEventListener("input", () => {
-        state.comparables[index].notes = toCleanText(notesEl.textContent);
-        state.comparables[index].updatedAt = Date.now();
-        queueInspirationNotesSave();
+    titleInput.addEventListener("input", () => {
+      const record = state.comparables.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.title = titleInput.value;
+      record.updatedAt = Date.now();
+      lineTitle.textContent = toCleanText(record.title) || defaultTitle;
+      saveSnapshot();
+    });
+
+    sourceInput.addEventListener("input", () => {
+      const record = state.comparables.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.sourceUrl = sourceInput.value;
+      record.updatedAt = Date.now();
+      sourceLink.href = toCleanText(record.sourceUrl) || "#";
+      sourceLink.hidden = !toCleanText(record.sourceUrl);
+      lineMeta.textContent = summarizeRowNotes(record.notes, getInspirationSourceMeta(record));
+      saveSnapshot();
+    });
+
+    notesInput.addEventListener("input", () => {
+      const record = state.comparables.find((entry) => entry.id === itemId);
+      if (!record) {
+        return;
+      }
+
+      record.notes = notesInput.value;
+      record.updatedAt = Date.now();
+      lineMeta.textContent = summarizeRowNotes(record.notes, getInspirationSourceMeta(record));
+      queueInspirationNotesSave();
+    });
+    notesInput.addEventListener("blur", () => {
+      void flushInspirationNotesSave().then(() => {
+        updateBoardsAndBrief({ persist: false });
       });
-      notesEl.addEventListener("blur", () => {
-        void flushInspirationNotesSave().then(() => {
-          updateBoardsAndBrief({ persist: false });
-        });
-      });
-    }
+    });
 
     removeBtn.addEventListener("click", () => {
-      state.comparables.splice(index, 1);
+      const sourceIndex = state.comparables.findIndex((entry) => entry.id === itemId);
+      if (sourceIndex < 0) {
+        return;
+      }
+
+      state.comparables.splice(sourceIndex, 1);
+      if (state.comparableExpandedId === itemId) {
+        state.comparableExpandedId = "";
+      }
       updateBoardsAndBrief({ persist: false });
       void saveSnapshot({ immediate: true });
     });
@@ -3930,9 +4205,7 @@ function renderTitleListHtml(items) {
   const rows = items
     .map((item) => {
       const score = averageScore(item.scores).toFixed(1);
-      const text = item.isStrong ? `<strong>${escapeHtml(item.text)}</strong>` : escapeHtml(item.text);
-      const strongTag = item.isStrong ? ' <span class="muted">(Strong)</span>' : "";
-      return `<li>${text}${strongTag} <span class=\"muted\">(Score: ${score}/10)</span></li>`;
+      return `<li>${escapeHtml(item.text)} <span class=\"muted\">(Score: ${score}/10)</span></li>`;
     })
     .join("");
 
@@ -3977,12 +4250,10 @@ function renderComparableHtml(items) {
 }
 
 function buildBriefViewModel(values) {
-  const topTitle = getTopScored(state.titles);
-  const topThumb = getTopScored(state.thumbnails);
-  const titleList = [...state.titles].sort((a, b) => averageScore(b.scores) - averageScore(a.scores));
-  const thumbList = [...state.thumbnails].sort(
-    (a, b) => averageScore(b.scores) - averageScore(a.scores),
-  );
+  const topTitle = state.titles[0] || null;
+  const topThumb = state.thumbnails[0] || null;
+  const titleList = [...state.titles];
+  const thumbList = [...state.thumbnails];
 
   return {
     generatedAt: formatDateTime(),
@@ -4192,8 +4463,8 @@ function updateScoreboard(values) {
     return;
   }
 
-  const topTitle = getTopScored(state.titles);
-  const topThumb = getTopScored(state.thumbnails);
+  const topTitle = state.titles[0] || null;
+  const topThumb = state.thumbnails[0] || null;
 
   refs.topTitle.textContent = topTitle
     ? `${topTitle.text} (${averageScore(topTitle.scores).toFixed(1)}/10)`
@@ -4791,6 +5062,9 @@ function resetAll() {
   refs.step1Sort.value = "newest";
   refs.step2QuickIdea.value = "";
   refs.step3QuickIdea.value = "";
+  if (refs.quickThumbTitleInput) {
+    refs.quickThumbTitleInput.value = "";
+  }
   const defaultChannel = createDefaultChannelRecord();
   const defaultAccount = createDefaultAccountRecord();
   state.pageView = "home";
@@ -4816,8 +5090,13 @@ function resetAll() {
   state.activeBriefId = "";
   state.briefDetailExpanded = false;
   state.viewerSnapshotExpanded = false;
-  animateTitleReorderOnNextRender = false;
-  animateThumbReorderOnNextRender = false;
+  state.titleExpandedId = "";
+  state.thumbnailExpandedId = "";
+  state.comparableExpandedId = "";
+  state.briefListExpandedId = "";
+  pendingTitleReorderPositions = null;
+  pendingThumbReorderPositions = null;
+  clearVariationDropTargets();
   ensureChannelModel();
   applyActiveChannelWorkspace(state.channelWorkspaces[defaultChannel.id]);
   applyActiveChannelBriefState(state.briefsByChannel[defaultChannel.id]);
@@ -5126,10 +5405,45 @@ function addTitleVariationFromQuickEntry() {
     return;
   }
 
-  state.titles.unshift(record);
-  sortActiveBriefVariationsByScore();
+  state.titles.push(record);
   refs.quickTitleInput.value = "";
   refs.quickTitleInput.focus();
+  syncProjectNameFromTopTitle();
+  updateBoardsAndBrief();
+}
+
+function addThumbnailVariationFromQuickEntry() {
+  if (!getActiveBriefRecord()) {
+    flashButtonText(refs.addQuickThumbBtn, "Create Brief First", 1200);
+    return;
+  }
+
+  const title = toCleanText(refs.quickThumbTitleInput?.value);
+  if (!title) {
+    flashButtonText(refs.addQuickThumbBtn, "Need title", 1000);
+    return;
+  }
+
+  const normalized = title.toLowerCase();
+  if (state.thumbnails.some((item) => toCleanText(item.title).toLowerCase() === normalized)) {
+    flashButtonText(refs.addQuickThumbBtn, "Exists", 1000);
+    return;
+  }
+
+  const record = createThumbnailRecord({
+    title,
+    meta: "",
+    notes: "",
+    imageSrc: toCleanText(state.comparables[0]?.imageSrc),
+  });
+  if (!record) {
+    flashButtonText(refs.addQuickThumbBtn, "Need title", 1000);
+    return;
+  }
+
+  state.thumbnails.push(record);
+  refs.quickThumbTitleInput.value = "";
+  refs.quickThumbTitleInput.focus();
   updateBoardsAndBrief();
 }
 
@@ -5321,6 +5635,9 @@ function bindEvents() {
   refs.addStep2Btn.addEventListener("click", addStep2IdeaFromQuickEntry);
   refs.addStep3Btn.addEventListener("click", addStep3IdeaFromQuickEntry);
   refs.addQuickTitleBtn.addEventListener("click", addTitleVariationFromQuickEntry);
+  if (refs.addQuickThumbBtn) {
+    refs.addQuickThumbBtn.addEventListener("click", addThumbnailVariationFromQuickEntry);
+  }
 
   refs.step1FastIdea.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -5350,6 +5667,15 @@ function bindEvents() {
     }
   });
 
+  if (refs.quickThumbTitleInput) {
+    refs.quickThumbTitleInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addThumbnailVariationFromQuickEntry();
+      }
+    });
+  }
+
   refs.step1Search.addEventListener("input", () => {
     updateStep1ViewState({ query: refs.step1Search.value });
   });
@@ -5375,34 +5701,6 @@ function bindEvents() {
       addStep3IdeaFromQuickEntry();
     }
   });
-
-  const generateTitlesBtn = document.getElementById("generateTitlesBtn");
-  if (generateTitlesBtn) {
-    generateTitlesBtn.addEventListener("click", () => {
-      if (!getActiveBriefRecord()) {
-        flashButtonText(generateTitlesBtn, "Create Brief First", 1000);
-        return;
-      }
-
-      const values = getFieldValues();
-      state.titles = sortTitleVariationsByScore(generateTitles(values));
-      updateBoardsAndBrief();
-    });
-  }
-
-  const generateThumbsBtn = document.getElementById("generateThumbsBtn");
-  if (generateThumbsBtn) {
-    generateThumbsBtn.addEventListener("click", () => {
-      if (!getActiveBriefRecord()) {
-        flashButtonText(generateThumbsBtn, "Create Brief First", 1000);
-        return;
-      }
-
-      const values = getFieldValues();
-      state.thumbnails = sortThumbnailVariationsByScore(generateThumbnails(values));
-      updateBoardsAndBrief();
-    });
-  }
 
   const saveStateBtn = document.getElementById("saveStateBtn");
   if (saveStateBtn) {

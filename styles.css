@@ -468,6 +468,35 @@ h1 {
   color: var(--ink-soft);
 }
 
+.brief-list-row .pipeline-row-details {
+  gap: 0.5rem;
+}
+
+.brief-list-row .brief-list-updated {
+  margin: 0;
+}
+
+.brief-list-row.is-active .list-row-summary {
+  background: rgba(13, 106, 113, 0.12);
+}
+
+.brief-list-row[data-brief-status="draft"] .brief-list-badge {
+  border-color: rgba(8, 33, 52, 0.18);
+  background: rgba(8, 33, 52, 0.06);
+}
+
+.brief-list-row[data-brief-status="review"] .brief-list-badge {
+  border-color: rgba(199, 132, 1, 0.45);
+  background: rgba(199, 132, 1, 0.14);
+  color: #7d5201;
+}
+
+.brief-list-row[data-brief-status="in-production"] .brief-list-badge {
+  border-color: rgba(13, 106, 113, 0.42);
+  background: rgba(13, 106, 113, 0.16);
+  color: #0b4b50;
+}
+
 .brief-source-grid {
   align-items: stretch;
 }
@@ -703,6 +732,45 @@ select:focus {
   background: linear-gradient(120deg, #22425d, #102435);
 }
 
+.icon-btn {
+  border: 1px solid rgba(8, 33, 52, 0.2);
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.icon-btn:hover {
+  background: rgba(13, 106, 113, 0.1);
+  border-color: rgba(13, 106, 113, 0.4);
+  color: #0d5056;
+}
+
+.icon-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+.icon-btn-danger:hover {
+  background: rgba(177, 42, 42, 0.11);
+  border-color: rgba(177, 42, 42, 0.36);
+  color: #8b2f2f;
+}
+
+.drag-handle-btn {
+  cursor: grab;
+}
+
+.drag-handle-btn:active {
+  cursor: grabbing;
+}
+
 .link-btn {
   text-decoration: none;
   display: inline-flex;
@@ -850,6 +918,7 @@ select:focus {
 
 .pipeline-row {
   overflow: clip;
+  will-change: transform;
 }
 
 .pipeline-row-summary {
@@ -933,6 +1002,72 @@ select:focus {
   display: none;
 }
 
+.pipeline-row.is-reordering {
+  transition: transform 220ms ease;
+}
+
+.list-row-summary-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.list-row-summary {
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 30ch);
+  padding-right: 0.3rem;
+}
+
+.list-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.44rem 0.56rem 0.44rem 0;
+}
+
+.list-row .pipeline-row-meta {
+  justify-self: start;
+  max-width: none;
+}
+
+.list-row.is-drop-target .list-row-summary {
+  background: rgba(13, 106, 113, 0.12);
+}
+
+.list-row-preview {
+  width: 94px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: 1px solid rgba(8, 33, 52, 0.18);
+  overflow: hidden;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(8, 33, 52, 0.08);
+}
+
+.list-row-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb-row-summary {
+  grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 30ch);
+  min-height: 72px;
+}
+
+.thumb-row .pipeline-row-details {
+  gap: 0.72rem;
+}
+
+.comparable-detail-image {
+  width: min(420px, 100%);
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(8, 33, 52, 0.16);
+}
+
 .pipeline-card[data-status="red"] .pipeline-row-summary {
   background: rgba(177, 42, 42, 0.12);
 }
@@ -979,6 +1114,11 @@ select:focus {
 .pipeline-actions .btn {
   padding: 0.42rem 0.68rem;
   font-size: 0.72rem;
+}
+
+.pipeline-actions .icon-btn {
+  width: 36px;
+  height: 36px;
 }
 
 .pipeline-fields {
@@ -1554,5 +1694,27 @@ select:focus {
   .pipeline-actions select,
   .pipeline-actions .btn {
     width: 100%;
+  }
+
+  .list-row-summary-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .list-row-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .list-row .pipeline-row-status,
+  .list-row .pipeline-row-meta {
+    grid-column: 1 / -1;
+    padding-left: 1.1rem;
+  }
+
+  .list-row-actions {
+    padding: 0 0.72rem 0.58rem 1.2rem;
+  }
+
+  .thumb-row-summary {
+    grid-template-columns: auto auto minmax(0, 1fr);
   }
 }
