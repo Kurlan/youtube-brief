@@ -346,6 +346,11 @@ const BRIEF_EXPORT_STYLES = `
     padding: 0.85rem;
   }
 
+  .card.major {
+    border-color: rgba(208, 74, 39, 0.45);
+    background: linear-gradient(160deg, #fff9f4, #ffffff);
+  }
+
   h2 {
     margin: 0 0 0.55rem;
     font-size: 1rem;
@@ -395,6 +400,21 @@ const BRIEF_EXPORT_STYLES = `
   .comparable h3 {
     margin: 0;
     font-size: 0.95rem;
+  }
+
+  .priority-chip {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    margin: 0 0 0.28rem;
+    padding: 0.14rem 0.52rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #8f2f19;
+    background: #ffe3d6;
+    border: 1px solid rgba(208, 74, 39, 0.32);
   }
 
   .comparable a {
@@ -4561,12 +4581,7 @@ function renderTitleListHtml(items) {
     return "<p>No title ideas generated yet.</p>";
   }
 
-  const rows = items
-    .map((item) => {
-      const score = averageScore(item.scores).toFixed(1);
-      return `<li>${escapeHtml(item.text)} <span class=\"muted\">(Score: ${score}/10)</span></li>`;
-    })
-    .join("");
+  const rows = items.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("");
 
   return `<ol>${rows}</ol>`;
 }
@@ -4591,23 +4606,21 @@ function renderThumbnailTextListHtml(items) {
     return "<p>No thumbnail text ideas generated yet.</p>";
   }
 
-  const rows = items
-    .map((item) => {
-      const score = averageScore(item.scores).toFixed(1);
-      return `<li>${escapeHtml(item.text)} <span class=\"muted\">(Score: ${score}/10)</span></li>`;
-    })
-    .join("");
+  const rows = items.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("");
 
   return `<ol>${rows}</ol>`;
 }
 
-function renderComparableHtml(items) {
+function renderComparableHtml(items, options = {}) {
   if (!items.length) {
     return "<p>No thumbnail inspiration assets added yet.</p>";
   }
 
+  const showPriorityBadges = Boolean(options.showPriorityBadges);
+  const priorityStart = Number.isFinite(options.priorityStart) ? Number(options.priorityStart) : 1;
+
   const cards = items
-    .map((item) => {
+    .map((item, index) => {
       const imageSrc = toCleanText(item.imageSrc) || (item.videoId ? getThumbUrl(item.videoId, "hq") : "");
       const title = toCleanText(item.title) || (item.videoId ? `YouTube inspiration · ${item.videoId}` : "Image inspiration");
       const meta = getInspirationSourceMeta(item);
@@ -4615,8 +4628,11 @@ function renderComparableHtml(items) {
       const linkHtml = item.sourceUrl
         ? `<a href=\"${escapeHtml(item.sourceUrl)}\" target=\"_blank\" rel=\"noreferrer noopener\">Open source</a>`
         : '<span class="muted">No source link</span>';
+      const priorityHtml = showPriorityBadges
+        ? `<p class=\"priority-chip\">Top ${priorityStart + index} Priority</p>`
+        : "";
 
-      return `<article class=\"comparable\">\n  <img src=\"${escapeHtml(imageSrc)}\" alt=\"Thumbnail inspiration\" />\n  <div>\n    <h3>${escapeHtml(title)}</h3>\n    <p>${escapeHtml(meta)}</p>\n    ${linkHtml}\n    <p class=\"muted\">${safeText(notes, "No notes yet.")}</p>\n  </div>\n</article>`;
+      return `<article class=\"comparable\">\n  <img src=\"${escapeHtml(imageSrc)}\" alt=\"Thumbnail inspiration\" />\n  <div>\n    ${priorityHtml}\n    <h3>${escapeHtml(title)}</h3>\n    <p>${escapeHtml(meta)}</p>\n    ${linkHtml}\n    <p class=\"muted\">${safeText(notes, "No notes yet.")}</p>\n  </div>\n</article>`;
     })
     .join("");
 
@@ -4693,8 +4709,8 @@ function buildPreviewHtml(values) {
       <section>
         <h4>Top Packaging Recommendation</h4>
         <ul>
-          <li><strong>Title:</strong> ${model.topTitle ? `${escapeHtml(model.topTitle.text)} (${averageScore(model.topTitle.scores).toFixed(1)}/10)` : "N/A"}</li>
-          <li><strong>Thumbnail:</strong> ${model.topThumb ? `${escapeHtml(model.topThumb.title)} (${averageScore(model.topThumb.scores).toFixed(1)}/10)` : "N/A"}</li>
+          <li><strong>Title:</strong> ${model.topTitle ? escapeHtml(model.topTitle.text) : "N/A"}</li>
+          <li><strong>Thumbnail:</strong> ${model.topThumb ? escapeHtml(model.topThumb.title) : "N/A"}</li>
         </ul>
       </section>
       <section>
@@ -4708,6 +4724,8 @@ function buildPreviewHtml(values) {
 function buildThumbnailBriefExportHtml(values) {
   const model = buildBriefViewModel(values);
   const directionNotes = toCleanText(values.thumbnailDirectionNotes);
+  const topInspiration = state.comparables.slice(0, 3);
+  const referenceInspiration = state.comparables.slice(3);
 
   return `<!doctype html>
 <html lang="en">
@@ -4726,23 +4744,49 @@ function buildThumbnailBriefExportHtml(values) {
       </section>
 
       <section class="card">
-        <h2>1. Direction Notes</h2>
+        <h2>Direction Notes</h2>
         <p>${safeText(directionNotes, "No direction notes provided yet.")}</p>
+      </section>
+
+      <section class="card major">
+        <h2>Thumbnail Priority</h2>
+        <p>
+          Your thumbnail designer should build new variations from the top 3 inspiration assets first. Keep the
+          additional inspiration below as optional reference.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Top 3 Inspiration Assets (Create Variations From These)</h2>
+        ${
+          topInspiration.length
+            ? renderComparableHtml(topInspiration, { showPriorityBadges: true, priorityStart: 1 })
+            : "<p>No top-priority inspiration assets yet. Add up to three priority assets in Thumbnail Studio.</p>"
+        }
+      </section>
+
+      <section class="card">
+        <h2>Additional Inspiration (Reference Only)</h2>
+        ${
+          referenceInspiration.length
+            ? renderComparableHtml(referenceInspiration)
+            : '<p class="muted">No additional reference inspiration assets yet.</p>'
+        }
       </section>
 
       <section class="grid two">
         <article class="card">
-          <h2>2. Full Treatment</h2>
+          <h2>Full Treatment</h2>
           <p>${safeText(values.treatment, "No treatment yet.")}</p>
         </article>
         <article class="card">
-          <h2>3. Full Core Logline</h2>
+          <h2>Full Core Logline</h2>
           <p>${safeText(values.logline, "No core logline yet.")}</p>
         </article>
       </section>
 
       <section class="card">
-        <h2>4. Treatment + Logline Summary</h2>
+        <h2>Treatment + Logline Summary</h2>
         <ul>
           <li><strong>Idea focus:</strong> ${safeText(values.ideaFocus)}</li>
           <li><strong>Core pain:</strong> ${safeText(values.painPoint)}</li>
@@ -4756,22 +4800,17 @@ function buildThumbnailBriefExportHtml(values) {
 
       <section class="grid two">
         <article class="card">
-          <h2>5. Title Candidates</h2>
+          <h2>Title Candidates</h2>
           ${renderTitleListHtml(model.titleList)}
         </article>
         <article class="card">
-          <h2>6. Thumbnail Text Candidates</h2>
+          <h2>Thumbnail Text Candidates</h2>
           ${renderThumbnailTextListHtml(model.thumbnailTextList)}
         </article>
       </section>
 
       <section class="card">
-        <h2>7. Inspiration Assets</h2>
-        ${renderComparableHtml(state.comparables)}
-      </section>
-
-      <section class="card">
-        <h2>8. Viewer Strategy (Reference)</h2>
+        <h2>Viewer Strategy (Reference)</h2>
         <ul>
           <li><strong>Niche:</strong> ${escapeHtml(VIEWER_STRATEGY.niche)}</li>
           <li><strong>Age range:</strong> ${escapeHtml(VIEWER_STRATEGY.ageRange)}</li>
@@ -4884,8 +4923,8 @@ function buildPackagingBriefExportHtml(values) {
         <article class="card">
           <h2>Top Packaging Recommendation</h2>
           <ul>
-            <li><strong>Title:</strong> ${model.topTitle ? `${escapeHtml(model.topTitle.text)} (${averageScore(model.topTitle.scores).toFixed(1)}/10)` : "N/A"}</li>
-            <li><strong>Thumbnail:</strong> ${model.topThumb ? `${escapeHtml(model.topThumb.title)} (${averageScore(model.topThumb.scores).toFixed(1)}/10)` : "N/A"}</li>
+            <li><strong>Title:</strong> ${model.topTitle ? escapeHtml(model.topTitle.text) : "N/A"}</li>
+            <li><strong>Thumbnail:</strong> ${model.topThumb ? escapeHtml(model.topThumb.title) : "N/A"}</li>
             <li><strong>Curiosity check:</strong> ${escapeHtml(refs.checkCuriosity.textContent.replace("Curiosity: ", ""))}</li>
             <li><strong>Clarity check:</strong> ${escapeHtml(refs.checkClarity.textContent.replace("Clarity: ", ""))}</li>
             <li><strong>Uniqueness check:</strong> ${escapeHtml(refs.checkUniqueness.textContent.replace("Uniqueness: ", ""))}</li>
