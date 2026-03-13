@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Space+Grotesk:wght@300..700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260312b" />
   </head>
   <body>
     <div class="background-glow bg-one"></div>
@@ -244,6 +244,14 @@
       </section>
 
       <section class="panel" data-page="brief-detail">
+        <div class="brief-workspace-nav" aria-label="Brief workspace navigation">
+          <button id="showPackagingWorkspaceBtn" class="btn btn-muted" type="button">Packaging</button>
+          <button id="showScriptingWorkspaceBtn" class="btn btn-muted" type="button">Scripting</button>
+        </div>
+        <p id="briefWorkspaceHint" class="hint">Use Packaging for title/thumbnail development and Scripting for intros and script structure.</p>
+      </section>
+
+      <section class="panel" data-page="brief-detail">
         <div class="panel-header">
           <button
             id="toggleViewerSnapshotBtn"
@@ -323,7 +331,7 @@
         </div>
       </section>
 
-      <section class="panel" data-page="brief-detail">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="packaging">
         <h2>Treatment + Logline</h2>
         <p class="hint">
           Define the pitch vibe, then write the single sentence this video will prove.
@@ -344,6 +352,10 @@
           <label>
             Desired Outcome
             <textarea id="desiredOutcome" rows="3" placeholder="What result do they want quickly?"></textarea>
+          </label>
+          <label>
+            Expected Views
+            <textarea id="expectedViews" rows="3" placeholder="Example: 150K-250K in 30 days if packaging lands."></textarea>
           </label>
           <label>
             Intrigue Trigger
@@ -384,7 +396,7 @@
         </div>
       </section>
 
-      <section class="panel" data-page="brief-detail">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="packaging">
         <div class="panel-header">
           <h2>Title Variations</h2>
         </div>
@@ -396,7 +408,7 @@
         <div id="titleBoard" class="pipeline-board"></div>
       </section>
 
-      <section class="panel" data-page="brief-detail">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="packaging">
         <div class="panel-header">
           <h2>Thumbnail Studio</h2>
         </div>
@@ -444,7 +456,7 @@
         </article>
       </section>
 
-      <section class="panel is-hidden" data-page="brief-detail">
+      <section class="panel is-hidden" data-page="brief-detail" data-brief-workspace="packaging">
         <div class="panel-header">
           <h2>Packaging Scorecard</h2>
         </div>
@@ -468,7 +480,7 @@
         </div>
       </section>
 
-      <section class="panel is-hidden" data-page="brief-detail">
+      <section class="panel is-hidden" data-page="brief-detail" data-brief-workspace="packaging">
         <h2>Accelerator Playbook Signals</h2>
         <p class="hint">
           Integrated from Weeks 1-3: idea funnel, CCN fit, packaging stages, and traffic-aware strategy.
@@ -521,14 +533,9 @@
         </div>
       </section>
 
-      <section class="panel" data-page="brief-detail">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="packaging">
         <div class="panel-header">
-          <h2>Thumbnail Brief Export (PDF)</h2>
-          <div class="row">
-            <button id="exportThumbnailBriefPdfBtn" class="btn btn-muted" type="button">
-              Export Thumbnail Brief PDF
-            </button>
-          </div>
+          <h2>Thumbnail Designer Notes</h2>
         </div>
         <label class="full">
           Thumbnail Brief Direction Notes
@@ -540,7 +547,7 @@
         </label>
       </section>
 
-      <section class="panel" data-page="brief-detail">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="packaging">
         <div class="panel-header">
           <h2>Packaging Preview</h2>
         </div>
@@ -557,13 +564,53 @@
         </div>
       </section>
 
+      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting">
+        <div class="panel-header">
+          <h2>Scripting Workspace</h2>
+        </div>
+        <p class="hint">
+          Draft 3 shootable intros, then build the outline and drafted sections for the body of the video.
+        </p>
+        <div class="brief-workspace-nav" aria-label="Scripting navigation">
+          <button id="showIntroLabBtn" class="btn btn-muted" type="button">Intros</button>
+          <button id="showStructureWorkspaceBtn" class="btn btn-muted" type="button">Structure</button>
+        </div>
+      </section>
+
+      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="intros">
+        <div class="panel-header">
+          <h2>Intro Lab</h2>
+        </div>
+        <p class="hint">
+          Draft all 3 intros for shooting. Sentence type is optional. Aim for a tight cold open with a soft target of
+          20-35 seconds.
+        </p>
+        <div id="introSentenceLegend" class="script-type-legend"></div>
+        <div id="introsBoard" class="script-intros-board"></div>
+      </section>
+
+      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="structure">
+        <div class="panel-header">
+          <h2>Script Structure</h2>
+          <div class="panel-header-tools">
+            <button id="addStructureSectionBtn" class="btn btn-muted" type="button">Add Section</button>
+          </div>
+        </div>
+        <p class="hint">
+          Start with outline structure first. Expand sections into drafted paragraph cards once a section is ready to
+          script.
+        </p>
+        <div id="structureBoard" class="pipeline-board script-structure-board"></div>
+      </section>
+
       <section class="panel" data-page="brief-detail">
         <div class="panel-header">
-          <h2>Packaging Brief Export (PDF)</h2>
-          <div class="row">
-            <button id="exportPackagingBriefPdfBtn" class="btn btn-muted" type="button">
-              Export Packaging Brief PDF
-            </button>
+          <h2>Exports</h2>
+          <div class="panel-header-tools export-actions">
+            <button id="exportPackagingBriefPdfBtn" class="btn btn-muted" type="button">Packaging Brief PDF</button>
+            <button id="exportProductionBriefPdfBtn" class="btn btn-muted" type="button">Production Brief PDF</button>
+            <button id="openScriptExportBtn" class="btn btn-muted" type="button">Open Script Export</button>
+            <button id="exportAnalyticsBriefBtn" class="btn btn-muted" type="button">Analytics Brief</button>
           </div>
         </div>
         <p id="briefExportHint" class="hint"></p>
@@ -954,6 +1001,6 @@
       </article>
     </template>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=20260312b"></script>
   </body>
 </html>

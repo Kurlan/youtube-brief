@@ -29,6 +29,20 @@ const DEFAULT_ACCOUNT_ID = "acct-steve-huynh";
 const CHANNEL_MEMBER_ROLES = ["owner", "editor", "viewer"];
 const CHANNEL_ACCESS_ROLES = ["owner"];
 const CHANNEL_ASSET_KINDS = ["avatar", "banner", "thumbnail", "other"];
+const BRIEF_WORKSPACE_OPTIONS = ["packaging", "scripting"];
+const SCRIPTING_VIEW_OPTIONS = ["intros", "structure"];
+const SCRIPT_SECTION_KINDS = ["content", "sponsor", "outro"];
+const SCRIPT_SENTENCE_TYPES = [
+  { id: "", label: "Untyped", color: "#5d6770" },
+  { id: "intrigue", label: "Creating Intrigue", color: "#9c6a1a" },
+  { id: "question", label: "Asking a Question", color: "#96556b" },
+  { id: "quote-proof", label: "Quote from Source", color: "#506da0" },
+  { id: "credibility", label: "Adding Credibility", color: "#71619f" },
+  { id: "core-takeaway", label: "Core Takeaways", color: "#4d7e4f" },
+  { id: "supporting-fact", label: "Supporting Facts", color: "#6a645b" },
+  { id: "transition", label: "Transition", color: "#0d6a71" },
+];
+const INTRO_TARGET_SECONDS = { min: 20, max: 35 };
 const DEFAULT_CHANNEL_ASSET_SOURCE_URL = "https://www.youtube.com/@ALifeEngineered";
 const DEFAULT_CHANNEL_AVATAR_URL =
   "https://yt3.googleusercontent.com/xMADx5czTPcIhTmWROpNFrnAFB_S98l_8tq2Fwe2_t2b-hACm1xN8UWyilipkkoehvBAIzW_kBA=s160-c-k-c0x00ffffff-no-rj";
@@ -111,6 +125,7 @@ const fieldIds = [
   "ideaFocus",
   "painPoint",
   "desiredOutcome",
+  "expectedViews",
   "intrigueTrigger",
   "curiosityGap",
   "uniquenessEdge",
@@ -140,6 +155,9 @@ const refs = {
   briefListItemTemplate: document.getElementById("briefListItemTemplate"),
   backToBriefListBtn: document.getElementById("backToBriefListBtn"),
   briefStatusSelect: document.getElementById("briefStatus"),
+  showPackagingWorkspaceBtn: document.getElementById("showPackagingWorkspaceBtn"),
+  showScriptingWorkspaceBtn: document.getElementById("showScriptingWorkspaceBtn"),
+  briefWorkspaceHint: document.getElementById("briefWorkspaceHint"),
   toggleBriefDetailBtn: document.getElementById("toggleBriefDetailBtn"),
   briefDetailContent: document.getElementById("briefDetailContent"),
   briefDetailArrow: document.getElementById("briefDetailArrow"),
@@ -195,6 +213,12 @@ const refs = {
   addInspirationUploadBtn: document.getElementById("addInspirationUploadBtn"),
   inspirationFileInput: document.getElementById("inspirationFileInput"),
   inspirationPasteZone: document.getElementById("inspirationPasteZone"),
+  showIntroLabBtn: document.getElementById("showIntroLabBtn"),
+  showStructureWorkspaceBtn: document.getElementById("showStructureWorkspaceBtn"),
+  introSentenceLegend: document.getElementById("introSentenceLegend"),
+  introsBoard: document.getElementById("introsBoard"),
+  addStructureSectionBtn: document.getElementById("addStructureSectionBtn"),
+  structureBoard: document.getElementById("structureBoard"),
   packagingPreviewLight: document.getElementById("packagingPreviewLight"),
   packagingPreviewDark: document.getElementById("packagingPreviewDark"),
   titleTemplate: document.getElementById("titleRowTemplate"),
@@ -208,8 +232,10 @@ const refs = {
   briefSourceInsights: document.getElementById("briefSourceInsights"),
   briefOutput: document.getElementById("briefOutput"),
   briefExportHint: document.getElementById("briefExportHint"),
-  exportThumbnailBriefPdfBtn: document.getElementById("exportThumbnailBriefPdfBtn"),
   exportPackagingBriefPdfBtn: document.getElementById("exportPackagingBriefPdfBtn"),
+  exportProductionBriefPdfBtn: document.getElementById("exportProductionBriefPdfBtn"),
+  openScriptExportBtn: document.getElementById("openScriptExportBtn"),
+  exportAnalyticsBriefBtn: document.getElementById("exportAnalyticsBriefBtn"),
   topTitle: document.getElementById("topTitle"),
   topThumb: document.getElementById("topThumb"),
   checkCuriosity: document.getElementById("checkCuriosity"),
@@ -259,9 +285,13 @@ const state = {
   thumbnailTexts: [],
   thumbnails: [],
   comparables: [],
+  scriptIntros: [],
+  scriptSections: [],
   latestBriefHtml: "",
   briefDetailExpanded: false,
   viewerSnapshotExpanded: false,
+  briefWorkspaceView: "packaging",
+  scriptingView: "intros",
   titleExpandedId: "",
   thumbnailTextExpandedId: "",
   thumbnailExpandedId: "",
@@ -282,6 +312,10 @@ let variationDragState = {
   type: "",
   id: "",
 };
+const DRAG_HANDLE_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="6.5" r="1.5"></circle><circle cx="8" cy="12" r="1.5"></circle><circle cx="8" cy="17.5" r="1.5"></circle><circle cx="16" cy="6.5" r="1.5"></circle><circle cx="16" cy="12" r="1.5"></circle><circle cx="16" cy="17.5" r="1.5"></circle></svg>';
+const DELETE_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path></svg>';
 
 const BRIEF_EXPORT_STYLES = `
   :root {
@@ -954,6 +988,152 @@ function normalizeBriefValues(values = {}) {
   }, {});
 }
 
+function normalizeBriefWorkspaceView(value) {
+  return BRIEF_WORKSPACE_OPTIONS.includes(value) ? value : "packaging";
+}
+
+function normalizeScriptingView(value) {
+  return SCRIPTING_VIEW_OPTIONS.includes(value) ? value : "intros";
+}
+
+function normalizeScriptSectionKind(value) {
+  return SCRIPT_SECTION_KINDS.includes(toCleanText(value)) ? toCleanText(value) : "content";
+}
+
+function normalizeScriptSentenceType(value) {
+  const type = toCleanText(value);
+  return SCRIPT_SENTENCE_TYPES.some((item) => item.id === type) ? type : "";
+}
+
+function createScriptSentenceRecord(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("line"),
+    type: normalizeScriptSentenceType(seed.type),
+    text: toCleanText(seed.text),
+    notes: toCleanText(seed.notes),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
+  };
+}
+
+function normalizeScriptSentenceCollection(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => createScriptSentenceRecord(item));
+}
+
+function createScriptParagraphRecord(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("para"),
+    text: toCleanText(seed.text),
+    notes: toCleanText(seed.notes),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
+  };
+}
+
+function normalizeScriptParagraphCollection(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => createScriptParagraphRecord(item));
+}
+
+function createSponsorResourceLinkRecord(seed = {}) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("resource"),
+    label: toCleanText(seed.label),
+    url: toCleanText(seed.url),
+    notes: toCleanText(seed.notes),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
+  };
+}
+
+function normalizeSponsorResourceLinks(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => createSponsorResourceLinkRecord(item));
+}
+
+function getDefaultIntroLabel(index) {
+  return `Intro ${index + 1}`;
+}
+
+function createIntroVariantRecord(seed = {}, index = 0) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("intro"),
+    label: toCleanText(seed.label) || getDefaultIntroLabel(index),
+    angle: toCleanText(seed.angle),
+    notes: toCleanText(seed.notes),
+    shotNotes: toCleanText(seed.shotNotes),
+    postNotes: toCleanText(seed.postNotes),
+    isShot: Boolean(seed.isShot),
+    sentences: normalizeScriptSentenceCollection(seed.sentences),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
+  };
+}
+
+function normalizeIntroVariants(items) {
+  const source = Array.isArray(items) ? items : [];
+  const intros = source.slice(0, 3).map((item, index) => createIntroVariantRecord(item, index));
+  while (intros.length < 3) {
+    intros.push(createIntroVariantRecord({}, intros.length));
+  }
+  return intros;
+}
+
+function createDefaultStructureSectionSeed() {
+  return [
+    { title: "Intro", kind: "content" },
+    { title: "Part 1", kind: "content" },
+    { title: "Part 2", kind: "content" },
+    { title: "Part 3", kind: "content" },
+    { title: "Outro", kind: "outro" },
+  ];
+}
+
+function createScriptSectionRecord(seed = {}, index = 0) {
+  return {
+    id: toCleanText(seed.id) || createRecordId("section"),
+    title: toCleanText(seed.title) || `Section ${index + 1}`,
+    kind: normalizeScriptSectionKind(seed.kind),
+    goal: toCleanText(seed.goal),
+    beats: toCleanText(seed.beats),
+    transitionNotes: toCleanText(seed.transitionNotes),
+    targetRuntime: toCleanText(seed.targetRuntime),
+    editingNotes: toCleanText(seed.editingNotes),
+    sponsorName: toCleanText(seed.sponsorName),
+    sponsorTalkingPoints: toCleanText(seed.sponsorTalkingPoints),
+    sponsorCta: toCleanText(seed.sponsorCta),
+    sponsorHandoffNotes: toCleanText(seed.sponsorHandoffNotes),
+    paragraphs: normalizeScriptParagraphCollection(seed.paragraphs),
+    resourceLinks: normalizeSponsorResourceLinks(seed.resourceLinks),
+    createdAt: normalizeTimestamp(seed.createdAt),
+    updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
+  };
+}
+
+function normalizeScriptSectionCollection(items) {
+  const source = Array.isArray(items) ? items : [];
+  const sections = source.map((item, index) => createScriptSectionRecord(item, index));
+  if (sections.length) {
+    return sections;
+  }
+  return createDefaultStructureSectionSeed().map((seed, index) => createScriptSectionRecord(seed, index));
+}
+
+function normalizeBriefScript(seed = {}) {
+  const source = seed && typeof seed === "object" ? seed : {};
+  return {
+    intros: normalizeIntroVariants(source.intros),
+    sections: normalizeScriptSectionCollection(source.sections),
+  };
+}
+
 function normalizeBriefSourceSnapshot(snapshot = {}) {
   if (!snapshot || typeof snapshot !== "object") {
     return null;
@@ -1025,6 +1205,7 @@ function createBriefRecord(seed = {}) {
     thumbnailTexts: normalizeThumbnailTextCollection(seed.thumbnailTexts),
     thumbnails: normalizeThumbnailCollection(seed.thumbnails),
     comparables: normalizeComparableCollection(seed.comparables),
+    script: normalizeBriefScript(seed.script),
     latestBriefHtml: toCleanText(seed.latestBriefHtml),
   };
 }
@@ -1583,6 +1764,14 @@ function setInputValueIfChanged(el, value) {
   }
 }
 
+function autosizeTextarea(el) {
+  if (!(el instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 function formatStatusCounts(items) {
   const counts = { none: 0, red: 0 };
   items.forEach((item) => {
@@ -2080,6 +2269,10 @@ function buildActiveChannelBriefState(values = getFieldValues()) {
       thumbnailTexts: state.thumbnailTexts,
       thumbnails: state.thumbnails,
       comparables: state.comparables,
+      script: {
+        intros: state.scriptIntros,
+        sections: state.scriptSections,
+      },
       latestBriefHtml: state.latestBriefHtml,
       updatedAt: Date.now(),
     });
@@ -2104,6 +2297,8 @@ function applyActiveChannelBriefState(briefState = {}) {
     state.thumbnailTexts = [];
     state.thumbnails = [];
     state.comparables = [];
+    state.scriptIntros = normalizeIntroVariants([]);
+    state.scriptSections = normalizeScriptSectionCollection([]);
     state.latestBriefHtml = "";
     state.titleExpandedId = "";
     state.thumbnailTextExpandedId = "";
@@ -2129,6 +2324,8 @@ function applyActiveChannelBriefState(briefState = {}) {
     state.thumbnailTexts = [];
     state.thumbnails = [];
     state.comparables = [];
+    state.scriptIntros = normalizeIntroVariants([]);
+    state.scriptSections = normalizeScriptSectionCollection([]);
     state.latestBriefHtml = "";
     state.titleExpandedId = "";
     state.thumbnailTextExpandedId = "";
@@ -2143,6 +2340,8 @@ function applyActiveChannelBriefState(briefState = {}) {
   state.thumbnails = normalizeThumbnailCollection(activeBrief.thumbnails);
   syncProjectNameFromTopTitle();
   state.comparables = normalizeComparableCollection(activeBrief.comparables);
+  state.scriptIntros = normalizeIntroVariants(activeBrief.script?.intros);
+  state.scriptSections = normalizeScriptSectionCollection(activeBrief.script?.sections);
   state.latestBriefHtml = toCleanText(activeBrief.latestBriefHtml);
   state.titleExpandedId = "";
   state.thumbnailTextExpandedId = "";
@@ -2659,6 +2858,766 @@ function renderBriefSourceSnapshot() {
   refs.briefSourceInsights.textContent = toCleanText(snapshot.insights) || "No insights captured.";
 }
 
+function getScriptSentenceTypeMeta(type) {
+  return SCRIPT_SENTENCE_TYPES.find((item) => item.id === normalizeScriptSentenceType(type)) || SCRIPT_SENTENCE_TYPES[0];
+}
+
+function countWords(value) {
+  return toCleanText(value)
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function estimateReadSeconds(value) {
+  const words = countWords(value);
+  if (!words) {
+    return 0;
+  }
+  return Math.max(1, Math.round((words / 150) * 60));
+}
+
+function formatDurationShort(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
+}
+
+function getIntroDurationSeconds(intro = {}) {
+  return normalizeScriptSentenceCollection(intro.sentences).reduce((sum, item) => sum + estimateReadSeconds(item.text), 0);
+}
+
+function getIntroWordCount(intro = {}) {
+  return normalizeScriptSentenceCollection(intro.sentences).reduce((sum, item) => sum + countWords(item.text), 0);
+}
+
+function getSectionDurationSeconds(section = {}) {
+  const paragraphs = normalizeScriptParagraphCollection(section.paragraphs);
+  if (paragraphs.length) {
+    return paragraphs.reduce((sum, item) => sum + estimateReadSeconds(item.text), 0);
+  }
+  return estimateReadSeconds(section.beats);
+}
+
+function getScriptTotalDurationSeconds() {
+  return (
+    state.scriptIntros.reduce((sum, intro) => sum + getIntroDurationSeconds(intro), 0) +
+    state.scriptSections.reduce((sum, section) => sum + getSectionDurationSeconds(section), 0)
+  );
+}
+
+function renderBriefWorkspaceState() {
+  const briefWorkspaceView = normalizeBriefWorkspaceView(state.briefWorkspaceView);
+  state.briefWorkspaceView = briefWorkspaceView;
+
+  document.querySelectorAll("[data-brief-workspace]").forEach((panel) => {
+    panel.hidden = panel.dataset.briefWorkspace !== briefWorkspaceView;
+  });
+
+  if (refs.showPackagingWorkspaceBtn) {
+    refs.showPackagingWorkspaceBtn.classList.toggle("is-active", briefWorkspaceView === "packaging");
+  }
+  if (refs.showScriptingWorkspaceBtn) {
+    refs.showScriptingWorkspaceBtn.classList.toggle("is-active", briefWorkspaceView === "scripting");
+  }
+  if (refs.briefWorkspaceHint) {
+    refs.briefWorkspaceHint.textContent =
+      briefWorkspaceView === "packaging"
+        ? "Develop the packaging, preview the top combinations, and export designer/editor handoff docs."
+        : "Draft 3 intros, build the script structure, and prepare a clean teleprompter export.";
+  }
+}
+
+function renderScriptingWorkspaceState() {
+  const scriptingView = normalizeScriptingView(state.scriptingView);
+  state.scriptingView = scriptingView;
+
+  document.querySelectorAll("[data-scripting-view]").forEach((panel) => {
+    panel.hidden = panel.dataset.scriptingView !== scriptingView;
+  });
+
+  if (refs.showIntroLabBtn) {
+    refs.showIntroLabBtn.classList.toggle("is-active", scriptingView === "intros");
+  }
+  if (refs.showStructureWorkspaceBtn) {
+    refs.showStructureWorkspaceBtn.classList.toggle("is-active", scriptingView === "structure");
+  }
+}
+
+function buildIconButton(className, label, iconMarkup, options = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.setAttribute("aria-label", label);
+  if (options.title) {
+    button.title = options.title;
+  }
+  button.innerHTML = iconMarkup;
+  return button;
+}
+
+function renderIntroSentenceLegend() {
+  if (!refs.introSentenceLegend) {
+    return;
+  }
+  refs.introSentenceLegend.innerHTML = "";
+
+  SCRIPT_SENTENCE_TYPES.filter((item) => item.id).forEach((type) => {
+    const chip = document.createElement("span");
+    chip.className = "script-type-chip";
+    chip.textContent = type.label;
+    chip.style.color = type.color;
+    refs.introSentenceLegend.appendChild(chip);
+  });
+}
+
+function updateIntroCardStats(card, intro) {
+  const durationEl = card.querySelector("[data-role='introDuration']");
+  const wordsEl = card.querySelector("[data-role='introWords']");
+  const targetEl = card.querySelector("[data-role='introTarget']");
+  if (durationEl) {
+    durationEl.textContent = `Read time ${formatDurationShort(getIntroDurationSeconds(intro))}`;
+  }
+  if (wordsEl) {
+    wordsEl.textContent = `${getIntroWordCount(intro)} words`;
+  }
+  if (targetEl) {
+    const duration = getIntroDurationSeconds(intro);
+    let suffix = "Recommended 20-35s";
+    if (duration > INTRO_TARGET_SECONDS.max) {
+      suffix = "Running long";
+    } else if (duration > 0 && duration < INTRO_TARGET_SECONDS.min) {
+      suffix = "Could open faster";
+    }
+    targetEl.textContent = suffix;
+  }
+}
+
+function renderIntroBoards() {
+  if (!refs.introsBoard) {
+    return;
+  }
+
+  refs.introsBoard.innerHTML = "";
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    refs.introsBoard.innerHTML = '<p class="pipeline-empty">Create or select a brief to draft intro variations.</p>';
+    return;
+  }
+
+  state.scriptIntros.forEach((intro, introIndex) => {
+    const introCard = document.createElement("article");
+    introCard.className = "intro-card";
+    introCard.innerHTML = `
+      <div class="intro-card-header">
+        <div>
+          <h3>${escapeHtml(intro.label || getDefaultIntroLabel(introIndex))}</h3>
+        </div>
+        <div class="intro-card-meta">
+          <span class="script-stat" data-role="introDuration"></span>
+          <span class="script-stat" data-role="introWords"></span>
+          <span class="script-stat" data-role="introTarget"></span>
+        </div>
+      </div>
+    `;
+
+    const sentenceBoard = document.createElement("div");
+    sentenceBoard.className = "script-intro-sentence-stack";
+    introCard.appendChild(sentenceBoard);
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn btn-muted";
+    addBtn.textContent = "Add Sentence";
+    introCard.querySelector(".intro-card-header").appendChild(addBtn);
+
+    const introRecord = state.scriptIntros[introIndex];
+
+    const sentences = introRecord.sentences;
+    if (!sentences.length) {
+      sentenceBoard.innerHTML =
+        '<p class="pipeline-empty">No intro sentences yet. Add a sentence and classify it only if useful.</p>';
+    } else {
+      sentences.forEach((sentence) => {
+        const row = document.createElement("article");
+        row.className = "script-sentence-card";
+        row.dataset.variationId = sentence.id;
+        row.dataset.scriptType = sentence.type;
+
+        const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder sentence", DRAG_HANDLE_ICON, {
+          title: "Drag to reorder",
+        });
+        dragBtn.dataset.action = "drag";
+        dragBtn.draggable = true;
+        dragBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        dragBtn.addEventListener("dragstart", (event) => {
+          beginVariationDrag(event, `intro-sentence:${introRecord.id}`, sentence.id);
+        });
+        dragBtn.addEventListener("dragend", clearVariationDropTargets);
+
+        row.addEventListener("dragover", (event) => {
+          if (canVariationDrop(`intro-sentence:${introRecord.id}`, sentence.id)) {
+            event.preventDefault();
+            row.classList.add("is-drop-target");
+          }
+        });
+        row.addEventListener("dragleave", () => {
+          row.classList.remove("is-drop-target");
+        });
+        row.addEventListener("drop", (event) => {
+          if (!canVariationDrop(`intro-sentence:${introRecord.id}`, sentence.id)) {
+            return;
+          }
+          event.preventDefault();
+          const fromIndex = introRecord.sentences.findIndex((item) => item.id === variationDragState.id);
+          const toIndex = introRecord.sentences.findIndex((item) => item.id === sentence.id);
+          clearVariationDropTargets();
+          if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+            return;
+          }
+          moveItemInArray(introRecord.sentences, fromIndex, toIndex);
+          updateBoardsAndBrief();
+        });
+
+        const summaryText = document.createElement("span");
+        summaryText.className = "script-sentence-line";
+        summaryText.textContent = toCleanText(sentence.text) || "Sentence draft";
+
+        const summaryBtn = document.createElement("button");
+        summaryBtn.type = "button";
+        summaryBtn.className = "script-sentence-summary";
+        summaryBtn.append(summaryText);
+
+        const typeSelect = document.createElement("select");
+        typeSelect.className = "script-row-type";
+        SCRIPT_SENTENCE_TYPES.forEach((type) => {
+          const option = document.createElement("option");
+          option.value = type.id;
+          option.textContent = type.label;
+          if (type.id === sentence.type) {
+            option.selected = true;
+          }
+          typeSelect.appendChild(option);
+        });
+
+        const textInput = document.createElement("input");
+        textInput.type = "text";
+        textInput.className = "script-sentence-input";
+        textInput.placeholder = "Sentence draft";
+        textInput.value = sentence.text;
+
+        const durationLabel = document.createElement("span");
+        durationLabel.className = "script-row-duration";
+        durationLabel.textContent = formatDurationShort(estimateReadSeconds(sentence.text));
+
+        const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove sentence", DELETE_ICON);
+        removeBtn.addEventListener("click", () => {
+          const sourceIndex = introRecord.sentences.findIndex((item) => item.id === sentence.id);
+          if (sourceIndex < 0) {
+            return;
+          }
+          introRecord.sentences.splice(sourceIndex, 1);
+          updateBoardsAndBrief();
+        });
+
+        const summaryShell = document.createElement("div");
+        summaryShell.className = "script-sentence-summary-shell";
+        const actions = document.createElement("div");
+        actions.className = "script-row-actions";
+        actions.append(durationLabel, removeBtn);
+        summaryShell.append(dragBtn, summaryBtn, actions);
+
+        const editor = document.createElement("div");
+        editor.className = "script-sentence-editor";
+        editor.hidden = true;
+        editor.append(typeSelect, textInput);
+
+        row.append(summaryShell, editor);
+        sentenceBoard.appendChild(row);
+
+        summaryBtn.addEventListener("click", () => {
+          editor.hidden = !editor.hidden;
+          row.classList.toggle("is-editing", !editor.hidden);
+          if (!editor.hidden) {
+            textInput.focus();
+            textInput.select();
+          }
+        });
+
+        typeSelect.addEventListener("change", () => {
+          sentence.type = typeSelect.value;
+          row.dataset.scriptType = sentence.type;
+          const typeMeta = getScriptSentenceTypeMeta(sentence.type);
+          summaryBtn.title = typeMeta.id ? typeMeta.label : "";
+          saveSnapshot();
+        });
+        textInput.addEventListener("input", () => {
+          sentence.text = textInput.value;
+          summaryText.textContent = toCleanText(sentence.text) || "Sentence draft";
+          durationLabel.textContent = formatDurationShort(estimateReadSeconds(sentence.text));
+          updateIntroCardStats(introCard, introRecord);
+          saveSnapshot();
+        });
+        textInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            editor.hidden = true;
+            row.classList.remove("is-editing");
+          }
+        });
+        textInput.addEventListener("blur", () => {
+          editor.hidden = true;
+          row.classList.remove("is-editing");
+        });
+      });
+    }
+
+    addBtn.addEventListener("click", () => {
+      introRecord.sentences.push(createScriptSentenceRecord({}));
+      updateBoardsAndBrief();
+    });
+
+    updateIntroCardStats(introCard, introRecord);
+    refs.introsBoard.appendChild(introCard);
+  });
+}
+
+function renderResourceLinkStack(section, stackEl) {
+  stackEl.innerHTML = "";
+  const links = section.resourceLinks;
+  if (!links.length) {
+    stackEl.innerHTML = '<p class="pipeline-empty">No sponsor resource links yet.</p>';
+    return;
+  }
+
+  links.forEach((link) => {
+    const row = document.createElement("article");
+    row.className = "pipeline-card resource-link-card";
+    row.innerHTML = `
+      <div class="pipeline-row-details">
+        <div class="pipeline-fields">
+          <label>
+            Label
+            <input data-field="label" value="${escapeHtml(link.label)}" placeholder="Campaign brief" />
+          </label>
+          <label>
+            URL
+            <input data-field="url" value="${escapeHtml(link.url)}" placeholder="https://..." />
+          </label>
+          <label class="full">
+            Notes
+            <textarea rows="2" data-field="notes" placeholder="Key instructions or handoff context.">${escapeHtml(
+              link.notes,
+            )}</textarea>
+          </label>
+        </div>
+      </div>
+    `;
+    const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove sponsor resource", DELETE_ICON);
+    removeBtn.addEventListener("click", () => {
+      const sourceIndex = section.resourceLinks.findIndex((item) => item.id === link.id);
+      if (sourceIndex < 0) {
+        return;
+      }
+      section.resourceLinks.splice(sourceIndex, 1);
+      updateBoardsAndBrief();
+    });
+    row.querySelector(".pipeline-row-details").appendChild(removeBtn);
+
+    row.querySelector('[data-field="label"]').addEventListener("input", (event) => {
+      link.label = event.target.value;
+      saveSnapshot();
+    });
+    row.querySelector('[data-field="url"]').addEventListener("input", (event) => {
+      link.url = event.target.value;
+      saveSnapshot();
+    });
+    row.querySelector('[data-field="notes"]').addEventListener("input", (event) => {
+      link.notes = event.target.value;
+      saveSnapshot();
+    });
+
+    stackEl.appendChild(row);
+  });
+}
+
+function renderParagraphStack(section, stackEl, sectionCard) {
+  stackEl.innerHTML = "";
+  const paragraphs = section.paragraphs;
+  if (!paragraphs.length) {
+    stackEl.innerHTML = '<p class="pipeline-empty">No drafted paragraphs yet.</p>';
+    return;
+  }
+
+  paragraphs.forEach((paragraph) => {
+    const row = document.createElement("article");
+    row.className = "pipeline-card script-paragraph-card list-row";
+    row.dataset.variationId = paragraph.id;
+
+    const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder paragraph", DRAG_HANDLE_ICON, {
+      title: "Drag to reorder",
+    });
+    dragBtn.draggable = true;
+    dragBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("dragstart", (event) => {
+      beginVariationDrag(event, `section-paragraph:${section.id}`, paragraph.id);
+    });
+    dragBtn.addEventListener("dragend", clearVariationDropTargets);
+
+    row.addEventListener("dragover", (event) => {
+      if (canVariationDrop(`section-paragraph:${section.id}`, paragraph.id)) {
+        event.preventDefault();
+        row.classList.add("is-drop-target");
+      }
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("is-drop-target");
+    });
+    row.addEventListener("drop", (event) => {
+      if (!canVariationDrop(`section-paragraph:${section.id}`, paragraph.id)) {
+        return;
+      }
+      event.preventDefault();
+      const fromIndex = section.paragraphs.findIndex((item) => item.id === variationDragState.id);
+      const toIndex = section.paragraphs.findIndex((item) => item.id === paragraph.id);
+      clearVariationDropTargets();
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+      moveItemInArray(section.paragraphs, fromIndex, toIndex);
+      updateBoardsAndBrief();
+    });
+
+    const textInput = document.createElement("textarea");
+    textInput.rows = 4;
+    textInput.placeholder = "Draft short paragraph";
+    textInput.value = paragraph.text;
+
+    const notesInput = document.createElement("textarea");
+    notesInput.rows = 2;
+    notesInput.placeholder = "Optional paragraph note";
+    notesInput.value = paragraph.notes;
+
+    const durationLabel = document.createElement("span");
+    durationLabel.className = "script-row-duration";
+    durationLabel.textContent = formatDurationShort(estimateReadSeconds(paragraph.text));
+
+    const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove paragraph", DELETE_ICON);
+    removeBtn.addEventListener("click", () => {
+      const sourceIndex = section.paragraphs.findIndex((item) => item.id === paragraph.id);
+      if (sourceIndex < 0) {
+        return;
+      }
+      section.paragraphs.splice(sourceIndex, 1);
+      updateBoardsAndBrief();
+    });
+
+    const main = document.createElement("div");
+    main.className = "script-row-main";
+    const topLine = document.createElement("div");
+    topLine.className = "script-row-topline";
+    topLine.innerHTML = "<strong>Draft Paragraph</strong>";
+    topLine.appendChild(durationLabel);
+    main.append(topLine, textInput, notesInput);
+
+    const actions = document.createElement("div");
+    actions.className = "script-row-actions";
+    actions.append(removeBtn);
+
+    const rowShell = document.createElement("div");
+    rowShell.className = "script-row";
+    rowShell.append(dragBtn, main, actions);
+    row.appendChild(rowShell);
+    stackEl.appendChild(row);
+
+    textInput.addEventListener("input", () => {
+      paragraph.text = textInput.value;
+      durationLabel.textContent = formatDurationShort(estimateReadSeconds(paragraph.text));
+      const durationEl = sectionCard.querySelector("[data-role='sectionDuration']");
+      if (durationEl) {
+        durationEl.textContent = `Runtime ${formatDurationShort(getSectionDurationSeconds(section))}`;
+      }
+      saveSnapshot();
+    });
+    notesInput.addEventListener("input", () => {
+      paragraph.notes = notesInput.value;
+      saveSnapshot();
+    });
+  });
+}
+
+function renderStructureBoard() {
+  if (!refs.structureBoard) {
+    return;
+  }
+
+  refs.structureBoard.innerHTML = "";
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    refs.structureBoard.innerHTML = '<p class="pipeline-empty">Create or select a brief to build the script structure.</p>';
+    return;
+  }
+
+  if (!state.scriptSections.length) {
+    refs.structureBoard.innerHTML = '<p class="pipeline-empty">No script sections yet.</p>';
+    return;
+  }
+
+  state.scriptSections.forEach((section) => {
+    const card = document.createElement("article");
+    card.className = "script-section-card pipeline-card list-row";
+    card.dataset.variationId = section.id;
+
+    const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder section", DRAG_HANDLE_ICON, {
+      title: "Drag to reorder",
+    });
+    dragBtn.draggable = true;
+    dragBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragBtn.addEventListener("dragstart", (event) => {
+      beginVariationDrag(event, "script-section", section.id);
+    });
+    dragBtn.addEventListener("dragend", clearVariationDropTargets);
+
+    card.addEventListener("dragover", (event) => {
+      if (canVariationDrop("script-section", section.id)) {
+        event.preventDefault();
+        card.classList.add("is-drop-target");
+      }
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("is-drop-target");
+    });
+    card.addEventListener("drop", (event) => {
+      if (!canVariationDrop("script-section", section.id)) {
+        return;
+      }
+      event.preventDefault();
+      const fromIndex = state.scriptSections.findIndex((item) => item.id === variationDragState.id);
+      const toIndex = state.scriptSections.findIndex((item) => item.id === section.id);
+      clearVariationDropTargets();
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+      moveItemInArray(state.scriptSections, fromIndex, toIndex);
+      updateBoardsAndBrief();
+    });
+
+    card.innerHTML = `
+      <div class="script-section-header">
+        <div class="script-section-meta">
+          <span class="script-stat" data-role="sectionDuration">Runtime ${formatDurationShort(
+            getSectionDurationSeconds(section),
+          )}</span>
+          <span class="script-stat">${normalizeScriptSectionKind(section.kind)}</span>
+        </div>
+      </div>
+    `;
+    card.querySelector(".script-section-header").prepend(dragBtn);
+
+    const actions = document.createElement("div");
+    actions.className = "script-row-actions";
+    const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove section", DELETE_ICON);
+    removeBtn.addEventListener("click", () => {
+      const sourceIndex = state.scriptSections.findIndex((item) => item.id === section.id);
+      if (sourceIndex < 0) {
+        return;
+      }
+      state.scriptSections.splice(sourceIndex, 1);
+      updateBoardsAndBrief();
+    });
+    actions.append(removeBtn);
+    card.querySelector(".script-section-header").append(actions);
+
+    const body = document.createElement("div");
+    body.className = "script-section-stack";
+    body.innerHTML = `
+      <div class="script-outline-grid">
+        <label>
+          Section Title
+          <input data-field="title" value="${escapeHtml(section.title)}" placeholder="Part 1" />
+        </label>
+        <label>
+          Section Kind
+          <select data-field="kind" class="script-section-kind">
+            <option value="content"${section.kind === "content" ? " selected" : ""}>Content</option>
+            <option value="sponsor"${section.kind === "sponsor" ? " selected" : ""}>Sponsor</option>
+            <option value="outro"${section.kind === "outro" ? " selected" : ""}>Outro</option>
+          </select>
+        </label>
+        <label class="full">
+          Goal
+          <textarea rows="2" data-field="goal" placeholder="What this section needs to accomplish.">${escapeHtml(
+            section.goal,
+          )}</textarea>
+        </label>
+        <label class="full">
+          Beats / Outline
+          <textarea rows="3" data-field="beats" placeholder="Short bullets or structural notes.">${escapeHtml(
+            section.beats,
+          )}</textarea>
+        </label>
+        <label>
+          Target Runtime
+          <input data-field="targetRuntime" value="${escapeHtml(section.targetRuntime)}" placeholder="Example: 1:30" />
+        </label>
+        <label>
+          Transition Notes
+          <textarea rows="2" data-field="transitionNotes" placeholder="What needs to bridge into the next section?">${escapeHtml(
+            section.transitionNotes,
+          )}</textarea>
+        </label>
+        <label class="full">
+          Editing Notes
+          <textarea rows="2" data-field="editingNotes" placeholder="Notes for post-production or pacing.">${escapeHtml(
+            section.editingNotes,
+          )}</textarea>
+        </label>
+      </div>
+    `;
+    card.appendChild(body);
+
+    const titleInput = body.querySelector('[data-field="title"]');
+    const kindInput = body.querySelector('[data-field="kind"]');
+    const goalInput = body.querySelector('[data-field="goal"]');
+    const beatsInput = body.querySelector('[data-field="beats"]');
+    const targetRuntimeInput = body.querySelector('[data-field="targetRuntime"]');
+    const transitionInput = body.querySelector('[data-field="transitionNotes"]');
+    const editingNotesInput = body.querySelector('[data-field="editingNotes"]');
+
+    titleInput.addEventListener("input", () => {
+      section.title = titleInput.value;
+      saveSnapshot();
+    });
+    kindInput.addEventListener("change", () => {
+      section.kind = normalizeScriptSectionKind(kindInput.value);
+      updateBoardsAndBrief();
+    });
+    goalInput.addEventListener("input", () => {
+      section.goal = goalInput.value;
+      saveSnapshot();
+    });
+    beatsInput.addEventListener("input", () => {
+      section.beats = beatsInput.value;
+      const durationEl = card.querySelector("[data-role='sectionDuration']");
+      if (durationEl) {
+        durationEl.textContent = `Runtime ${formatDurationShort(getSectionDurationSeconds(section))}`;
+      }
+      saveSnapshot();
+    });
+    targetRuntimeInput.addEventListener("input", () => {
+      section.targetRuntime = targetRuntimeInput.value;
+      saveSnapshot();
+    });
+    transitionInput.addEventListener("input", () => {
+      section.transitionNotes = transitionInput.value;
+      saveSnapshot();
+    });
+    editingNotesInput.addEventListener("input", () => {
+      section.editingNotes = editingNotesInput.value;
+      saveSnapshot();
+    });
+
+    if (section.kind === "sponsor") {
+      const sponsorFields = document.createElement("div");
+      sponsorFields.className = "script-outline-grid";
+      sponsorFields.innerHTML = `
+        <label>
+          Sponsor Name
+          <input data-field="sponsorName" value="${escapeHtml(section.sponsorName)}" placeholder="Brand name" />
+        </label>
+        <label>
+          CTA / Offer
+          <input data-field="sponsorCta" value="${escapeHtml(section.sponsorCta)}" placeholder="Offer or CTA" />
+        </label>
+        <label class="full">
+          Talking Points
+          <textarea rows="3" data-field="sponsorTalkingPoints" placeholder="Required sponsor talking points.">${escapeHtml(
+            section.sponsorTalkingPoints,
+          )}</textarea>
+        </label>
+        <label class="full">
+          Handoff Notes
+          <textarea rows="2" data-field="sponsorHandoffNotes" placeholder="Notes for your editor.">${escapeHtml(
+            section.sponsorHandoffNotes,
+          )}</textarea>
+        </label>
+      `;
+      body.appendChild(sponsorFields);
+
+      sponsorFields.querySelector('[data-field="sponsorName"]').addEventListener("input", (event) => {
+        section.sponsorName = event.target.value;
+        saveSnapshot();
+      });
+      sponsorFields.querySelector('[data-field="sponsorCta"]').addEventListener("input", (event) => {
+        section.sponsorCta = event.target.value;
+        saveSnapshot();
+      });
+      sponsorFields.querySelector('[data-field="sponsorTalkingPoints"]').addEventListener("input", (event) => {
+        section.sponsorTalkingPoints = event.target.value;
+        saveSnapshot();
+      });
+      sponsorFields.querySelector('[data-field="sponsorHandoffNotes"]').addEventListener("input", (event) => {
+        section.sponsorHandoffNotes = event.target.value;
+        saveSnapshot();
+      });
+
+      const resourceBlock = document.createElement("div");
+      resourceBlock.className = "script-subsection";
+      const toolbar = document.createElement("div");
+      toolbar.className = "script-subsection-toolbar";
+      toolbar.innerHTML = '<h4 class="script-subsection-title">Sponsor Resources</h4>';
+      const addResourceBtn = document.createElement("button");
+      addResourceBtn.type = "button";
+      addResourceBtn.className = "btn btn-muted";
+      addResourceBtn.textContent = "Add Resource";
+      toolbar.appendChild(addResourceBtn);
+      const resourceStack = document.createElement("div");
+      resourceStack.className = "resource-link-stack";
+      resourceBlock.append(toolbar, resourceStack);
+      body.appendChild(resourceBlock);
+      renderResourceLinkStack(section, resourceStack);
+      addResourceBtn.addEventListener("click", () => {
+        section.resourceLinks.push(createSponsorResourceLinkRecord({}));
+        updateBoardsAndBrief();
+      });
+    }
+
+    const paragraphBlock = document.createElement("div");
+    paragraphBlock.className = "script-subsection";
+    const paragraphToolbar = document.createElement("div");
+    paragraphToolbar.className = "script-subsection-toolbar";
+    paragraphToolbar.innerHTML = '<h4 class="script-subsection-title">Draft Paragraph Cards</h4>';
+    const addParagraphBtn = document.createElement("button");
+    addParagraphBtn.type = "button";
+    addParagraphBtn.className = "btn btn-muted";
+    addParagraphBtn.textContent = "Add Paragraph";
+    paragraphToolbar.appendChild(addParagraphBtn);
+    const paragraphStack = document.createElement("div");
+    paragraphStack.className = "pipeline-board";
+    paragraphBlock.append(paragraphToolbar, paragraphStack);
+    body.appendChild(paragraphBlock);
+    renderParagraphStack(section, paragraphStack, card);
+    addParagraphBtn.addEventListener("click", () => {
+      section.paragraphs.push(createScriptParagraphRecord({}));
+      updateBoardsAndBrief();
+    });
+
+    refs.structureBoard.appendChild(card);
+  });
+}
+
 function renderBriefListBoard() {
   if (!refs.briefListBoard || !refs.briefListItemTemplate) {
     return;
@@ -2759,18 +3718,38 @@ function setBriefEditorEnabled(enabled) {
   if (refs.briefStatusSelect) {
     refs.briefStatusSelect.disabled = !enabled;
   }
+  if (refs.showPackagingWorkspaceBtn) {
+    refs.showPackagingWorkspaceBtn.disabled = !enabled;
+  }
+  if (refs.showScriptingWorkspaceBtn) {
+    refs.showScriptingWorkspaceBtn.disabled = !enabled;
+  }
+  if (refs.showIntroLabBtn) {
+    refs.showIntroLabBtn.disabled = !enabled;
+  }
+  if (refs.showStructureWorkspaceBtn) {
+    refs.showStructureWorkspaceBtn.disabled = !enabled;
+  }
+  if (refs.addStructureSectionBtn) {
+    refs.addStructureSectionBtn.disabled = !enabled;
+  }
 }
 
 function renderBriefExportControls() {
   const activeBrief = getActiveBriefRecord();
   const hasActiveBrief = Boolean(activeBrief);
-  const hasThumbnailVariations = state.thumbnails.length > 0;
-
-  if (refs.exportThumbnailBriefPdfBtn) {
-    refs.exportThumbnailBriefPdfBtn.disabled = !hasActiveBrief;
-  }
+  const hasStructure = state.scriptSections.length > 0;
   if (refs.exportPackagingBriefPdfBtn) {
-    refs.exportPackagingBriefPdfBtn.disabled = !hasActiveBrief || !hasThumbnailVariations;
+    refs.exportPackagingBriefPdfBtn.disabled = !hasActiveBrief;
+  }
+  if (refs.exportProductionBriefPdfBtn) {
+    refs.exportProductionBriefPdfBtn.disabled = !hasActiveBrief;
+  }
+  if (refs.openScriptExportBtn) {
+    refs.openScriptExportBtn.disabled = !hasActiveBrief || !hasStructure;
+  }
+  if (refs.exportAnalyticsBriefBtn) {
+    refs.exportAnalyticsBriefBtn.disabled = true;
   }
   if (!refs.briefExportHint) {
     return;
@@ -2780,12 +3759,15 @@ function renderBriefExportControls() {
     refs.briefExportHint.textContent = "Select a brief to export.";
     return;
   }
-  if (!hasThumbnailVariations) {
-    refs.briefExportHint.textContent = "Packaging Brief unlocks after at least 1 thumbnail variation.";
+  if (!hasStructure) {
+    refs.briefExportHint.textContent =
+      "Packaging and Production exports are ready. Script Export unlocks after you add at least 1 structure section.";
     return;
   }
 
-  refs.briefExportHint.textContent = "Both PDF exports are ready.";
+  refs.briefExportHint.textContent = `Packaging Brief, Production Brief, and Script Export are ready. Total script runtime ${formatDurationShort(
+    getScriptTotalDurationSeconds(),
+  )}.`;
 }
 
 function renderViewerSnapshot() {
@@ -4688,8 +5670,117 @@ function buildBriefViewModel(values) {
     titleList,
     thumbnailTextList,
     thumbList,
+    intros: normalizeIntroVariants(state.scriptIntros),
+    sections: normalizeScriptSectionCollection(state.scriptSections),
     values,
   };
+}
+
+function renderIntroCardsHtml(intros, options = {}) {
+  if (!intros.length) {
+    return "<p>No intros drafted yet.</p>";
+  }
+
+  return intros
+    .map((intro, index) => {
+      const sentences = normalizeScriptSentenceCollection(intro.sentences).filter(
+        (item) => toCleanText(item.text) || toCleanText(item.notes) || toCleanText(item.type),
+      );
+      const sentenceList = sentences.length
+        ? `<ol>${sentences
+            .map((item) => {
+              const typeMeta = getScriptSentenceTypeMeta(item.type);
+              const prefix = typeMeta.id ? `<strong>${escapeHtml(typeMeta.label)}:</strong> ` : "";
+              return `<li>${prefix}${safeText(item.text, "No sentence text yet.")}</li>`;
+            })
+            .join("")}</ol>`
+        : "<p>No intro sentences yet.</p>";
+      const notesHtml = options.includeNotes
+        ? `<ul>
+            <li><strong>Angle:</strong> ${safeText(intro.angle)}</li>
+            <li><strong>Shoot notes:</strong> ${safeText(intro.shotNotes)}</li>
+            <li><strong>Post notes:</strong> ${safeText(intro.postNotes)}</li>
+            <li><strong>Estimated runtime:</strong> ${formatDurationShort(getIntroDurationSeconds(intro))}</li>
+          </ul>`
+        : `<p class="muted">Estimated runtime: ${formatDurationShort(getIntroDurationSeconds(intro))}</p>`;
+      return `
+        <article class="card">
+          <h2>${escapeHtml(intro.label || `Intro ${index + 1}`)}</h2>
+          ${notesHtml}
+          ${sentenceList}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderStructureSectionsHtml(sections, options = {}) {
+  if (!sections.length) {
+    return "<p>No script structure drafted yet.</p>";
+  }
+
+  return sections
+    .map((section) => {
+      const paragraphs = normalizeScriptParagraphCollection(section.paragraphs).filter(
+        (item) => toCleanText(item.text) || toCleanText(item.notes),
+      );
+      const paragraphHtml = paragraphs.length
+        ? paragraphs.map((paragraph) => `<p>${safeText(paragraph.text, "No drafted paragraph yet.")}</p>`).join("")
+        : `<p>${safeText(section.beats, "No outline beats yet.")}</p>`;
+      const outlineHtml = options.includeOutline
+        ? `<ul>
+            <li><strong>Goal:</strong> ${safeText(section.goal)}</li>
+            <li><strong>Outline beats:</strong> ${safeText(section.beats)}</li>
+            <li><strong>Transition notes:</strong> ${safeText(section.transitionNotes)}</li>
+            <li><strong>Target runtime:</strong> ${safeText(section.targetRuntime)}</li>
+            <li><strong>Editing notes:</strong> ${safeText(section.editingNotes)}</li>
+          </ul>`
+        : "";
+      const sponsorHtml =
+        section.kind === "sponsor"
+          ? `<ul>
+              <li><strong>Sponsor name:</strong> ${safeText(section.sponsorName)}</li>
+              <li><strong>Talking points:</strong> ${safeText(section.sponsorTalkingPoints)}</li>
+              <li><strong>CTA:</strong> ${safeText(section.sponsorCta)}</li>
+              ${
+                options.includeNotes
+                  ? `<li><strong>Handoff notes:</strong> ${safeText(section.sponsorHandoffNotes)}</li>`
+                  : ""
+              }
+            </ul>
+            ${
+              section.resourceLinks.length && options.includeNotes
+                ? `<h3>Resource Links</h3><ul>${section.resourceLinks
+                    .filter((link) => toCleanText(link.label) || toCleanText(link.url) || toCleanText(link.notes))
+                    .map((link) => {
+                      const linkedUrl = toCleanText(link.url);
+                      const primary = linkedUrl
+                        ? `<a href="${escapeHtml(linkedUrl)}" target="_blank" rel="noreferrer noopener">${escapeHtml(
+                            linkedUrl,
+                          )}</a>`
+                        : safeText(link.notes, "No resource URL yet.");
+                      return `<li><strong>${safeText(link.label, "Resource")}:</strong> ${primary}${
+                        toCleanText(link.notes) ? ` <span class="muted">(${escapeHtml(link.notes)})</span>` : ""
+                      }</li>`;
+                    })
+                    .join("")}</ul>`
+                : ""
+            }`
+          : "";
+
+      return `
+        <article class="card">
+          <h2>${safeText(section.title)}</h2>
+          <p class="muted">Kind: ${escapeHtml(section.kind)} · Runtime ${formatDurationShort(
+            getSectionDurationSeconds(section),
+          )}</p>
+          ${outlineHtml}
+          ${sponsorHtml}
+          ${paragraphHtml}
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function buildPreviewHtml(values) {
@@ -4775,15 +5866,15 @@ function buildThumbnailBriefExportHtml(values) {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${safeText(values.projectName, "YouTube Thumbnail Brief")}</title>
+    <title>${safeText(values.projectName, "YouTube Packaging Brief")}</title>
     <style>${BRIEF_EXPORT_STYLES}</style>
   </head>
   <body>
     <main class="page">
       <section class="hero">
-        <p class="kicker">Thumbnail Brief</p>
-        <h1>${safeText(values.projectName, "YouTube Thumbnail Brief")}</h1>
-        <p>Generated ${escapeHtml(model.generatedAt)} · For thumbnail design team</p>
+        <p class="kicker">Packaging Brief</p>
+        <h1>${safeText(values.projectName, "YouTube Packaging Brief")}</h1>
+        <p>Generated ${escapeHtml(model.generatedAt)} · For thumbnail design and packaging work</p>
       </section>
 
       <section class="card">
@@ -4816,12 +5907,22 @@ function buildThumbnailBriefExportHtml(values) {
           <li><strong>Idea focus:</strong> ${safeText(values.ideaFocus)}</li>
           <li><strong>Core pain:</strong> ${safeText(values.painPoint)}</li>
           <li><strong>Desired outcome:</strong> ${safeText(values.desiredOutcome)}</li>
+          <li><strong>Expected views:</strong> ${safeText(values.expectedViews)}</li>
           <li><strong>Intrigue trigger:</strong> ${safeText(values.intrigueTrigger)}</li>
           <li><strong>Curiosity gap:</strong> ${safeText(values.curiosityGap)}</li>
           <li><strong>Uniqueness edge:</strong> ${safeText(values.uniquenessEdge)}</li>
           <li><strong>Treatment references:</strong> ${safeText(values.treatmentReferences)}</li>
         </ul>
       </section>
+
+      ${
+        model.thumbList.length
+          ? `<section class="card">
+              <h2>Thumbnail Variations (If Available)</h2>
+              ${renderThumbListHtml(model.thumbList)}
+            </section>`
+          : ""
+      }
 
       <section class="card">
         <h2>Thumbnail Text Candidates</h2>
@@ -4865,7 +5966,7 @@ function buildThumbnailBriefExportHtml(values) {
 </html>`;
 }
 
-function buildPackagingBriefExportHtml(values) {
+function buildProductionBriefExportHtml(values) {
   const model = buildBriefViewModel(values);
   const playbook = evaluatePlaybookSignals(model.topTitle, model.topThumb, values);
 
@@ -4874,15 +5975,15 @@ function buildPackagingBriefExportHtml(values) {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${safeText(values.projectName, "YouTube Packaging Brief")}</title>
+    <title>${safeText(values.projectName, "YouTube Production Brief")}</title>
     <style>${BRIEF_EXPORT_STYLES}</style>
   </head>
   <body>
     <main class="page">
       <section class="hero">
-        <p class="kicker">Packaging Brief</p>
-        <h1>${safeText(values.projectName, "YouTube Packaging Brief")}</h1>
-        <p>Generated ${escapeHtml(model.generatedAt)} · Production + post-production reference</p>
+        <p class="kicker">Production Brief</p>
+        <h1>${safeText(values.projectName, "YouTube Production Brief")}</h1>
+        <p>Generated ${escapeHtml(model.generatedAt)} · Editor handoff with intros, structure, thumbnails, and sponsor resources</p>
       </section>
 
       <section class="card">
@@ -4951,6 +6052,7 @@ function buildPackagingBriefExportHtml(values) {
           <li><strong>Idea focus:</strong> ${safeText(values.ideaFocus)}</li>
           <li><strong>Core pain:</strong> ${safeText(values.painPoint)}</li>
           <li><strong>Desired outcome:</strong> ${safeText(values.desiredOutcome)}</li>
+          <li><strong>Expected views:</strong> ${safeText(values.expectedViews)}</li>
           <li><strong>Intrigue trigger:</strong> ${safeText(values.intrigueTrigger)}</li>
           <li><strong>Curiosity gap:</strong> ${safeText(values.curiosityGap)}</li>
           <li><strong>Uniqueness edge:</strong> ${safeText(values.uniquenessEdge)}</li>
@@ -4989,6 +6091,57 @@ function buildPackagingBriefExportHtml(values) {
       <section class="card">
         <h2>Thumbnail Text Variations</h2>
         ${renderThumbnailTextListHtml(model.thumbnailTextList)}
+      </section>
+
+      <section class="card">
+        <h2>Produced Thumbnails / Current Variations</h2>
+        ${model.thumbList.length ? renderThumbListHtml(model.thumbList) : "<p>No thumbnail variations attached yet.</p>"}
+      </section>
+
+      <section class="grid two">
+        ${renderIntroCardsHtml(model.intros, { includeNotes: true })}
+      </section>
+
+      <section class="card">
+        <h2>Script Structure</h2>
+        ${renderStructureSectionsHtml(model.sections, { includeOutline: true, includeNotes: true })}
+      </section>
+    </main>
+  </body>
+</html>`;
+}
+
+function buildScriptExportHtml(values) {
+  const model = buildBriefViewModel(values);
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${safeText(values.projectName, "YouTube Script Export")}</title>
+    <style>${BRIEF_EXPORT_STYLES}
+      body { background: #ffffff; }
+      .card p, .card li { font-size: 1.08rem; line-height: 1.6; }
+      ol { padding-left: 1.4rem; }
+      .muted { color: #5a6870; font-size: 0.92rem; }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="kicker">Script Export</p>
+        <h1>${safeText(values.projectName, "YouTube Script Export")}</h1>
+        <p>Generated ${escapeHtml(model.generatedAt)} · Clean teleprompter reading document</p>
+      </section>
+
+      <section class="grid two">
+        ${renderIntroCardsHtml(model.intros, { includeNotes: false })}
+      </section>
+
+      <section class="card">
+        <h2>Main Script</h2>
+        ${renderStructureSectionsHtml(model.sections, { includeOutline: false, includeNotes: false })}
       </section>
     </main>
   </body>
@@ -5084,7 +6237,7 @@ function updateBriefOutput(values) {
   }
 
   refs.briefOutput.innerHTML = buildPreviewHtml(values);
-  state.latestBriefHtml = buildPackagingBriefExportHtml(values);
+  state.latestBriefHtml = buildThumbnailBriefExportHtml(values);
 }
 
 function applyLegacyWorkspaceBriefDrafts(channelWorkspaces = {}) {
@@ -5692,8 +6845,12 @@ function resetAll() {
     [defaultChannel.id]: normalizeChannelBriefState(createEmptyChannelBriefState(), defaultChannel.id),
   };
   state.activeBriefId = "";
+  state.scriptIntros = normalizeIntroVariants([]);
+  state.scriptSections = normalizeScriptSectionCollection([]);
   state.briefDetailExpanded = false;
   state.viewerSnapshotExpanded = false;
+  state.briefWorkspaceView = "packaging";
+  state.scriptingView = "intros";
   state.titleExpandedId = "";
   state.thumbnailTextExpandedId = "";
   state.thumbnailExpandedId = "";
@@ -5743,9 +6900,14 @@ function updateBoardsAndBrief(options = {}) {
       }
     } else {
       setBriefEditorEnabled(true);
+      renderBriefWorkspaceState();
+      renderScriptingWorkspaceState();
       renderBriefDetailCollapseState();
       renderViewerSnapshotCollapseState();
       renderBriefSourceSnapshot();
+      renderIntroSentenceLegend();
+      renderIntroBoards();
+      renderStructureBoard();
       renderTitleBoard();
       renderThumbnailTextBoard();
       renderThumbBoard();
@@ -5832,14 +6994,17 @@ function openPdfPrintWindow(html, triggerButton) {
   flashButtonText(triggerButton, "Opening PDF", 900);
 }
 
-function exportThumbnailBriefPdf() {
-  if (!getActiveBriefRecord()) {
-    flashButtonText(refs.exportThumbnailBriefPdfBtn, "No Brief", 1000);
+function openDocumentWindow(html, triggerButton, successText = "Opened") {
+  const docWindow = window.open("", "_blank");
+  if (!docWindow) {
+    flashButtonText(triggerButton, "Popup Blocked", 1500);
     return;
   }
 
-  const html = buildThumbnailBriefExportHtml(getFieldValues());
-  openPdfPrintWindow(html, refs.exportThumbnailBriefPdfBtn);
+  docWindow.document.open();
+  docWindow.document.write(html);
+  docWindow.document.close();
+  flashButtonText(triggerButton, successText, 900);
 }
 
 function exportPackagingBriefPdf() {
@@ -5847,13 +7012,29 @@ function exportPackagingBriefPdf() {
     flashButtonText(refs.exportPackagingBriefPdfBtn, "No Brief", 1000);
     return;
   }
-  if (!state.thumbnails.length) {
-    flashButtonText(refs.exportPackagingBriefPdfBtn, "Need Thumbnail", 1200);
+
+  const html = buildThumbnailBriefExportHtml(getFieldValues());
+  openPdfPrintWindow(html, refs.exportPackagingBriefPdfBtn);
+}
+
+function exportProductionBriefPdf() {
+  if (!getActiveBriefRecord()) {
+    flashButtonText(refs.exportProductionBriefPdfBtn, "No Brief", 1000);
     return;
   }
 
-  const html = buildPackagingBriefExportHtml(getFieldValues());
-  openPdfPrintWindow(html, refs.exportPackagingBriefPdfBtn);
+  const html = buildProductionBriefExportHtml(getFieldValues());
+  openPdfPrintWindow(html, refs.exportProductionBriefPdfBtn);
+}
+
+function openScriptExport() {
+  if (!getActiveBriefRecord()) {
+    flashButtonText(refs.openScriptExportBtn, "No Brief", 1000);
+    return;
+  }
+
+  const html = buildScriptExportHtml(getFieldValues());
+  openDocumentWindow(html, refs.openScriptExportBtn, "Opened Script");
 }
 
 function readFileAsDataUrl(file) {
@@ -6275,6 +7456,43 @@ function bindEvents() {
     });
   }
 
+  if (refs.showPackagingWorkspaceBtn) {
+    refs.showPackagingWorkspaceBtn.addEventListener("click", () => {
+      state.briefWorkspaceView = "packaging";
+      updateBoardsAndBrief({ persist: false });
+    });
+  }
+
+  if (refs.showScriptingWorkspaceBtn) {
+    refs.showScriptingWorkspaceBtn.addEventListener("click", () => {
+      state.briefWorkspaceView = "scripting";
+      updateBoardsAndBrief({ persist: false });
+    });
+  }
+
+  if (refs.showIntroLabBtn) {
+    refs.showIntroLabBtn.addEventListener("click", () => {
+      state.scriptingView = "intros";
+      updateBoardsAndBrief({ persist: false });
+    });
+  }
+
+  if (refs.showStructureWorkspaceBtn) {
+    refs.showStructureWorkspaceBtn.addEventListener("click", () => {
+      state.scriptingView = "structure";
+      updateBoardsAndBrief({ persist: false });
+    });
+  }
+
+  if (refs.addStructureSectionBtn) {
+    refs.addStructureSectionBtn.addEventListener("click", () => {
+      state.scriptSections.push(createScriptSectionRecord({}, state.scriptSections.length));
+      state.scriptingView = "structure";
+      state.briefWorkspaceView = "scripting";
+      updateBoardsAndBrief();
+    });
+  }
+
   if (refs.toggleBriefDetailBtn) {
     refs.toggleBriefDetailBtn.addEventListener("click", () => {
       state.briefDetailExpanded = !state.briefDetailExpanded;
@@ -6399,11 +7617,19 @@ function bindEvents() {
   if (resetStateBtn) {
     resetStateBtn.addEventListener("click", resetAll);
   }
-  if (refs.exportThumbnailBriefPdfBtn) {
-    refs.exportThumbnailBriefPdfBtn.addEventListener("click", exportThumbnailBriefPdf);
-  }
   if (refs.exportPackagingBriefPdfBtn) {
     refs.exportPackagingBriefPdfBtn.addEventListener("click", exportPackagingBriefPdf);
+  }
+  if (refs.exportProductionBriefPdfBtn) {
+    refs.exportProductionBriefPdfBtn.addEventListener("click", exportProductionBriefPdf);
+  }
+  if (refs.openScriptExportBtn) {
+    refs.openScriptExportBtn.addEventListener("click", openScriptExport);
+  }
+  if (refs.exportAnalyticsBriefBtn) {
+    refs.exportAnalyticsBriefBtn.addEventListener("click", () => {
+      flashButtonText(refs.exportAnalyticsBriefBtn, "Not Yet", 1200);
+    });
   }
 
   if (refs.addComparableBtn) {
