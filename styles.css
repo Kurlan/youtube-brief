@@ -1773,18 +1773,21 @@ select:focus {
 .is-script-draft .script-readonly-summary:hover,
 .is-script-draft .script-readonly-line .script-sentence-summary {
   padding: 0;
-  background: transparent;
-  color: #111111;
   border-radius: 0;
   box-shadow: none;
   transform: none;
 }
 
-.is-script-draft .script-sentence-summary-content-inline {
+.is-script-draft.is-plain-script .script-readonly-line .script-sentence-summary {
+  background: transparent;
+  color: #111111;
+}
+
+.is-script-draft.is-plain-script .script-sentence-summary-content-inline {
   grid-template-columns: 1fr;
 }
 
-.is-script-draft .script-sentence-summary-content-inline .script-sentence-type-badge {
+.is-script-draft.is-plain-script .script-sentence-summary-content-inline .script-sentence-type-badge {
   display: none;
 }
 

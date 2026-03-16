@@ -32,7 +32,7 @@ const CHANNEL_ASSET_KINDS = ["avatar", "banner", "thumbnail", "other"];
 const BRIEF_WORKSPACE_OPTIONS = ["packaging", "scripting"];
 const SCRIPTING_VIEW_OPTIONS = ["intros", "sections", "draft"];
 const SCRIPT_SECTION_KINDS = ["intro", "content", "sponsor", "outro"];
-const SCRIPT_DRAFT_VIEW_OPTIONS = ["plain", "color", "script"];
+const SCRIPT_DRAFT_LAYOUT_OPTIONS = ["plain", "script"];
 const SCRIPT_SENTENCE_TYPES = [
   { id: "", label: "Untyped", color: "#5d6770" },
   { id: "intrigue", label: "Creating Intrigue", color: "#9c6a1a" },
@@ -301,7 +301,8 @@ const state = {
   comparables: [],
   scriptIntros: [],
   scriptSections: [],
-  scriptDraftView: "color",
+  scriptDraftLayout: "plain",
+  scriptDraftShowColors: true,
   latestBriefHtml: "",
   briefDetailExpanded: false,
   viewerSnapshotExpanded: false,
@@ -1015,12 +1016,29 @@ function normalizeScriptingView(value) {
   return SCRIPTING_VIEW_OPTIONS.includes(normalized) ? normalized : "intros";
 }
 
-function normalizeScriptDraftView(value, fallbackColor = true) {
+function normalizeScriptDraftLayout(value) {
   const normalized = toCleanText(value);
-  if (SCRIPT_DRAFT_VIEW_OPTIONS.includes(normalized)) {
+  if (normalized === "color") {
+    return "plain";
+  }
+  if (SCRIPT_DRAFT_LAYOUT_OPTIONS.includes(normalized)) {
     return normalized;
   }
-  return fallbackColor ? "color" : "plain";
+  return "plain";
+}
+
+function normalizeScriptDraftColorEnabled(value, fallback = true) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const normalized = toCleanText(value);
+  if (normalized === "color") {
+    return true;
+  }
+  if (normalized === "plain" || normalized === "script") {
+    return false;
+  }
+  return fallback;
 }
 
 function normalizeScriptSectionKind(value) {
@@ -3836,30 +3854,42 @@ function renderDraftBoard() {
     const didCopy = await copyTextToClipboard(compiled);
     flashButtonText(copyAllBtn, didCopy ? "Copied" : "Copy Failed", 1100);
   });
-  const draftView = normalizeScriptDraftView(state.scriptDraftView);
-  state.scriptDraftView = draftView;
+  const draftLayout = normalizeScriptDraftLayout(state.scriptDraftLayout);
+  state.scriptDraftLayout = draftLayout;
+  const colorEnabled = normalizeScriptDraftColorEnabled(state.scriptDraftShowColors);
+  state.scriptDraftShowColors = colorEnabled;
+
   [
     { id: "plain", label: "Plain" },
-    { id: "color", label: "Color" },
     { id: "script", label: "Script" },
   ].forEach((option) => {
     const viewBtn = document.createElement("button");
     viewBtn.type = "button";
     viewBtn.className = "btn btn-muted";
     viewBtn.textContent = option.label;
-    viewBtn.classList.toggle("is-active", draftView === option.id);
+    viewBtn.classList.toggle("is-active", draftLayout === option.id);
     viewBtn.addEventListener("click", () => {
-      state.scriptDraftView = option.id;
+      state.scriptDraftLayout = option.id;
       updateBoardsAndBrief();
     });
     controls.appendChild(viewBtn);
   });
+  const colorBtn = document.createElement("button");
+  colorBtn.type = "button";
+  colorBtn.className = "btn btn-muted";
+  colorBtn.textContent = colorEnabled ? "Color On" : "Color Off";
+  colorBtn.classList.toggle("is-active", colorEnabled);
+  colorBtn.addEventListener("click", () => {
+    state.scriptDraftShowColors = !state.scriptDraftShowColors;
+    updateBoardsAndBrief();
+  });
+  controls.appendChild(colorBtn);
   controls.prepend(copyAllBtn);
   refs.draftBoard.appendChild(controls);
 
-  const colorMode = draftView === "color";
-  const scriptMode = draftView === "script";
-  refs.draftBoard.classList.toggle("is-plain-script", draftView === "plain");
+  const colorMode = colorEnabled;
+  const scriptMode = draftLayout === "script";
+  refs.draftBoard.classList.toggle("is-plain-script", !colorMode);
   refs.draftBoard.classList.toggle("is-script-draft", scriptMode);
 
   const compiledSections = [];
@@ -6628,7 +6658,8 @@ function buildWorkspacePayload(values = getFieldValues()) {
     channelView: state.channelView,
     briefWorkspaceView: normalizeBriefWorkspaceView(state.briefWorkspaceView),
     scriptingView: normalizeScriptingView(state.scriptingView),
-    scriptDraftView: normalizeScriptDraftView(state.scriptDraftView),
+    scriptDraftLayout: normalizeScriptDraftLayout(state.scriptDraftLayout),
+    scriptDraftShowColors: normalizeScriptDraftColorEnabled(state.scriptDraftShowColors),
     channels: state.channels,
     accounts: state.accounts,
     channelMemberships: state.channelMemberships,
@@ -6697,7 +6728,11 @@ function applyWorkspacePayload(payload = {}) {
     state.channelView = normalizeChannelView(payload.channelView);
     state.briefWorkspaceView = normalizeBriefWorkspaceView(payload.briefWorkspaceView);
     state.scriptingView = normalizeScriptingView(payload.scriptingView);
-    state.scriptDraftView = normalizeScriptDraftView(payload.scriptDraftView, payload.scriptDraftShowColors !== false);
+    state.scriptDraftLayout = normalizeScriptDraftLayout(payload.scriptDraftLayout || payload.scriptDraftView);
+    state.scriptDraftShowColors = normalizeScriptDraftColorEnabled(
+      payload.scriptDraftShowColors,
+      normalizeScriptDraftColorEnabled(payload.scriptDraftView),
+    );
     state.channels = normalizeChannels(payload.channels);
     state.accounts = normalizeAccounts(payload.accounts);
     state.channelMemberships = normalizeChannelMemberships(payload.channelMemberships);
@@ -7155,7 +7190,8 @@ function resetAll() {
   state.activeBriefId = "";
   state.scriptIntros = normalizeIntroVariants([]);
   state.scriptSections = normalizeScriptSectionCollection([]);
-  state.scriptDraftView = "color";
+  state.scriptDraftLayout = "plain";
+  state.scriptDraftShowColors = true;
   state.briefDetailExpanded = false;
   state.viewerSnapshotExpanded = false;
   state.briefWorkspaceView = "packaging";
