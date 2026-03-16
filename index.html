@@ -248,7 +248,7 @@
           <button id="showPackagingWorkspaceBtn" class="btn btn-muted" type="button">Packaging</button>
           <button id="showScriptingWorkspaceBtn" class="btn btn-muted" type="button">Scripting</button>
         </div>
-        <p id="briefWorkspaceHint" class="hint">Use Packaging for title/thumbnail development and Scripting for intros and script structure.</p>
+        <p id="briefWorkspaceHint" class="hint">Use Packaging for title/thumbnail development and Scripting for intros, sections, and draft.</p>
       </section>
 
       <section class="panel" data-page="brief-detail">
@@ -569,12 +569,14 @@
           <h2>Scripting Workspace</h2>
         </div>
         <p class="hint">
-          Draft 3 shootable intros, then build the outline and drafted sections for the body of the video.
+          Draft 3 shootable intros, build your sections, then review the compiled draft.
         </p>
         <div class="brief-workspace-nav" aria-label="Scripting navigation">
           <button id="showIntroLabBtn" class="btn btn-muted" type="button">Intros</button>
-          <button id="showStructureWorkspaceBtn" class="btn btn-muted" type="button">Structure</button>
+          <button id="showSkeletonWorkspaceBtn" class="btn btn-muted" type="button">Sections</button>
+          <button id="showDraftWorkspaceBtn" class="btn btn-muted" type="button">Draft</button>
         </div>
+        <p id="scriptingProgressHint" class="hint"></p>
       </section>
 
       <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="intros">
@@ -589,18 +591,27 @@
         <div id="introsBoard" class="script-intros-board"></div>
       </section>
 
-      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="structure">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="sections">
         <div class="panel-header">
-          <h2>Script Structure</h2>
+          <h2>Sections</h2>
           <div class="panel-header-tools">
-            <button id="addStructureSectionBtn" class="btn btn-muted" type="button">Add Section</button>
+            <button id="addSkeletonSectionBtn" class="btn btn-muted" type="button">Add Section</button>
           </div>
         </div>
         <p class="hint">
-          Start with outline structure first. Expand sections into drafted paragraph cards once a section is ready to
-          script.
+          Build the body of the script here. Each section uses the same typed-line workflow as Intro Lab.
         </p>
-        <div id="structureBoard" class="pipeline-board script-structure-board"></div>
+        <div id="skeletonBoard" class="pipeline-board script-structure-board"></div>
+      </section>
+
+      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="draft">
+        <div class="panel-header">
+          <h2>Script Draft</h2>
+        </div>
+        <p class="hint">
+          Review the compiled script here. Intros appear first, followed by all sections in order.
+        </p>
+        <div id="draftBoard" class="pipeline-board script-structure-board"></div>
       </section>
 
       <section class="panel" data-page="brief-detail">

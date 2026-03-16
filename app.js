@@ -30,8 +30,8 @@ const CHANNEL_MEMBER_ROLES = ["owner", "editor", "viewer"];
 const CHANNEL_ACCESS_ROLES = ["owner"];
 const CHANNEL_ASSET_KINDS = ["avatar", "banner", "thumbnail", "other"];
 const BRIEF_WORKSPACE_OPTIONS = ["packaging", "scripting"];
-const SCRIPTING_VIEW_OPTIONS = ["intros", "structure"];
-const SCRIPT_SECTION_KINDS = ["content", "sponsor", "outro"];
+const SCRIPTING_VIEW_OPTIONS = ["intros", "sections", "draft"];
+const SCRIPT_SECTION_KINDS = ["intro", "content", "sponsor", "outro"];
 const SCRIPT_SENTENCE_TYPES = [
   { id: "", label: "Untyped", color: "#5d6770" },
   { id: "intrigue", label: "Creating Intrigue", color: "#9c6a1a" },
@@ -41,8 +41,18 @@ const SCRIPT_SENTENCE_TYPES = [
   { id: "core-takeaway", label: "Core Takeaways", color: "#4d7e4f" },
   { id: "supporting-fact", label: "Supporting Facts", color: "#6a645b" },
   { id: "transition", label: "Transition", color: "#0d6a71" },
+  { id: "pain-point", label: "Identifying the pain point", color: "#8b4a2f" },
+  { id: "cost-of-problem", label: "Cost of the problem", color: "#a14b43" },
+  { id: "introducing-solution", label: "Introducing the solution", color: "#3b6f8e" },
+  { id: "how-it-works", label: "Showing how it works", color: "#4f6f3c" },
+  { id: "showing-result", label: "Showing the result", color: "#2f7a66" },
+  { id: "removing-objections", label: "Removing objections", color: "#7c5a9a" },
+  { id: "actionable-instruction", label: "Actionable instruction", color: "#1e6f7f" },
+  { id: "tease", label: "Tease", color: "#b06a1f" },
 ];
 const INTRO_TARGET_SECONDS = { min: 20, max: 35 };
+// Calibrated from Steve's teleprompter read: a script estimated at 94s was actually read in 72s.
+const ESTIMATED_READ_WPM = 196;
 const DEFAULT_CHANNEL_ASSET_SOURCE_URL = "https://www.youtube.com/@ALifeEngineered";
 const DEFAULT_CHANNEL_AVATAR_URL =
   "https://yt3.googleusercontent.com/xMADx5czTPcIhTmWROpNFrnAFB_S98l_8tq2Fwe2_t2b-hACm1xN8UWyilipkkoehvBAIzW_kBA=s160-c-k-c0x00ffffff-no-rj";
@@ -214,11 +224,14 @@ const refs = {
   inspirationFileInput: document.getElementById("inspirationFileInput"),
   inspirationPasteZone: document.getElementById("inspirationPasteZone"),
   showIntroLabBtn: document.getElementById("showIntroLabBtn"),
-  showStructureWorkspaceBtn: document.getElementById("showStructureWorkspaceBtn"),
+  showSkeletonWorkspaceBtn: document.getElementById("showSkeletonWorkspaceBtn"),
+  showDraftWorkspaceBtn: document.getElementById("showDraftWorkspaceBtn"),
+  scriptingProgressHint: document.getElementById("scriptingProgressHint"),
   introSentenceLegend: document.getElementById("introSentenceLegend"),
   introsBoard: document.getElementById("introsBoard"),
-  addStructureSectionBtn: document.getElementById("addStructureSectionBtn"),
-  structureBoard: document.getElementById("structureBoard"),
+  addSkeletonSectionBtn: document.getElementById("addSkeletonSectionBtn"),
+  skeletonBoard: document.getElementById("skeletonBoard"),
+  draftBoard: document.getElementById("draftBoard"),
   packagingPreviewLight: document.getElementById("packagingPreviewLight"),
   packagingPreviewDark: document.getElementById("packagingPreviewDark"),
   titleTemplate: document.getElementById("titleRowTemplate"),
@@ -287,6 +300,7 @@ const state = {
   comparables: [],
   scriptIntros: [],
   scriptSections: [],
+  scriptDraftShowColors: true,
   latestBriefHtml: "",
   briefDetailExpanded: false,
   viewerSnapshotExpanded: false,
@@ -993,7 +1007,11 @@ function normalizeBriefWorkspaceView(value) {
 }
 
 function normalizeScriptingView(value) {
-  return SCRIPTING_VIEW_OPTIONS.includes(value) ? value : "intros";
+  const normalized = toCleanText(value);
+  if (normalized === "skeleton") {
+    return "sections";
+  }
+  return SCRIPTING_VIEW_OPTIONS.includes(normalized) ? normalized : "intros";
 }
 
 function normalizeScriptSectionKind(value) {
@@ -1021,23 +1039,6 @@ function normalizeScriptSentenceCollection(items) {
     return [];
   }
   return items.map((item) => createScriptSentenceRecord(item));
-}
-
-function createScriptParagraphRecord(seed = {}) {
-  return {
-    id: toCleanText(seed.id) || createRecordId("para"),
-    text: toCleanText(seed.text),
-    notes: toCleanText(seed.notes),
-    createdAt: normalizeTimestamp(seed.createdAt),
-    updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
-  };
-}
-
-function normalizeScriptParagraphCollection(items) {
-  if (!Array.isArray(items)) {
-    return [];
-  }
-  return items.map((item) => createScriptParagraphRecord(item));
 }
 
 function createSponsorResourceLinkRecord(seed = {}) {
@@ -1086,44 +1087,78 @@ function normalizeIntroVariants(items) {
   return intros;
 }
 
-function createDefaultStructureSectionSeed() {
+function createDefaultScriptSectionSeed() {
   return [
-    { title: "Intro", kind: "content" },
     { title: "Part 1", kind: "content" },
+    { title: "Sponsor", kind: "sponsor" },
     { title: "Part 2", kind: "content" },
     { title: "Part 3", kind: "content" },
     { title: "Outro", kind: "outro" },
   ];
 }
 
-function createScriptSectionRecord(seed = {}, index = 0) {
+function createScriptSectionItemRecord(seed = {}, index = 0, fallbackText = "") {
+  const baseText = toCleanText(seed.text) || toCleanText(seed.draftText);
   return {
-    id: toCleanText(seed.id) || createRecordId("section"),
-    title: toCleanText(seed.title) || `Section ${index + 1}`,
-    kind: normalizeScriptSectionKind(seed.kind),
-    goal: toCleanText(seed.goal),
-    beats: toCleanText(seed.beats),
-    transitionNotes: toCleanText(seed.transitionNotes),
-    targetRuntime: toCleanText(seed.targetRuntime),
-    editingNotes: toCleanText(seed.editingNotes),
-    sponsorName: toCleanText(seed.sponsorName),
-    sponsorTalkingPoints: toCleanText(seed.sponsorTalkingPoints),
-    sponsorCta: toCleanText(seed.sponsorCta),
-    sponsorHandoffNotes: toCleanText(seed.sponsorHandoffNotes),
-    paragraphs: normalizeScriptParagraphCollection(seed.paragraphs),
-    resourceLinks: normalizeSponsorResourceLinks(seed.resourceLinks),
+    id: toCleanText(seed.id) || createRecordId("item"),
+    text: fallbackText ? baseText || fallbackText : baseText,
+    type: normalizeScriptSentenceType(seed.type),
+    draftText: toCleanText(seed.draftText) || baseText,
     createdAt: normalizeTimestamp(seed.createdAt),
     updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
   };
 }
 
+function createDefaultScriptSectionItems(kind = "content") {
+  if (kind === "intro") {
+    return [getDefaultIntroLabel(0), getDefaultIntroLabel(1), getDefaultIntroLabel(2)].map((label, index) =>
+      createScriptSectionItemRecord({ text: label }, index, label),
+    );
+  }
+  return [createScriptSectionItemRecord({ text: "" }, 0)];
+}
+
+function normalizeScriptSectionItemCollection(items, kind = "content") {
+  if (!Array.isArray(items) || !items.length) {
+    return createDefaultScriptSectionItems(kind);
+  }
+  return items.map((item, index) => createScriptSectionItemRecord(item, index));
+}
+
+function createScriptSectionRecord(seed = {}, index = 0, fallbackSeed = null) {
+  const seedSource = seed && typeof seed === "object" ? seed : {};
+  const base = fallbackSeed && typeof fallbackSeed === "object" ? fallbackSeed : {};
+  const kind = normalizeScriptSectionKind(seedSource.kind || base.kind);
+  return {
+    id: toCleanText(seedSource.id) || createRecordId("section"),
+    title: toCleanText(seedSource.title) || toCleanText(base.title) || `Section ${index + 1}`,
+    kind,
+    goal: toCleanText(seedSource.goal),
+    summary: toCleanText(seedSource.summary),
+    sponsorName: toCleanText(seedSource.sponsorName),
+    sponsorTalkingPoints: toCleanText(seedSource.sponsorTalkingPoints),
+    sponsorCta: toCleanText(seedSource.sponsorCta),
+    sponsorHandoffNotes: toCleanText(seedSource.sponsorHandoffNotes),
+    items: normalizeScriptSectionItemCollection(seedSource.items, kind),
+    resourceLinks: normalizeSponsorResourceLinks(seedSource.resourceLinks),
+    createdAt: normalizeTimestamp(seedSource.createdAt),
+    updatedAt: normalizeTimestamp(seedSource.updatedAt || seedSource.createdAt),
+  };
+}
+
 function normalizeScriptSectionCollection(items) {
   const source = Array.isArray(items) ? items : [];
-  const sections = source.map((item, index) => createScriptSectionRecord(item, index));
+  const hasNewShape = source.some((item) => item && typeof item === "object" && Array.isArray(item.items));
+  if (!source.length || !hasNewShape) {
+    return createDefaultScriptSectionSeed().map((seed, index) => createScriptSectionRecord(seed, index, seed));
+  }
+  const sections = source
+    .map((item, index) => createScriptSectionRecord(item, index))
+    .filter((section) => normalizeScriptSectionKind(section.kind) !== "intro");
   if (sections.length) {
     return sections;
   }
-  return createDefaultStructureSectionSeed().map((seed, index) => createScriptSectionRecord(seed, index));
+  return createDefaultScriptSectionSeed().map((seed, index) => createScriptSectionRecord(seed, index, seed));
 }
 
 function normalizeBriefScript(seed = {}) {
@@ -2873,7 +2908,7 @@ function estimateReadSeconds(value) {
   if (!words) {
     return 0;
   }
-  return Math.max(1, Math.round((words / 150) * 60));
+  return Math.max(1, Math.round((words / ESTIMATED_READ_WPM) * 60));
 }
 
 function formatDurationShort(totalSeconds) {
@@ -2894,12 +2929,68 @@ function getIntroWordCount(intro = {}) {
   return normalizeScriptSentenceCollection(intro.sentences).reduce((sum, item) => sum + countWords(item.text), 0);
 }
 
+function getIntroPlainText(intro = {}) {
+  return normalizeScriptSentenceCollection(intro.sentences)
+    .map((item) => toCleanText(item.text))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getSectionPlainText(section = {}) {
+  return normalizeScriptSectionItemCollection(section.items, section.kind)
+    .map((item) => toCleanText(item.text))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getCompiledScriptText() {
+  const blocks = [];
+  normalizeIntroVariants(state.scriptIntros).forEach((intro, index) => {
+    const body = getIntroPlainText(intro);
+    if (!body) {
+      return;
+    }
+    blocks.push(`${intro.label || getDefaultIntroLabel(index)}\n${body}`);
+  });
+  normalizeScriptSectionCollection(state.scriptSections).forEach((section) => {
+    const body = getSectionPlainText(section);
+    if (!body) {
+      return;
+    }
+    blocks.push(`${section.title}\n${body}`);
+  });
+  return blocks.join("\n\n");
+}
+
 function getSectionDurationSeconds(section = {}) {
-  const paragraphs = normalizeScriptParagraphCollection(section.paragraphs);
-  if (paragraphs.length) {
-    return paragraphs.reduce((sum, item) => sum + estimateReadSeconds(item.text), 0);
-  }
-  return estimateReadSeconds(section.beats);
+  return normalizeScriptSectionItemCollection(section.items, section.kind).reduce(
+    (sum, item) => sum + estimateReadSeconds(item.text),
+    0,
+  );
+}
+
+function getSectionDraftedItemCount(section = {}) {
+  return normalizeScriptSectionItemCollection(section.items, section.kind).filter((item) => toCleanText(item.text)).length;
+}
+
+function getTotalScriptItemCount() {
+  return normalizeIntroVariants(state.scriptIntros).length + state.scriptSections.reduce((sum, section) => {
+    return sum + normalizeScriptSectionItemCollection(section.items, section.kind).length;
+  }, 0);
+}
+
+function getDraftedScriptItemCount() {
+  return state.scriptSections.reduce((sum, section) => sum + getSectionDraftedItemCount(section), 0);
+}
+
+function getSkeletonSectionCount() {
+  return state.scriptSections.length;
+}
+
+function getSkeletonBulletCount() {
+  return state.scriptSections.reduce((sum, section) => {
+    return sum + normalizeScriptSectionItemCollection(section.items, section.kind).length;
+  }, 0);
 }
 
 function getScriptTotalDurationSeconds() {
@@ -2927,7 +3018,7 @@ function renderBriefWorkspaceState() {
     refs.briefWorkspaceHint.textContent =
       briefWorkspaceView === "packaging"
         ? "Develop the packaging, preview the top combinations, and export designer/editor handoff docs."
-        : "Draft 3 intros, build the script structure, and prepare a clean teleprompter export.";
+        : "Draft 3 intros, build sections, and review the compiled script in the draft tab.";
   }
 }
 
@@ -2942,8 +3033,18 @@ function renderScriptingWorkspaceState() {
   if (refs.showIntroLabBtn) {
     refs.showIntroLabBtn.classList.toggle("is-active", scriptingView === "intros");
   }
-  if (refs.showStructureWorkspaceBtn) {
-    refs.showStructureWorkspaceBtn.classList.toggle("is-active", scriptingView === "structure");
+  if (refs.showSkeletonWorkspaceBtn) {
+    refs.showSkeletonWorkspaceBtn.classList.toggle("is-active", scriptingView === "sections");
+  }
+  if (refs.showDraftWorkspaceBtn) {
+    refs.showDraftWorkspaceBtn.classList.toggle("is-active", scriptingView === "draft");
+  }
+  if (refs.scriptingProgressHint) {
+    refs.scriptingProgressHint.textContent = `Flow: Intros ${normalizeIntroVariants(state.scriptIntros).filter((intro) =>
+      toCleanText(getIntroPlainText(intro)),
+    ).length}/3 drafted · Sections ${getSkeletonSectionCount()} sections / ${getSkeletonBulletCount()} lines · Draft compiled runtime ${formatDurationShort(
+      getScriptTotalDurationSeconds(),
+    )}.`;
   }
 }
 
@@ -3013,13 +3114,13 @@ function renderIntroBoards() {
     introCard.className = "intro-card";
     introCard.innerHTML = `
       <div class="intro-card-header">
-        <div>
-          <h3>${escapeHtml(intro.label || getDefaultIntroLabel(introIndex))}</h3>
-        </div>
-        <div class="intro-card-meta">
-          <span class="script-stat" data-role="introDuration"></span>
-          <span class="script-stat" data-role="introWords"></span>
-          <span class="script-stat" data-role="introTarget"></span>
+        <div class="intro-card-title-shell"></div>
+        <div class="intro-card-controls">
+          <div class="intro-card-meta">
+            <span class="script-stat" data-role="introDuration"></span>
+            <span class="script-stat" data-role="introWords"></span>
+            <span class="script-stat" data-role="introTarget"></span>
+          </div>
         </div>
       </div>
     `;
@@ -3028,13 +3129,43 @@ function renderIntroBoards() {
     sentenceBoard.className = "script-intro-sentence-stack";
     introCard.appendChild(sentenceBoard);
 
+    const introRecord = state.scriptIntros[introIndex];
+    const titleShell = introCard.querySelector(".intro-card-title-shell");
+    const titleInput = document.createElement("input");
+    titleInput.className = "intro-card-title-input";
+    titleInput.value = introRecord.label;
+    titleInput.placeholder = getDefaultIntroLabel(introIndex);
+    titleInput.setAttribute("aria-label", `Rename ${getDefaultIntroLabel(introIndex)}`);
+    titleShell.appendChild(titleInput);
+
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "btn btn-muted";
     addBtn.textContent = "Add Sentence";
-    introCard.querySelector(".intro-card-header").appendChild(addBtn);
 
-    const introRecord = state.scriptIntros[introIndex];
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "btn btn-muted";
+    copyBtn.textContent = "Copy Intro";
+    copyBtn.addEventListener("click", async () => {
+      const introText = getIntroPlainText(introRecord);
+      if (!introText) {
+        flashButtonText(copyBtn, "Empty", 900);
+        return;
+      }
+      const didCopy = await copyTextToClipboard(introText);
+      flashButtonText(copyBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+    });
+
+    const headerActions = document.createElement("div");
+    headerActions.className = "intro-card-actions";
+    headerActions.append(copyBtn, addBtn);
+    introCard.querySelector(".intro-card-controls").appendChild(headerActions);
+
+    titleInput.addEventListener("input", () => {
+      introRecord.label = titleInput.value;
+      saveSnapshot();
+    });
 
     const sentences = introRecord.sentences;
     if (!sentences.length) {
@@ -3085,14 +3216,21 @@ function renderIntroBoards() {
           updateBoardsAndBrief();
         });
 
+        const summaryTypeBadge = document.createElement("span");
+        summaryTypeBadge.className = "script-sentence-type-badge";
+
         const summaryText = document.createElement("span");
         summaryText.className = "script-sentence-line";
         summaryText.textContent = toCleanText(sentence.text) || "Sentence draft";
 
+        const summaryContent = document.createElement("span");
+        summaryContent.className = "script-sentence-summary-content";
+        summaryContent.append(summaryTypeBadge, summaryText);
+
         const summaryBtn = document.createElement("button");
         summaryBtn.type = "button";
         summaryBtn.className = "script-sentence-summary";
-        summaryBtn.append(summaryText);
+        summaryBtn.append(summaryContent);
 
         const typeSelect = document.createElement("select");
         typeSelect.className = "script-row-type";
@@ -3141,20 +3279,39 @@ function renderIntroBoards() {
         row.append(summaryShell, editor);
         sentenceBoard.appendChild(row);
 
+        const syncSentenceTypeUi = () => {
+          const typeMeta = getScriptSentenceTypeMeta(sentence.type);
+          row.dataset.scriptType = sentence.type;
+          summaryBtn.title = typeMeta.id ? typeMeta.label : "";
+          summaryTypeBadge.hidden = !typeMeta.id;
+          summaryTypeBadge.textContent = typeMeta.id ? typeMeta.label : "";
+        };
+
+        const closeSentenceEditor = () => {
+          editor.hidden = true;
+          row.classList.remove("is-editing");
+        };
+
+        const openSentenceEditor = () => {
+          editor.hidden = false;
+          row.classList.add("is-editing");
+          textInput.focus();
+          textInput.select();
+        };
+
+        syncSentenceTypeUi();
+
         summaryBtn.addEventListener("click", () => {
-          editor.hidden = !editor.hidden;
-          row.classList.toggle("is-editing", !editor.hidden);
-          if (!editor.hidden) {
-            textInput.focus();
-            textInput.select();
+          if (editor.hidden) {
+            openSentenceEditor();
+            return;
           }
+          closeSentenceEditor();
         });
 
         typeSelect.addEventListener("change", () => {
           sentence.type = typeSelect.value;
-          row.dataset.scriptType = sentence.type;
-          const typeMeta = getScriptSentenceTypeMeta(sentence.type);
-          summaryBtn.title = typeMeta.id ? typeMeta.label : "";
+          syncSentenceTypeUi();
           saveSnapshot();
         });
         textInput.addEventListener("input", () => {
@@ -3167,13 +3324,15 @@ function renderIntroBoards() {
         textInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            editor.hidden = true;
-            row.classList.remove("is-editing");
+            closeSentenceEditor();
           }
         });
-        textInput.addEventListener("blur", () => {
-          editor.hidden = true;
-          row.classList.remove("is-editing");
+        row.addEventListener("focusout", () => {
+          window.requestAnimationFrame(() => {
+            if (!row.contains(document.activeElement)) {
+              closeSentenceEditor();
+            }
+          });
         });
       });
     }
@@ -3247,374 +3406,535 @@ function renderResourceLinkStack(section, stackEl) {
   });
 }
 
-function renderParagraphStack(section, stackEl, sectionCard) {
-  stackEl.innerHTML = "";
-  const paragraphs = section.paragraphs;
-  if (!paragraphs.length) {
-    stackEl.innerHTML = '<p class="pipeline-empty">No drafted paragraphs yet.</p>';
-    return;
+function getScriptSectionKindLabel(kind = "content") {
+  switch (normalizeScriptSectionKind(kind)) {
+    case "intro":
+      return "Intro";
+    case "sponsor":
+      return "Sponsor";
+    case "outro":
+      return "Outro";
+    default:
+      return "Content";
   }
+}
 
-  paragraphs.forEach((paragraph) => {
-    const row = document.createElement("article");
-    row.className = "pipeline-card script-paragraph-card list-row";
-    row.dataset.variationId = paragraph.id;
-
-    const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder paragraph", DRAG_HANDLE_ICON, {
-      title: "Drag to reorder",
-    });
-    dragBtn.draggable = true;
-    dragBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    dragBtn.addEventListener("dragstart", (event) => {
-      beginVariationDrag(event, `section-paragraph:${section.id}`, paragraph.id);
-    });
-    dragBtn.addEventListener("dragend", clearVariationDropTargets);
-
-    row.addEventListener("dragover", (event) => {
-      if (canVariationDrop(`section-paragraph:${section.id}`, paragraph.id)) {
-        event.preventDefault();
-        row.classList.add("is-drop-target");
-      }
-    });
-    row.addEventListener("dragleave", () => {
-      row.classList.remove("is-drop-target");
-    });
-    row.addEventListener("drop", (event) => {
-      if (!canVariationDrop(`section-paragraph:${section.id}`, paragraph.id)) {
-        return;
-      }
-      event.preventDefault();
-      const fromIndex = section.paragraphs.findIndex((item) => item.id === variationDragState.id);
-      const toIndex = section.paragraphs.findIndex((item) => item.id === paragraph.id);
-      clearVariationDropTargets();
-      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
-        return;
-      }
-      moveItemInArray(section.paragraphs, fromIndex, toIndex);
-      updateBoardsAndBrief();
-    });
-
-    const textInput = document.createElement("textarea");
-    textInput.rows = 4;
-    textInput.placeholder = "Draft short paragraph";
-    textInput.value = paragraph.text;
-
-    const notesInput = document.createElement("textarea");
-    notesInput.rows = 2;
-    notesInput.placeholder = "Optional paragraph note";
-    notesInput.value = paragraph.notes;
-
-    const durationLabel = document.createElement("span");
-    durationLabel.className = "script-row-duration";
-    durationLabel.textContent = formatDurationShort(estimateReadSeconds(paragraph.text));
-
-    const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove paragraph", DELETE_ICON);
-    removeBtn.addEventListener("click", () => {
-      const sourceIndex = section.paragraphs.findIndex((item) => item.id === paragraph.id);
-      if (sourceIndex < 0) {
-        return;
-      }
-      section.paragraphs.splice(sourceIndex, 1);
-      updateBoardsAndBrief();
-    });
-
-    const main = document.createElement("div");
-    main.className = "script-row-main";
-    const topLine = document.createElement("div");
-    topLine.className = "script-row-topline";
-    topLine.innerHTML = "<strong>Draft Paragraph</strong>";
-    topLine.appendChild(durationLabel);
-    main.append(topLine, textInput, notesInput);
-
-    const actions = document.createElement("div");
-    actions.className = "script-row-actions";
-    actions.append(removeBtn);
-
-    const rowShell = document.createElement("div");
-    rowShell.className = "script-row";
-    rowShell.append(dragBtn, main, actions);
-    row.appendChild(rowShell);
-    stackEl.appendChild(row);
-
-    textInput.addEventListener("input", () => {
-      paragraph.text = textInput.value;
-      durationLabel.textContent = formatDurationShort(estimateReadSeconds(paragraph.text));
-      const durationEl = sectionCard.querySelector("[data-role='sectionDuration']");
-      if (durationEl) {
-        durationEl.textContent = `Runtime ${formatDurationShort(getSectionDurationSeconds(section))}`;
-      }
-      saveSnapshot();
-    });
-    notesInput.addEventListener("input", () => {
-      paragraph.notes = notesInput.value;
-      saveSnapshot();
-    });
+function syncIntroSectionItems(section) {
+  const intros = normalizeIntroVariants(state.scriptIntros);
+  section.items = intros.map((intro, index) => {
+    const existing = Array.isArray(section.items) ? section.items[index] || {} : {};
+    return createScriptSectionItemRecord(
+      {
+        ...existing,
+        text: intro.label || getDefaultIntroLabel(index),
+      },
+      index,
+      intro.label || getDefaultIntroLabel(index),
+    );
   });
 }
 
-function renderStructureBoard() {
-  if (!refs.structureBoard) {
+function ensureSectionItems(section) {
+  if (!Array.isArray(section.items) || !section.items.length) {
+    section.items = createDefaultScriptSectionItems(section.kind);
+  }
+}
+
+function createSectionKindSelect(section) {
+  const select = document.createElement("select");
+  select.className = "script-section-kind";
+  ["content", "sponsor", "outro"].forEach((kind) => {
+    const option = document.createElement("option");
+    option.value = kind;
+    option.textContent = getScriptSectionKindLabel(kind);
+    if (kind === section.kind) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+  return select;
+}
+
+function bindSectionCardDrag(card, section) {
+  card.addEventListener("dragover", (event) => {
+    if (canVariationDrop("script-section", section.id)) {
+      event.preventDefault();
+      card.classList.add("is-drop-target");
+    }
+  });
+  card.addEventListener("dragleave", () => {
+    card.classList.remove("is-drop-target");
+  });
+  card.addEventListener("drop", (event) => {
+    if (!canVariationDrop("script-section", section.id)) {
+      return;
+    }
+    event.preventDefault();
+    const fromIndex = state.scriptSections.findIndex((item) => item.id === variationDragState.id);
+    const toIndex = state.scriptSections.findIndex((item) => item.id === section.id);
+    clearVariationDropTargets();
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+      return;
+    }
+    moveItemInArray(state.scriptSections, fromIndex, toIndex);
+    updateBoardsAndBrief();
+  });
+}
+
+function updateSectionCardStats(card, section) {
+  const durationEl = card.querySelector("[data-role='sectionDuration']");
+  const countEl = card.querySelector("[data-role='sectionCount']");
+  const kindEl = card.querySelector("[data-role='sectionKind']");
+  if (durationEl) {
+    durationEl.textContent = `Runtime ${formatDurationShort(getSectionDurationSeconds(section))}`;
+  }
+  if (countEl) {
+    countEl.textContent = `${normalizeScriptSectionItemCollection(section.items, section.kind).length} lines`;
+  }
+  if (kindEl) {
+    kindEl.textContent = getScriptSectionKindLabel(section.kind);
+  }
+}
+
+function createSectionCardBase(section) {
+  const card = document.createElement("article");
+  card.className = "script-section-card pipeline-card list-row";
+  card.dataset.variationId = section.id;
+
+  const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder section", DRAG_HANDLE_ICON, {
+    title: "Drag to reorder",
+  });
+  dragBtn.draggable = true;
+  dragBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  dragBtn.addEventListener("dragstart", (event) => {
+    beginVariationDrag(event, "script-section", section.id);
+  });
+  dragBtn.addEventListener("dragend", clearVariationDropTargets);
+  bindSectionCardDrag(card, section);
+
+  const header = document.createElement("div");
+  header.className = "script-section-header";
+  const titleShell = document.createElement("div");
+  titleShell.className = "intro-card-title-shell";
+  const titleInput = document.createElement("input");
+  titleInput.className = "intro-card-title-input";
+  titleInput.value = section.title;
+  titleInput.placeholder = "Section title";
+  titleInput.setAttribute("aria-label", "Section title");
+  titleShell.appendChild(titleInput);
+
+  const leading = document.createElement("div");
+  leading.className = "script-section-leading";
+  leading.append(dragBtn, titleShell);
+
+  const controls = document.createElement("div");
+  controls.className = "intro-card-controls";
+  const meta = document.createElement("div");
+  meta.className = "script-section-meta";
+  meta.innerHTML = `
+    <span class="script-stat" data-role="sectionDuration"></span>
+    <span class="script-stat" data-role="sectionKind"></span>
+    <span class="script-stat" data-role="sectionCount"></span>
+  `;
+  controls.appendChild(meta);
+
+  const tools = document.createElement("div");
+  tools.className = "intro-card-actions";
+
+  const kindSelect = createSectionKindSelect(section);
+  kindSelect.classList.add("script-section-kind-inline");
+  tools.appendChild(kindSelect);
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "btn btn-muted";
+  copyBtn.textContent = "Copy Section";
+  copyBtn.addEventListener("click", async () => {
+    const sectionText = getSectionPlainText(section);
+    if (!sectionText) {
+      flashButtonText(copyBtn, "Empty", 900);
+      return;
+    }
+    const didCopy = await copyTextToClipboard(sectionText);
+    flashButtonText(copyBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+  });
+  tools.appendChild(copyBtn);
+
+  const addLineBtn = document.createElement("button");
+  addLineBtn.type = "button";
+  addLineBtn.className = "btn btn-muted";
+  addLineBtn.textContent = "Add Line";
+  addLineBtn.addEventListener("click", () => {
+    section.items.push(createScriptSectionItemRecord({}, section.items.length));
+    updateBoardsAndBrief();
+  });
+  tools.appendChild(addLineBtn);
+
+  const actions = document.createElement("div");
+  actions.className = "script-row-actions";
+  const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove section", DELETE_ICON);
+  removeBtn.addEventListener("click", () => {
+    const sourceIndex = state.scriptSections.findIndex((item) => item.id === section.id);
+    if (sourceIndex < 0) {
+      return;
+    }
+    state.scriptSections.splice(sourceIndex, 1);
+    updateBoardsAndBrief();
+  });
+  actions.append(removeBtn);
+  tools.append(actions);
+  controls.appendChild(tools);
+
+  header.append(leading, controls);
+  card.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "script-section-stack";
+  card.appendChild(body);
+
+  titleInput.addEventListener("input", (event) => {
+    section.title = event.target.value;
+    saveSnapshot();
+  });
+  kindSelect.addEventListener("change", () => {
+    section.kind = normalizeScriptSectionKind(kindSelect.value);
+    section.items = normalizeScriptSectionItemCollection(section.items, section.kind);
+    updateBoardsAndBrief();
+  });
+  updateSectionCardStats(card, section);
+  return { card, body };
+}
+
+function buildScriptItemRow(section, item) {
+  const row = document.createElement("article");
+  row.className = "script-sentence-card script-section-item-card";
+  row.dataset.variationId = item.id;
+  row.dataset.scriptType = item.type;
+
+  const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder line", DRAG_HANDLE_ICON, {
+    title: "Drag to reorder",
+  });
+  dragBtn.draggable = true;
+  dragBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  dragBtn.addEventListener("dragstart", (event) => {
+    beginVariationDrag(event, `section-item:${section.id}`, item.id);
+  });
+  dragBtn.addEventListener("dragend", clearVariationDropTargets);
+
+  row.addEventListener("dragover", (event) => {
+    if (canVariationDrop(`section-item:${section.id}`, item.id)) {
+      event.preventDefault();
+      row.classList.add("is-drop-target");
+    }
+  });
+  row.addEventListener("dragleave", () => {
+    row.classList.remove("is-drop-target");
+  });
+  row.addEventListener("drop", (event) => {
+    if (!canVariationDrop(`section-item:${section.id}`, item.id)) {
+      return;
+    }
+    event.preventDefault();
+    const fromIndex = section.items.findIndex((entry) => entry.id === variationDragState.id);
+    const toIndex = section.items.findIndex((entry) => entry.id === item.id);
+    clearVariationDropTargets();
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+      return;
+    }
+    moveItemInArray(section.items, fromIndex, toIndex);
+    updateBoardsAndBrief();
+  });
+
+  const typeSelect = document.createElement("select");
+  typeSelect.className = "script-row-type";
+  SCRIPT_SENTENCE_TYPES.forEach((type) => {
+    const option = document.createElement("option");
+    option.value = type.id;
+    option.textContent = type.label;
+    if (type.id === item.type) {
+      option.selected = true;
+    }
+    typeSelect.appendChild(option);
+  });
+
+  const summaryTypeBadge = document.createElement("span");
+  summaryTypeBadge.className = "script-sentence-type-badge";
+
+  const summaryText = document.createElement("span");
+  summaryText.className = "script-sentence-line";
+  summaryText.textContent = toCleanText(item.text) || "Section line";
+
+  const summaryContent = document.createElement("span");
+  summaryContent.className = "script-sentence-summary-content script-sentence-summary-content-inline";
+  summaryContent.append(summaryText, summaryTypeBadge);
+
+  const summaryBtn = document.createElement("button");
+  summaryBtn.type = "button";
+  summaryBtn.className = "script-sentence-summary";
+  summaryBtn.append(summaryContent);
+
+  const durationLabel = document.createElement("span");
+  durationLabel.className = "script-row-duration";
+  durationLabel.textContent = formatDurationShort(estimateReadSeconds(item.text));
+
+  const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove bullet", DELETE_ICON);
+  removeBtn.addEventListener("click", () => {
+    const sourceIndex = section.items.findIndex((entry) => entry.id === item.id);
+    if (sourceIndex < 0) {
+      return;
+    }
+    section.items.splice(sourceIndex, 1);
+    updateBoardsAndBrief();
+  });
+
+  const summaryShell = document.createElement("div");
+  summaryShell.className = "script-sentence-summary-shell";
+  const actions = document.createElement("div");
+  actions.className = "script-row-actions";
+  actions.append(durationLabel, removeBtn);
+  summaryShell.append(dragBtn, summaryBtn, actions);
+
+  const editor = document.createElement("div");
+  editor.className = "script-sentence-editor";
+  editor.hidden = true;
+
+  const textInput = document.createElement("textarea");
+  textInput.rows = 1;
+  textInput.className = "script-section-line-input";
+  textInput.placeholder = "Section line";
+  textInput.value = item.text;
+  editor.append(typeSelect, textInput);
+  row.append(summaryShell, editor);
+
+  row.dataset.scriptType = item.type;
+  const syncTypeUi = () => {
+    row.dataset.scriptType = item.type;
+    const typeMeta = getScriptSentenceTypeMeta(item.type);
+    summaryBtn.title = typeMeta.id ? typeMeta.label : "";
+    summaryTypeBadge.hidden = !typeMeta.id;
+    summaryTypeBadge.textContent = typeMeta.id ? typeMeta.label : "";
+  };
+  syncTypeUi();
+
+  const closeEditor = () => {
+    editor.hidden = true;
+    row.classList.remove("is-editing");
+  };
+
+  const openEditor = () => {
+    editor.hidden = false;
+    row.classList.add("is-editing");
+    textInput.focus();
+  };
+
+  summaryBtn.addEventListener("click", () => {
+    if (editor.hidden) {
+      openEditor();
+      return;
+    }
+    closeEditor();
+  });
+
+  typeSelect.addEventListener("change", () => {
+    item.type = typeSelect.value;
+    syncTypeUi();
+    void saveSnapshot({ immediate: true });
+  });
+
+  textInput.addEventListener("input", () => {
+    item.text = textInput.value;
+    item.draftText = textInput.value;
+    autosizeTextarea(textInput);
+    summaryText.textContent = toCleanText(item.text) || "Section line";
+    durationLabel.textContent = formatDurationShort(estimateReadSeconds(item.text));
+    const card = row.closest(".script-section-card");
+    if (card) {
+      updateSectionCardStats(card, section);
+    }
+    void saveSnapshot({ immediate: true });
+  });
+  textInput.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      closeEditor();
+    }
+  });
+  row.addEventListener("focusout", () => {
+    window.requestAnimationFrame(() => {
+      if (!row.contains(document.activeElement)) {
+        closeEditor();
+      }
+    });
+  });
+  window.requestAnimationFrame(() => autosizeTextarea(textInput));
+
+  return row;
+}
+
+function renderSkeletonBoard() {
+  if (!refs.skeletonBoard) {
     return;
   }
-
-  refs.structureBoard.innerHTML = "";
+  refs.skeletonBoard.innerHTML = "";
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
-    refs.structureBoard.innerHTML = '<p class="pipeline-empty">Create or select a brief to build the script structure.</p>';
-    return;
-  }
-
-  if (!state.scriptSections.length) {
-    refs.structureBoard.innerHTML = '<p class="pipeline-empty">No script sections yet.</p>';
+    refs.skeletonBoard.innerHTML = '<p class="pipeline-empty">Create or select a brief to build script sections.</p>';
     return;
   }
 
   state.scriptSections.forEach((section) => {
+    ensureSectionItems(section);
+    const { card, body } = createSectionCardBase(section);
+    const stack = document.createElement("div");
+    stack.className = "script-intro-sentence-stack";
+    section.items.forEach((item) => {
+      stack.appendChild(buildScriptItemRow(section, item));
+    });
+    body.appendChild(stack);
+    refs.skeletonBoard.appendChild(card);
+  });
+}
+
+function renderDraftBoard() {
+  if (!refs.draftBoard) {
+    return;
+  }
+  refs.draftBoard.innerHTML = "";
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    refs.draftBoard.innerHTML = '<p class="pipeline-empty">Create or select a brief to review the compiled script.</p>';
+    return;
+  }
+
+  const controls = document.createElement("div");
+  controls.className = "script-draft-read-toolbar";
+  const copyAllBtn = document.createElement("button");
+  copyAllBtn.type = "button";
+  copyAllBtn.className = "btn btn-muted";
+  copyAllBtn.textContent = "Copy Full Script";
+  copyAllBtn.addEventListener("click", async () => {
+    const compiled = getCompiledScriptText();
+    if (!compiled) {
+      flashButtonText(copyAllBtn, "Empty", 900);
+      return;
+    }
+    const didCopy = await copyTextToClipboard(compiled);
+    flashButtonText(copyAllBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+  });
+  const colorToggleBtn = document.createElement("button");
+  colorToggleBtn.type = "button";
+  colorToggleBtn.className = "btn btn-muted";
+  colorToggleBtn.textContent = state.scriptDraftShowColors ? "Hide Colors" : "Show Colors";
+  colorToggleBtn.addEventListener("click", () => {
+    state.scriptDraftShowColors = !state.scriptDraftShowColors;
+    updateBoardsAndBrief();
+  });
+  controls.append(copyAllBtn, colorToggleBtn);
+  refs.draftBoard.appendChild(controls);
+
+  const colorMode = state.scriptDraftShowColors !== false;
+  refs.draftBoard.classList.toggle("is-plain-script", !colorMode);
+
+  const compiledSections = [];
+  normalizeIntroVariants(state.scriptIntros).forEach((intro, index) => {
+    compiledSections.push({
+      id: intro.id,
+      title: intro.label || getDefaultIntroLabel(index),
+      kind: "intro",
+      lines: normalizeScriptSentenceCollection(intro.sentences).map((item) => ({
+        id: item.id,
+        text: item.text,
+        type: item.type,
+      })),
+      runtime: getIntroDurationSeconds(intro),
+      copyText: getIntroPlainText(intro),
+    });
+  });
+  normalizeScriptSectionCollection(state.scriptSections).forEach((section) => {
+    compiledSections.push({
+      id: section.id,
+      title: section.title,
+      kind: section.kind,
+      lines: normalizeScriptSectionItemCollection(section.items, section.kind).map((item) => ({
+        id: item.id,
+        text: item.text,
+        type: item.type,
+      })),
+      runtime: getSectionDurationSeconds(section),
+      copyText: getSectionPlainText(section),
+    });
+  });
+
+  compiledSections.forEach((section) => {
     const card = document.createElement("article");
     card.className = "script-section-card pipeline-card list-row";
-    card.dataset.variationId = section.id;
-
-    const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder section", DRAG_HANDLE_ICON, {
-      title: "Drag to reorder",
-    });
-    dragBtn.draggable = true;
-    dragBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    dragBtn.addEventListener("dragstart", (event) => {
-      beginVariationDrag(event, "script-section", section.id);
-    });
-    dragBtn.addEventListener("dragend", clearVariationDropTargets);
-
-    card.addEventListener("dragover", (event) => {
-      if (canVariationDrop("script-section", section.id)) {
-        event.preventDefault();
-        card.classList.add("is-drop-target");
-      }
-    });
-    card.addEventListener("dragleave", () => {
-      card.classList.remove("is-drop-target");
-    });
-    card.addEventListener("drop", (event) => {
-      if (!canVariationDrop("script-section", section.id)) {
-        return;
-      }
-      event.preventDefault();
-      const fromIndex = state.scriptSections.findIndex((item) => item.id === variationDragState.id);
-      const toIndex = state.scriptSections.findIndex((item) => item.id === section.id);
-      clearVariationDropTargets();
-      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
-        return;
-      }
-      moveItemInArray(state.scriptSections, fromIndex, toIndex);
-      updateBoardsAndBrief();
-    });
-
-    card.innerHTML = `
-      <div class="script-section-header">
+    const header = document.createElement("div");
+    header.className = "script-section-header";
+    header.innerHTML = `
+      <div>
+        <h3>${escapeHtml(section.title)}</h3>
+      </div>
+      <div class="intro-card-controls">
         <div class="script-section-meta">
-          <span class="script-stat" data-role="sectionDuration">Runtime ${formatDurationShort(
-            getSectionDurationSeconds(section),
-          )}</span>
-          <span class="script-stat">${normalizeScriptSectionKind(section.kind)}</span>
+          <span class="script-stat">Runtime ${formatDurationShort(section.runtime)}</span>
+          <span class="script-stat">${escapeHtml(getScriptSectionKindLabel(section.kind))}</span>
         </div>
       </div>
     `;
-    card.querySelector(".script-section-header").prepend(dragBtn);
-
-    const actions = document.createElement("div");
-    actions.className = "script-row-actions";
-    const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove section", DELETE_ICON);
-    removeBtn.addEventListener("click", () => {
-      const sourceIndex = state.scriptSections.findIndex((item) => item.id === section.id);
-      if (sourceIndex < 0) {
+    const headerTools = document.createElement("div");
+    headerTools.className = "intro-card-actions";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "btn btn-muted";
+    copyBtn.textContent = section.kind === "intro" ? "Copy Intro" : "Copy Section";
+    copyBtn.addEventListener("click", async () => {
+      if (!section.copyText) {
+        flashButtonText(copyBtn, "Empty", 900);
         return;
       }
-      state.scriptSections.splice(sourceIndex, 1);
-      updateBoardsAndBrief();
+      const didCopy = await copyTextToClipboard(section.copyText);
+      flashButtonText(copyBtn, didCopy ? "Copied" : "Copy Failed", 1100);
     });
-    actions.append(removeBtn);
-    card.querySelector(".script-section-header").append(actions);
+    headerTools.appendChild(copyBtn);
+    header.querySelector(".intro-card-controls").appendChild(headerTools);
+    card.appendChild(header);
 
-    const body = document.createElement("div");
-    body.className = "script-section-stack";
-    body.innerHTML = `
-      <div class="script-outline-grid">
-        <label>
-          Section Title
-          <input data-field="title" value="${escapeHtml(section.title)}" placeholder="Part 1" />
-        </label>
-        <label>
-          Section Kind
-          <select data-field="kind" class="script-section-kind">
-            <option value="content"${section.kind === "content" ? " selected" : ""}>Content</option>
-            <option value="sponsor"${section.kind === "sponsor" ? " selected" : ""}>Sponsor</option>
-            <option value="outro"${section.kind === "outro" ? " selected" : ""}>Outro</option>
-          </select>
-        </label>
-        <label class="full">
-          Goal
-          <textarea rows="2" data-field="goal" placeholder="What this section needs to accomplish.">${escapeHtml(
-            section.goal,
-          )}</textarea>
-        </label>
-        <label class="full">
-          Beats / Outline
-          <textarea rows="3" data-field="beats" placeholder="Short bullets or structural notes.">${escapeHtml(
-            section.beats,
-          )}</textarea>
-        </label>
-        <label>
-          Target Runtime
-          <input data-field="targetRuntime" value="${escapeHtml(section.targetRuntime)}" placeholder="Example: 1:30" />
-        </label>
-        <label>
-          Transition Notes
-          <textarea rows="2" data-field="transitionNotes" placeholder="What needs to bridge into the next section?">${escapeHtml(
-            section.transitionNotes,
-          )}</textarea>
-        </label>
-        <label class="full">
-          Editing Notes
-          <textarea rows="2" data-field="editingNotes" placeholder="Notes for post-production or pacing.">${escapeHtml(
-            section.editingNotes,
-          )}</textarea>
-        </label>
-      </div>
-    `;
-    card.appendChild(body);
-
-    const titleInput = body.querySelector('[data-field="title"]');
-    const kindInput = body.querySelector('[data-field="kind"]');
-    const goalInput = body.querySelector('[data-field="goal"]');
-    const beatsInput = body.querySelector('[data-field="beats"]');
-    const targetRuntimeInput = body.querySelector('[data-field="targetRuntime"]');
-    const transitionInput = body.querySelector('[data-field="transitionNotes"]');
-    const editingNotesInput = body.querySelector('[data-field="editingNotes"]');
-
-    titleInput.addEventListener("input", () => {
-      section.title = titleInput.value;
-      saveSnapshot();
-    });
-    kindInput.addEventListener("change", () => {
-      section.kind = normalizeScriptSectionKind(kindInput.value);
-      updateBoardsAndBrief();
-    });
-    goalInput.addEventListener("input", () => {
-      section.goal = goalInput.value;
-      saveSnapshot();
-    });
-    beatsInput.addEventListener("input", () => {
-      section.beats = beatsInput.value;
-      const durationEl = card.querySelector("[data-role='sectionDuration']");
-      if (durationEl) {
-        durationEl.textContent = `Runtime ${formatDurationShort(getSectionDurationSeconds(section))}`;
-      }
-      saveSnapshot();
-    });
-    targetRuntimeInput.addEventListener("input", () => {
-      section.targetRuntime = targetRuntimeInput.value;
-      saveSnapshot();
-    });
-    transitionInput.addEventListener("input", () => {
-      section.transitionNotes = transitionInput.value;
-      saveSnapshot();
-    });
-    editingNotesInput.addEventListener("input", () => {
-      section.editingNotes = editingNotesInput.value;
-      saveSnapshot();
-    });
-
-    if (section.kind === "sponsor") {
-      const sponsorFields = document.createElement("div");
-      sponsorFields.className = "script-outline-grid";
-      sponsorFields.innerHTML = `
-        <label>
-          Sponsor Name
-          <input data-field="sponsorName" value="${escapeHtml(section.sponsorName)}" placeholder="Brand name" />
-        </label>
-        <label>
-          CTA / Offer
-          <input data-field="sponsorCta" value="${escapeHtml(section.sponsorCta)}" placeholder="Offer or CTA" />
-        </label>
-        <label class="full">
-          Talking Points
-          <textarea rows="3" data-field="sponsorTalkingPoints" placeholder="Required sponsor talking points.">${escapeHtml(
-            section.sponsorTalkingPoints,
-          )}</textarea>
-        </label>
-        <label class="full">
-          Handoff Notes
-          <textarea rows="2" data-field="sponsorHandoffNotes" placeholder="Notes for your editor.">${escapeHtml(
-            section.sponsorHandoffNotes,
-          )}</textarea>
-        </label>
-      `;
-      body.appendChild(sponsorFields);
-
-      sponsorFields.querySelector('[data-field="sponsorName"]').addEventListener("input", (event) => {
-        section.sponsorName = event.target.value;
-        saveSnapshot();
-      });
-      sponsorFields.querySelector('[data-field="sponsorCta"]').addEventListener("input", (event) => {
-        section.sponsorCta = event.target.value;
-        saveSnapshot();
-      });
-      sponsorFields.querySelector('[data-field="sponsorTalkingPoints"]').addEventListener("input", (event) => {
-        section.sponsorTalkingPoints = event.target.value;
-        saveSnapshot();
-      });
-      sponsorFields.querySelector('[data-field="sponsorHandoffNotes"]').addEventListener("input", (event) => {
-        section.sponsorHandoffNotes = event.target.value;
-        saveSnapshot();
-      });
-
-      const resourceBlock = document.createElement("div");
-      resourceBlock.className = "script-subsection";
-      const toolbar = document.createElement("div");
-      toolbar.className = "script-subsection-toolbar";
-      toolbar.innerHTML = '<h4 class="script-subsection-title">Sponsor Resources</h4>';
-      const addResourceBtn = document.createElement("button");
-      addResourceBtn.type = "button";
-      addResourceBtn.className = "btn btn-muted";
-      addResourceBtn.textContent = "Add Resource";
-      toolbar.appendChild(addResourceBtn);
-      const resourceStack = document.createElement("div");
-      resourceStack.className = "resource-link-stack";
-      resourceBlock.append(toolbar, resourceStack);
-      body.appendChild(resourceBlock);
-      renderResourceLinkStack(section, resourceStack);
-      addResourceBtn.addEventListener("click", () => {
-        section.resourceLinks.push(createSponsorResourceLinkRecord({}));
-        updateBoardsAndBrief();
+    const stack = document.createElement("div");
+    stack.className = "script-intro-sentence-stack";
+    const nonEmptyLines = section.lines.filter((item) => toCleanText(item.text));
+    if (!nonEmptyLines.length) {
+      stack.innerHTML = '<p class="pipeline-empty">No script lines yet.</p>';
+    } else {
+      nonEmptyLines.forEach((item) => {
+        const lineCard = document.createElement("article");
+        lineCard.className = "script-sentence-card script-readonly-line";
+        lineCard.dataset.scriptType = colorMode ? item.type : "";
+        const summary = document.createElement("div");
+        summary.className = "script-sentence-summary script-readonly-summary";
+        const content = document.createElement("div");
+        content.className = "script-sentence-summary-content script-sentence-summary-content-inline";
+        const badge = document.createElement("span");
+        badge.className = "script-sentence-type-badge";
+        const typeMeta = getScriptSentenceTypeMeta(item.type);
+        badge.hidden = !colorMode || !typeMeta.id;
+        badge.textContent = typeMeta.id ? typeMeta.label : "";
+        const text = document.createElement("span");
+        text.className = "script-sentence-line";
+        text.textContent = item.text;
+        content.append(text, badge);
+        summary.append(content);
+        lineCard.append(summary);
+        stack.appendChild(lineCard);
       });
     }
-
-    const paragraphBlock = document.createElement("div");
-    paragraphBlock.className = "script-subsection";
-    const paragraphToolbar = document.createElement("div");
-    paragraphToolbar.className = "script-subsection-toolbar";
-    paragraphToolbar.innerHTML = '<h4 class="script-subsection-title">Draft Paragraph Cards</h4>';
-    const addParagraphBtn = document.createElement("button");
-    addParagraphBtn.type = "button";
-    addParagraphBtn.className = "btn btn-muted";
-    addParagraphBtn.textContent = "Add Paragraph";
-    paragraphToolbar.appendChild(addParagraphBtn);
-    const paragraphStack = document.createElement("div");
-    paragraphStack.className = "pipeline-board";
-    paragraphBlock.append(paragraphToolbar, paragraphStack);
-    body.appendChild(paragraphBlock);
-    renderParagraphStack(section, paragraphStack, card);
-    addParagraphBtn.addEventListener("click", () => {
-      section.paragraphs.push(createScriptParagraphRecord({}));
-      updateBoardsAndBrief();
-    });
-
-    refs.structureBoard.appendChild(card);
+    card.appendChild(stack);
+    refs.draftBoard.appendChild(card);
   });
 }
 
@@ -3727,18 +4047,21 @@ function setBriefEditorEnabled(enabled) {
   if (refs.showIntroLabBtn) {
     refs.showIntroLabBtn.disabled = !enabled;
   }
-  if (refs.showStructureWorkspaceBtn) {
-    refs.showStructureWorkspaceBtn.disabled = !enabled;
+  if (refs.showSkeletonWorkspaceBtn) {
+    refs.showSkeletonWorkspaceBtn.disabled = !enabled;
   }
-  if (refs.addStructureSectionBtn) {
-    refs.addStructureSectionBtn.disabled = !enabled;
+  if (refs.showDraftWorkspaceBtn) {
+    refs.showDraftWorkspaceBtn.disabled = !enabled;
+  }
+  if (refs.addSkeletonSectionBtn) {
+    refs.addSkeletonSectionBtn.disabled = !enabled;
   }
 }
 
 function renderBriefExportControls() {
   const activeBrief = getActiveBriefRecord();
   const hasActiveBrief = Boolean(activeBrief);
-  const hasStructure = state.scriptSections.length > 0;
+  const hasScript = state.scriptSections.length > 0;
   if (refs.exportPackagingBriefPdfBtn) {
     refs.exportPackagingBriefPdfBtn.disabled = !hasActiveBrief;
   }
@@ -3746,7 +4069,7 @@ function renderBriefExportControls() {
     refs.exportProductionBriefPdfBtn.disabled = !hasActiveBrief;
   }
   if (refs.openScriptExportBtn) {
-    refs.openScriptExportBtn.disabled = !hasActiveBrief || !hasStructure;
+    refs.openScriptExportBtn.disabled = !hasActiveBrief || !hasScript;
   }
   if (refs.exportAnalyticsBriefBtn) {
     refs.exportAnalyticsBriefBtn.disabled = true;
@@ -3759,9 +4082,9 @@ function renderBriefExportControls() {
     refs.briefExportHint.textContent = "Select a brief to export.";
     return;
   }
-  if (!hasStructure) {
+  if (!hasScript) {
     refs.briefExportHint.textContent =
-      "Packaging and Production exports are ready. Script Export unlocks after you add at least 1 structure section.";
+      "Packaging and Production exports are ready. Script Export unlocks after you add at least 1 script section.";
     return;
   }
 
@@ -5690,19 +6013,12 @@ function renderIntroCardsHtml(intros, options = {}) {
         ? `<ol>${sentences
             .map((item) => {
               const typeMeta = getScriptSentenceTypeMeta(item.type);
-              const prefix = typeMeta.id ? `<strong>${escapeHtml(typeMeta.label)}:</strong> ` : "";
+              const prefix = options.includeTypes && typeMeta.id ? `<strong>${escapeHtml(typeMeta.label)}:</strong> ` : "";
               return `<li>${prefix}${safeText(item.text, "No sentence text yet.")}</li>`;
             })
             .join("")}</ol>`
         : "<p>No intro sentences yet.</p>";
-      const notesHtml = options.includeNotes
-        ? `<ul>
-            <li><strong>Angle:</strong> ${safeText(intro.angle)}</li>
-            <li><strong>Shoot notes:</strong> ${safeText(intro.shotNotes)}</li>
-            <li><strong>Post notes:</strong> ${safeText(intro.postNotes)}</li>
-            <li><strong>Estimated runtime:</strong> ${formatDurationShort(getIntroDurationSeconds(intro))}</li>
-          </ul>`
-        : `<p class="muted">Estimated runtime: ${formatDurationShort(getIntroDurationSeconds(intro))}</p>`;
+      const notesHtml = `<p class="muted">Estimated runtime: ${formatDurationShort(getIntroDurationSeconds(intro))}</p>`;
       return `
         <article class="card">
           <h2>${escapeHtml(intro.label || `Intro ${index + 1}`)}</h2>
@@ -5715,68 +6031,33 @@ function renderIntroCardsHtml(intros, options = {}) {
 }
 
 function renderStructureSectionsHtml(sections, options = {}) {
-  if (!sections.length) {
-    return "<p>No script structure drafted yet.</p>";
+  const visibleSections = normalizeScriptSectionCollection(sections);
+  if (!visibleSections.length) {
+    return "<p>No script sections yet.</p>";
   }
 
-  return sections
+  return visibleSections
     .map((section) => {
-      const paragraphs = normalizeScriptParagraphCollection(section.paragraphs).filter(
-        (item) => toCleanText(item.text) || toCleanText(item.notes),
-      );
-      const paragraphHtml = paragraphs.length
-        ? paragraphs.map((paragraph) => `<p>${safeText(paragraph.text, "No drafted paragraph yet.")}</p>`).join("")
-        : `<p>${safeText(section.beats, "No outline beats yet.")}</p>`;
-      const outlineHtml = options.includeOutline
-        ? `<ul>
-            <li><strong>Goal:</strong> ${safeText(section.goal)}</li>
-            <li><strong>Outline beats:</strong> ${safeText(section.beats)}</li>
-            <li><strong>Transition notes:</strong> ${safeText(section.transitionNotes)}</li>
-            <li><strong>Target runtime:</strong> ${safeText(section.targetRuntime)}</li>
-            <li><strong>Editing notes:</strong> ${safeText(section.editingNotes)}</li>
-          </ul>`
-        : "";
-      const sponsorHtml =
-        section.kind === "sponsor"
-          ? `<ul>
-              <li><strong>Sponsor name:</strong> ${safeText(section.sponsorName)}</li>
-              <li><strong>Talking points:</strong> ${safeText(section.sponsorTalkingPoints)}</li>
-              <li><strong>CTA:</strong> ${safeText(section.sponsorCta)}</li>
-              ${
-                options.includeNotes
-                  ? `<li><strong>Handoff notes:</strong> ${safeText(section.sponsorHandoffNotes)}</li>`
-                  : ""
-              }
-            </ul>
-            ${
-              section.resourceLinks.length && options.includeNotes
-                ? `<h3>Resource Links</h3><ul>${section.resourceLinks
-                    .filter((link) => toCleanText(link.label) || toCleanText(link.url) || toCleanText(link.notes))
-                    .map((link) => {
-                      const linkedUrl = toCleanText(link.url);
-                      const primary = linkedUrl
-                        ? `<a href="${escapeHtml(linkedUrl)}" target="_blank" rel="noreferrer noopener">${escapeHtml(
-                            linkedUrl,
-                          )}</a>`
-                        : safeText(link.notes, "No resource URL yet.");
-                      return `<li><strong>${safeText(link.label, "Resource")}:</strong> ${primary}${
-                        toCleanText(link.notes) ? ` <span class="muted">(${escapeHtml(link.notes)})</span>` : ""
-                      }</li>`;
-                    })
-                    .join("")}</ul>`
-                : ""
-            }`
-          : "";
+      const items = normalizeScriptSectionItemCollection(section.items, section.kind).filter((item) => {
+        return toCleanText(item.text) || toCleanText(item.type);
+      });
+      const linesHtml = items.length
+        ? `<ol>${items
+            .map((item) => {
+              const typeMeta = getScriptSentenceTypeMeta(item.type);
+              const prefix = options.includeTypes && typeMeta.id ? `<strong>${escapeHtml(typeMeta.label)}:</strong> ` : "";
+              return `<li>${prefix}${safeText(item.text, "No line text yet.")}</li>`;
+            })
+            .join("")}</ol>`
+        : "<p>No lines yet.</p>";
 
       return `
         <article class="card">
           <h2>${safeText(section.title)}</h2>
-          <p class="muted">Kind: ${escapeHtml(section.kind)} · Runtime ${formatDurationShort(
+          <p class="muted">Kind: ${escapeHtml(getScriptSectionKindLabel(section.kind))} · Runtime ${formatDurationShort(
             getSectionDurationSeconds(section),
           )}</p>
-          ${outlineHtml}
-          ${sponsorHtml}
-          ${paragraphHtml}
+          ${linesHtml}
         </article>
       `;
     })
@@ -5983,7 +6264,7 @@ function buildProductionBriefExportHtml(values) {
       <section class="hero">
         <p class="kicker">Production Brief</p>
         <h1>${safeText(values.projectName, "YouTube Production Brief")}</h1>
-        <p>Generated ${escapeHtml(model.generatedAt)} · Editor handoff with intros, structure, thumbnails, and sponsor resources</p>
+        <p>Generated ${escapeHtml(model.generatedAt)} · Editor handoff with intros, sections, and current packaging assets</p>
       </section>
 
       <section class="card">
@@ -6099,12 +6380,12 @@ function buildProductionBriefExportHtml(values) {
       </section>
 
       <section class="grid two">
-        ${renderIntroCardsHtml(model.intros, { includeNotes: true })}
+        ${renderIntroCardsHtml(model.intros, { includeNotes: true, includeTypes: true })}
       </section>
 
       <section class="card">
-        <h2>Script Structure</h2>
-        ${renderStructureSectionsHtml(model.sections, { includeOutline: true, includeNotes: true })}
+        <h2>Script Sections</h2>
+        ${renderStructureSectionsHtml(model.sections, { includeTypes: true })}
       </section>
     </main>
   </body>
@@ -6136,12 +6417,12 @@ function buildScriptExportHtml(values) {
       </section>
 
       <section class="grid two">
-        ${renderIntroCardsHtml(model.intros, { includeNotes: false })}
+        ${renderIntroCardsHtml(model.intros, { includeNotes: false, includeTypes: false })}
       </section>
 
       <section class="card">
         <h2>Main Script</h2>
-        ${renderStructureSectionsHtml(model.sections, { includeOutline: false, includeNotes: false })}
+        ${renderStructureSectionsHtml(model.sections, { includeTypes: false })}
       </section>
     </main>
   </body>
@@ -6324,6 +6605,9 @@ function buildWorkspacePayload(values = getFieldValues()) {
     savedAt: Date.now(),
     pageView: state.pageView,
     channelView: state.channelView,
+    briefWorkspaceView: normalizeBriefWorkspaceView(state.briefWorkspaceView),
+    scriptingView: normalizeScriptingView(state.scriptingView),
+    scriptDraftShowColors: state.scriptDraftShowColors !== false,
     channels: state.channels,
     accounts: state.accounts,
     channelMemberships: state.channelMemberships,
@@ -6390,6 +6674,9 @@ function applyWorkspacePayload(payload = {}) {
   if (isChannelPayload) {
     state.pageView = normalizePageView(payload.pageView);
     state.channelView = normalizeChannelView(payload.channelView);
+    state.briefWorkspaceView = normalizeBriefWorkspaceView(payload.briefWorkspaceView);
+    state.scriptingView = normalizeScriptingView(payload.scriptingView);
+    state.scriptDraftShowColors = payload.scriptDraftShowColors !== false;
     state.channels = normalizeChannels(payload.channels);
     state.accounts = normalizeAccounts(payload.accounts);
     state.channelMemberships = normalizeChannelMemberships(payload.channelMemberships);
@@ -6847,6 +7134,7 @@ function resetAll() {
   state.activeBriefId = "";
   state.scriptIntros = normalizeIntroVariants([]);
   state.scriptSections = normalizeScriptSectionCollection([]);
+  state.scriptDraftShowColors = true;
   state.briefDetailExpanded = false;
   state.viewerSnapshotExpanded = false;
   state.briefWorkspaceView = "packaging";
@@ -6907,7 +7195,8 @@ function updateBoardsAndBrief(options = {}) {
       renderBriefSourceSnapshot();
       renderIntroSentenceLegend();
       renderIntroBoards();
-      renderStructureBoard();
+      renderSkeletonBoard();
+      renderDraftBoard();
       renderTitleBoard();
       renderThumbnailTextBoard();
       renderThumbBoard();
@@ -6949,6 +7238,41 @@ function flashInlineText(el, text, ms = 1200) {
   setTimeout(() => {
     el.textContent = original;
   }, ms);
+}
+
+async function copyTextToClipboard(text) {
+  const value = toCleanText(text);
+  if (!value) {
+    return false;
+  }
+
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch (error) {
+    console.warn("Async clipboard write failed. Falling back to document.execCommand.", error);
+  }
+
+  const fallbackInput = document.createElement("textarea");
+  fallbackInput.value = value;
+  fallbackInput.setAttribute("readonly", "");
+  fallbackInput.style.position = "fixed";
+  fallbackInput.style.opacity = "0";
+  fallbackInput.style.pointerEvents = "none";
+  document.body.appendChild(fallbackInput);
+  fallbackInput.focus();
+  fallbackInput.select();
+
+  try {
+    return document.execCommand("copy");
+  } catch (error) {
+    console.warn("Clipboard fallback failed.", error);
+    return false;
+  } finally {
+    fallbackInput.remove();
+  }
 }
 
 function openPdfPrintWindow(html, triggerButton) {
@@ -7459,35 +7783,42 @@ function bindEvents() {
   if (refs.showPackagingWorkspaceBtn) {
     refs.showPackagingWorkspaceBtn.addEventListener("click", () => {
       state.briefWorkspaceView = "packaging";
-      updateBoardsAndBrief({ persist: false });
+      updateBoardsAndBrief();
     });
   }
 
   if (refs.showScriptingWorkspaceBtn) {
     refs.showScriptingWorkspaceBtn.addEventListener("click", () => {
       state.briefWorkspaceView = "scripting";
-      updateBoardsAndBrief({ persist: false });
+      updateBoardsAndBrief();
     });
   }
 
   if (refs.showIntroLabBtn) {
     refs.showIntroLabBtn.addEventListener("click", () => {
       state.scriptingView = "intros";
-      updateBoardsAndBrief({ persist: false });
+      updateBoardsAndBrief();
     });
   }
 
-  if (refs.showStructureWorkspaceBtn) {
-    refs.showStructureWorkspaceBtn.addEventListener("click", () => {
-      state.scriptingView = "structure";
-      updateBoardsAndBrief({ persist: false });
+  if (refs.showSkeletonWorkspaceBtn) {
+    refs.showSkeletonWorkspaceBtn.addEventListener("click", () => {
+      state.scriptingView = "sections";
+      updateBoardsAndBrief();
     });
   }
 
-  if (refs.addStructureSectionBtn) {
-    refs.addStructureSectionBtn.addEventListener("click", () => {
+  if (refs.showDraftWorkspaceBtn) {
+    refs.showDraftWorkspaceBtn.addEventListener("click", () => {
+      state.scriptingView = "draft";
+      updateBoardsAndBrief();
+    });
+  }
+
+  if (refs.addSkeletonSectionBtn) {
+    refs.addSkeletonSectionBtn.addEventListener("click", () => {
       state.scriptSections.push(createScriptSectionRecord({}, state.scriptSections.length));
-      state.scriptingView = "structure";
+      state.scriptingView = "sections";
       state.briefWorkspaceView = "scripting";
       updateBoardsAndBrief();
     });
