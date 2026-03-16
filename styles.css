@@ -1707,6 +1707,94 @@ select:focus {
   color: #1b2733;
 }
 
+.is-script-draft {
+  background: linear-gradient(180deg, rgba(8, 33, 52, 0.02), rgba(8, 33, 52, 0));
+  padding: 0.35rem 0;
+}
+
+.is-script-draft .script-draft-read-toolbar {
+  width: min(8.5in, 100%);
+  margin: 0 auto 0.9rem;
+}
+
+.is-script-draft .script-section-card {
+  width: min(8.5in, 100%);
+  margin: 0 auto 1rem;
+  padding: 0.7in 0.72in 0.85in;
+  background: #ffffff;
+  border: 1px solid rgba(8, 33, 52, 0.12);
+  border-radius: 4px;
+  box-shadow: 0 18px 40px rgba(8, 33, 52, 0.08);
+  gap: 0.95rem;
+}
+
+.is-script-draft .script-section-header,
+.is-script-draft .script-intro-sentence-stack,
+.is-script-draft .script-readonly-summary,
+.is-script-draft .script-sentence-line,
+.is-script-draft .script-stat,
+.is-script-draft .intro-card-actions .btn {
+  font-family: "Courier Prime", "Courier New", monospace;
+}
+
+.is-script-draft .script-section-header {
+  align-items: center;
+}
+
+.is-script-draft .script-section-card h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.is-script-draft .script-section-meta {
+  gap: 0.28rem;
+}
+
+.is-script-draft .script-stat {
+  padding: 0.16rem 0.38rem;
+  background: transparent;
+  border: 1px solid rgba(8, 33, 52, 0.1);
+  font-size: 0.68rem;
+}
+
+.is-script-draft .script-intro-sentence-stack {
+  gap: 0.2rem;
+}
+
+.is-script-draft .script-readonly-line {
+  border: 0;
+  background: transparent;
+}
+
+.is-script-draft .script-readonly-summary,
+.is-script-draft .script-readonly-summary:hover,
+.is-script-draft .script-readonly-line .script-sentence-summary {
+  padding: 0;
+  background: transparent;
+  color: #111111;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+}
+
+.is-script-draft .script-sentence-summary-content-inline {
+  grid-template-columns: 1fr;
+}
+
+.is-script-draft .script-sentence-summary-content-inline .script-sentence-type-badge {
+  display: none;
+}
+
+.is-script-draft .script-sentence-line {
+  font-size: 12pt;
+  line-height: 1.55;
+  font-weight: 400;
+  white-space: pre-wrap;
+}
+
 .script-row textarea {
   min-height: 84px;
   resize: none;

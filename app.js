@@ -32,6 +32,7 @@ const CHANNEL_ASSET_KINDS = ["avatar", "banner", "thumbnail", "other"];
 const BRIEF_WORKSPACE_OPTIONS = ["packaging", "scripting"];
 const SCRIPTING_VIEW_OPTIONS = ["intros", "sections", "draft"];
 const SCRIPT_SECTION_KINDS = ["intro", "content", "sponsor", "outro"];
+const SCRIPT_DRAFT_VIEW_OPTIONS = ["plain", "color", "script"];
 const SCRIPT_SENTENCE_TYPES = [
   { id: "", label: "Untyped", color: "#5d6770" },
   { id: "intrigue", label: "Creating Intrigue", color: "#9c6a1a" },
@@ -300,7 +301,7 @@ const state = {
   comparables: [],
   scriptIntros: [],
   scriptSections: [],
-  scriptDraftShowColors: true,
+  scriptDraftView: "color",
   latestBriefHtml: "",
   briefDetailExpanded: false,
   viewerSnapshotExpanded: false,
@@ -1012,6 +1013,14 @@ function normalizeScriptingView(value) {
     return "sections";
   }
   return SCRIPTING_VIEW_OPTIONS.includes(normalized) ? normalized : "intros";
+}
+
+function normalizeScriptDraftView(value, fallbackColor = true) {
+  const normalized = toCleanText(value);
+  if (SCRIPT_DRAFT_VIEW_OPTIONS.includes(normalized)) {
+    return normalized;
+  }
+  return fallbackColor ? "color" : "plain";
 }
 
 function normalizeScriptSectionKind(value) {
@@ -3827,19 +3836,31 @@ function renderDraftBoard() {
     const didCopy = await copyTextToClipboard(compiled);
     flashButtonText(copyAllBtn, didCopy ? "Copied" : "Copy Failed", 1100);
   });
-  const colorToggleBtn = document.createElement("button");
-  colorToggleBtn.type = "button";
-  colorToggleBtn.className = "btn btn-muted";
-  colorToggleBtn.textContent = state.scriptDraftShowColors ? "Hide Colors" : "Show Colors";
-  colorToggleBtn.addEventListener("click", () => {
-    state.scriptDraftShowColors = !state.scriptDraftShowColors;
-    updateBoardsAndBrief();
+  const draftView = normalizeScriptDraftView(state.scriptDraftView);
+  state.scriptDraftView = draftView;
+  [
+    { id: "plain", label: "Plain" },
+    { id: "color", label: "Color" },
+    { id: "script", label: "Script" },
+  ].forEach((option) => {
+    const viewBtn = document.createElement("button");
+    viewBtn.type = "button";
+    viewBtn.className = "btn btn-muted";
+    viewBtn.textContent = option.label;
+    viewBtn.classList.toggle("is-active", draftView === option.id);
+    viewBtn.addEventListener("click", () => {
+      state.scriptDraftView = option.id;
+      updateBoardsAndBrief();
+    });
+    controls.appendChild(viewBtn);
   });
-  controls.append(copyAllBtn, colorToggleBtn);
+  controls.prepend(copyAllBtn);
   refs.draftBoard.appendChild(controls);
 
-  const colorMode = state.scriptDraftShowColors !== false;
-  refs.draftBoard.classList.toggle("is-plain-script", !colorMode);
+  const colorMode = draftView === "color";
+  const scriptMode = draftView === "script";
+  refs.draftBoard.classList.toggle("is-plain-script", draftView === "plain");
+  refs.draftBoard.classList.toggle("is-script-draft", scriptMode);
 
   const compiledSections = [];
   normalizeIntroVariants(state.scriptIntros).forEach((intro, index) => {
@@ -6607,7 +6628,7 @@ function buildWorkspacePayload(values = getFieldValues()) {
     channelView: state.channelView,
     briefWorkspaceView: normalizeBriefWorkspaceView(state.briefWorkspaceView),
     scriptingView: normalizeScriptingView(state.scriptingView),
-    scriptDraftShowColors: state.scriptDraftShowColors !== false,
+    scriptDraftView: normalizeScriptDraftView(state.scriptDraftView),
     channels: state.channels,
     accounts: state.accounts,
     channelMemberships: state.channelMemberships,
@@ -6676,7 +6697,7 @@ function applyWorkspacePayload(payload = {}) {
     state.channelView = normalizeChannelView(payload.channelView);
     state.briefWorkspaceView = normalizeBriefWorkspaceView(payload.briefWorkspaceView);
     state.scriptingView = normalizeScriptingView(payload.scriptingView);
-    state.scriptDraftShowColors = payload.scriptDraftShowColors !== false;
+    state.scriptDraftView = normalizeScriptDraftView(payload.scriptDraftView, payload.scriptDraftShowColors !== false);
     state.channels = normalizeChannels(payload.channels);
     state.accounts = normalizeAccounts(payload.accounts);
     state.channelMemberships = normalizeChannelMemberships(payload.channelMemberships);
@@ -7134,7 +7155,7 @@ function resetAll() {
   state.activeBriefId = "";
   state.scriptIntros = normalizeIntroVariants([]);
   state.scriptSections = normalizeScriptSectionCollection([]);
-  state.scriptDraftShowColors = true;
+  state.scriptDraftView = "color";
   state.briefDetailExpanded = false;
   state.viewerSnapshotExpanded = false;
   state.briefWorkspaceView = "packaging";
