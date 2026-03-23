@@ -249,6 +249,7 @@ const refs = {
   exportPackagingBriefPdfBtn: document.getElementById("exportPackagingBriefPdfBtn"),
   exportProductionBriefPdfBtn: document.getElementById("exportProductionBriefPdfBtn"),
   openScriptExportBtn: document.getElementById("openScriptExportBtn"),
+  copyScriptMetadataJsonBtn: document.getElementById("copyScriptMetadataJsonBtn"),
   exportAnalyticsBriefBtn: document.getElementById("exportAnalyticsBriefBtn"),
   topTitle: document.getElementById("topTitle"),
   topThumb: document.getElementById("topThumb"),
@@ -332,6 +333,8 @@ const DRAG_HANDLE_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="6.5" r="1.5"></circle><circle cx="8" cy="12" r="1.5"></circle><circle cx="8" cy="17.5" r="1.5"></circle><circle cx="16" cy="6.5" r="1.5"></circle><circle cx="16" cy="12" r="1.5"></circle><circle cx="16" cy="17.5" r="1.5"></circle></svg>';
 const DELETE_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Z"></path></svg>';
+const ARCHIVE_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v4H3V5Zm2 6h14v10H5V11Zm4 2v2h6v-2H9Z"></path></svg>';
 
 const BRIEF_EXPORT_STYLES = `
   :root {
@@ -1051,17 +1054,29 @@ function normalizeScriptSentenceType(value) {
 }
 
 function createScriptSentenceRecord(seed = {}) {
+  const id = toCleanText(seed.id) || createRecordId("line");
   return {
-    id: toCleanText(seed.id) || createRecordId("line"),
+    id,
+    slotId: toCleanText(seed.slotId) || id,
     type: normalizeScriptSentenceType(seed.type),
     text: toCleanText(seed.text),
     notes: toCleanText(seed.notes),
+    archivedAt: normalizeTimestamp(seed.archivedAt),
+    originalIndex: Number.isInteger(seed.originalIndex) ? seed.originalIndex : null,
+    replacedById: toCleanText(seed.replacedById),
     createdAt: normalizeTimestamp(seed.createdAt),
     updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
   };
 }
 
 function normalizeScriptSentenceCollection(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => createScriptSentenceRecord(item));
+}
+
+function normalizeArchivedScriptSentenceCollection(items) {
   if (!Array.isArray(items)) {
     return [];
   }
@@ -1100,6 +1115,8 @@ function createIntroVariantRecord(seed = {}, index = 0) {
     postNotes: toCleanText(seed.postNotes),
     isShot: Boolean(seed.isShot),
     sentences: normalizeScriptSentenceCollection(seed.sentences),
+    archivedSentences: normalizeArchivedScriptSentenceCollection(seed.archivedSentences),
+    archivedExpanded: Boolean(seed.archivedExpanded),
     createdAt: normalizeTimestamp(seed.createdAt),
     updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
   };
@@ -1126,11 +1143,16 @@ function createDefaultScriptSectionSeed() {
 
 function createScriptSectionItemRecord(seed = {}, index = 0, fallbackText = "") {
   const baseText = toCleanText(seed.text) || toCleanText(seed.draftText);
+  const id = toCleanText(seed.id) || createRecordId("item");
   return {
-    id: toCleanText(seed.id) || createRecordId("item"),
+    id,
+    slotId: toCleanText(seed.slotId) || id,
     text: fallbackText ? baseText || fallbackText : baseText,
     type: normalizeScriptSentenceType(seed.type),
     draftText: toCleanText(seed.draftText) || baseText,
+    archivedAt: normalizeTimestamp(seed.archivedAt),
+    originalIndex: Number.isInteger(seed.originalIndex) ? seed.originalIndex : null,
+    replacedById: toCleanText(seed.replacedById),
     createdAt: normalizeTimestamp(seed.createdAt),
     updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
   };
@@ -1152,6 +1174,20 @@ function normalizeScriptSectionItemCollection(items, kind = "content") {
   return items.map((item, index) => createScriptSectionItemRecord(item, index));
 }
 
+function normalizeArchivedScriptSectionItemCollection(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item, index) => createScriptSectionItemRecord(item, index));
+}
+
+function getLiveScriptSectionItemCollection(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item, index) => createScriptSectionItemRecord(item, index));
+}
+
 function createScriptSectionRecord(seed = {}, index = 0, fallbackSeed = null) {
   const seedSource = seed && typeof seed === "object" ? seed : {};
   const base = fallbackSeed && typeof fallbackSeed === "object" ? fallbackSeed : {};
@@ -1167,6 +1203,8 @@ function createScriptSectionRecord(seed = {}, index = 0, fallbackSeed = null) {
     sponsorCta: toCleanText(seedSource.sponsorCta),
     sponsorHandoffNotes: toCleanText(seedSource.sponsorHandoffNotes),
     items: normalizeScriptSectionItemCollection(seedSource.items, kind),
+    archivedItems: normalizeArchivedScriptSectionItemCollection(seedSource.archivedItems),
+    archivedExpanded: Boolean(seedSource.archivedExpanded),
     resourceLinks: normalizeSponsorResourceLinks(seedSource.resourceLinks),
     createdAt: normalizeTimestamp(seedSource.createdAt),
     updatedAt: normalizeTimestamp(seedSource.updatedAt || seedSource.createdAt),
@@ -2964,7 +3002,7 @@ function getIntroPlainText(intro = {}) {
 }
 
 function getSectionPlainText(section = {}) {
-  return normalizeScriptSectionItemCollection(section.items, section.kind)
+  return getLiveScriptSectionItemCollection(section.items)
     .map((item) => toCleanText(item.text))
     .filter(Boolean)
     .join("\n");
@@ -2990,19 +3028,16 @@ function getCompiledScriptText() {
 }
 
 function getSectionDurationSeconds(section = {}) {
-  return normalizeScriptSectionItemCollection(section.items, section.kind).reduce(
-    (sum, item) => sum + estimateReadSeconds(item.text),
-    0,
-  );
+  return getLiveScriptSectionItemCollection(section.items).reduce((sum, item) => sum + estimateReadSeconds(item.text), 0);
 }
 
 function getSectionDraftedItemCount(section = {}) {
-  return normalizeScriptSectionItemCollection(section.items, section.kind).filter((item) => toCleanText(item.text)).length;
+  return getLiveScriptSectionItemCollection(section.items).filter((item) => toCleanText(item.text)).length;
 }
 
 function getTotalScriptItemCount() {
   return normalizeIntroVariants(state.scriptIntros).length + state.scriptSections.reduce((sum, section) => {
-    return sum + normalizeScriptSectionItemCollection(section.items, section.kind).length;
+    return sum + getLiveScriptSectionItemCollection(section.items).length;
   }, 0);
 }
 
@@ -3016,7 +3051,7 @@ function getSkeletonSectionCount() {
 
 function getSkeletonBulletCount() {
   return state.scriptSections.reduce((sum, section) => {
-    return sum + normalizeScriptSectionItemCollection(section.items, section.kind).length;
+    return sum + getLiveScriptSectionItemCollection(section.items).length;
   }, 0);
 }
 
@@ -3157,6 +3192,7 @@ function renderIntroBoards() {
     introCard.appendChild(sentenceBoard);
 
     const introRecord = state.scriptIntros[introIndex];
+    introRecord.archivedSentences = normalizeArchivedScriptSentenceCollection(introRecord.archivedSentences);
     const titleShell = introCard.querySelector(".intro-card-title-shell");
     const titleInput = document.createElement("input");
     titleInput.className = "intro-card-title-input";
@@ -3281,13 +3317,11 @@ function renderIntroBoards() {
         durationLabel.className = "script-row-duration";
         durationLabel.textContent = formatDurationShort(estimateReadSeconds(sentence.text));
 
-        const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove sentence", DELETE_ICON);
-        removeBtn.addEventListener("click", () => {
-          const sourceIndex = introRecord.sentences.findIndex((item) => item.id === sentence.id);
-          if (sourceIndex < 0) {
+        const archiveBtn = buildIconButton("icon-btn", "Archive sentence", ARCHIVE_ICON);
+        archiveBtn.addEventListener("click", () => {
+          if (!archiveLineVariant(introRecord.sentences, introRecord.archivedSentences, sentence.id, createScriptSentenceRecord)) {
             return;
           }
-          introRecord.sentences.splice(sourceIndex, 1);
           updateBoardsAndBrief();
         });
 
@@ -3295,13 +3329,33 @@ function renderIntroBoards() {
         summaryShell.className = "script-sentence-summary-shell";
         const actions = document.createElement("div");
         actions.className = "script-row-actions";
-        actions.append(durationLabel, removeBtn);
+        actions.append(durationLabel, archiveBtn);
         summaryShell.append(dragBtn, summaryBtn, actions);
 
         const editor = document.createElement("div");
         editor.className = "script-sentence-editor";
         editor.hidden = true;
-        editor.append(typeSelect, textInput);
+        const editorActions = document.createElement("div");
+        editorActions.className = "script-sentence-editor-actions";
+        const duplicateArchiveBtn = document.createElement("button");
+        duplicateArchiveBtn.type = "button";
+        duplicateArchiveBtn.className = "btn btn-muted btn-compact";
+        duplicateArchiveBtn.textContent = "Duplicate + Archive";
+        duplicateArchiveBtn.addEventListener("click", () => {
+          if (
+            !duplicateAndArchiveLineVariant(
+              introRecord.sentences,
+              introRecord.archivedSentences,
+              sentence.id,
+              createScriptSentenceRecord,
+            )
+          ) {
+            return;
+          }
+          updateBoardsAndBrief();
+        });
+        editorActions.append(duplicateArchiveBtn);
+        editor.append(typeSelect, textInput, editorActions);
 
         row.append(summaryShell, editor);
         sentenceBoard.appendChild(row);
@@ -3368,6 +3422,19 @@ function renderIntroBoards() {
       introRecord.sentences.push(createScriptSentenceRecord({}));
       updateBoardsAndBrief();
     });
+
+    const archivedSubsection = renderArchivedLineSubsection(introRecord, introRecord.archivedSentences, {
+      placeholder: "Archived sentence",
+      onRevive: (archivedId) => {
+        if (!reviveArchivedLineVariant(introRecord.sentences, introRecord.archivedSentences, archivedId, createScriptSentenceRecord)) {
+          return;
+        }
+        updateBoardsAndBrief();
+      },
+    });
+    if (archivedSubsection) {
+      introCard.appendChild(archivedSubsection);
+    }
 
     updateIntroCardStats(introCard, introRecord);
     refs.introsBoard.appendChild(introCard);
@@ -3462,9 +3529,151 @@ function syncIntroSectionItems(section) {
 }
 
 function ensureSectionItems(section) {
-  if (!Array.isArray(section.items) || !section.items.length) {
+  if (!Array.isArray(section.items)) {
     section.items = createDefaultScriptSectionItems(section.kind);
   }
+}
+
+function archiveLineVariant(liveItems, archivedItems, lineId, createRecord) {
+  const sourceIndex = liveItems.findIndex((entry) => entry.id === lineId);
+  if (sourceIndex < 0) {
+    return false;
+  }
+  const current = liveItems[sourceIndex];
+  const slotId = toCleanText(current.slotId) || current.id;
+  archivedItems.unshift(
+    createRecord({
+      ...current,
+      id: createRecordId("archived"),
+      slotId,
+      archivedAt: Date.now(),
+      originalIndex: sourceIndex,
+      replacedById: "",
+    }),
+  );
+  liveItems.splice(sourceIndex, 1);
+  return true;
+}
+
+function duplicateAndArchiveLineVariant(liveItems, archivedItems, lineId, createRecord, livePrefix = "line") {
+  const sourceIndex = liveItems.findIndex((entry) => entry.id === lineId);
+  if (sourceIndex < 0) {
+    return false;
+  }
+  const current = liveItems[sourceIndex];
+  const slotId = toCleanText(current.slotId) || current.id;
+  const replacement = createRecord({
+    ...current,
+    id: createRecordId(livePrefix),
+    slotId,
+    archivedAt: "",
+    originalIndex: null,
+    replacedById: "",
+  });
+  const archived = createRecord({
+    ...current,
+    id: createRecordId("archived"),
+    slotId,
+    archivedAt: Date.now(),
+    originalIndex: sourceIndex,
+    replacedById: replacement.id,
+  });
+  liveItems.splice(sourceIndex, 1, replacement);
+  archivedItems.unshift(archived);
+  return true;
+}
+
+function reviveArchivedLineVariant(liveItems, archivedItems, archivedId, createRecord, livePrefix = "line") {
+  const archivedIndex = archivedItems.findIndex((entry) => entry.id === archivedId);
+  if (archivedIndex < 0) {
+    return false;
+  }
+  const archived = archivedItems[archivedIndex];
+  const slotId = toCleanText(archived.slotId) || archived.id;
+  const replacementIndex = liveItems.findIndex((entry) => {
+    return (toCleanText(entry.slotId) || entry.id) === slotId;
+  });
+  const revived = createRecord({
+    ...archived,
+    id: createRecordId(livePrefix),
+    slotId,
+    archivedAt: "",
+    originalIndex: null,
+    replacedById: "",
+  });
+  if (replacementIndex >= 0) {
+    liveItems.splice(replacementIndex, 1, revived);
+  } else {
+    const insertIndex =
+      typeof archived.originalIndex === "number" && archived.originalIndex >= 0
+        ? Math.min(archived.originalIndex, liveItems.length)
+        : liveItems.length;
+    liveItems.splice(insertIndex, 0, revived);
+  }
+  archivedItems.splice(archivedIndex, 1);
+  return true;
+}
+
+function renderArchivedLineSubsection(ownerRecord, archivedItems, options = {}) {
+  if (!Array.isArray(archivedItems) || !archivedItems.length) {
+    return null;
+  }
+  const details = document.createElement("details");
+  details.className = "script-archived-block";
+  details.open = Boolean(ownerRecord.archivedExpanded);
+  const summary = document.createElement("summary");
+  summary.className = "script-archived-toggle";
+  summary.textContent = `Archived (${archivedItems.length})`;
+  details.appendChild(summary);
+
+  const stack = document.createElement("div");
+  stack.className = "script-archived-stack";
+  archivedItems.forEach((item) => {
+    const row = document.createElement("article");
+    row.className = "script-sentence-card script-archived-row";
+    row.dataset.scriptType = item.type;
+
+    const summaryShell = document.createElement("div");
+    summaryShell.className = "script-sentence-summary-shell";
+
+    const summaryBtn = document.createElement("div");
+    summaryBtn.className = "script-sentence-summary";
+    const summaryContent = document.createElement("span");
+    summaryContent.className = "script-sentence-summary-content script-sentence-summary-content-inline";
+    const summaryText = document.createElement("span");
+    summaryText.className = "script-sentence-line";
+    summaryText.textContent = toCleanText(item.text) || options.placeholder || "Archived line";
+    const summaryTypeBadge = document.createElement("span");
+    summaryTypeBadge.className = "script-sentence-type-badge";
+    const typeMeta = getScriptSentenceTypeMeta(item.type);
+    summaryTypeBadge.hidden = !typeMeta.id;
+    summaryTypeBadge.textContent = typeMeta.id ? typeMeta.label : "";
+    summaryContent.append(summaryText, summaryTypeBadge);
+    summaryBtn.appendChild(summaryContent);
+
+    const actions = document.createElement("div");
+    actions.className = "script-row-actions";
+    const reviveBtn = document.createElement("button");
+    reviveBtn.type = "button";
+    reviveBtn.className = "btn btn-muted btn-compact";
+    reviveBtn.textContent = "Revive";
+    reviveBtn.addEventListener("click", () => {
+      if (options.onRevive) {
+        options.onRevive(item.id);
+      }
+    });
+    actions.append(reviveBtn);
+
+    summaryShell.append(summaryBtn, actions);
+    row.appendChild(summaryShell);
+    stack.appendChild(row);
+  });
+  details.appendChild(stack);
+  details.addEventListener("toggle", () => {
+    ownerRecord.archivedExpanded = details.open;
+    void saveSnapshot({ immediate: true });
+  });
+  return details;
 }
 
 function createSectionKindSelect(section) {
@@ -3516,7 +3725,7 @@ function updateSectionCardStats(card, section) {
     durationEl.textContent = `Runtime ${formatDurationShort(getSectionDurationSeconds(section))}`;
   }
   if (countEl) {
-    countEl.textContent = `${normalizeScriptSectionItemCollection(section.items, section.kind).length} lines`;
+    countEl.textContent = `${getLiveScriptSectionItemCollection(section.items).length} lines`;
   }
   if (kindEl) {
     kindEl.textContent = getScriptSectionKindLabel(section.kind);
@@ -3628,7 +3837,9 @@ function createSectionCardBase(section) {
   });
   kindSelect.addEventListener("change", () => {
     section.kind = normalizeScriptSectionKind(kindSelect.value);
-    section.items = normalizeScriptSectionItemCollection(section.items, section.kind);
+    section.items = Array.isArray(section.items)
+      ? section.items.map((item, index) => createScriptSectionItemRecord(item, index))
+      : createDefaultScriptSectionItems(section.kind);
     updateBoardsAndBrief();
   });
   updateSectionCardStats(card, section);
@@ -3710,13 +3921,11 @@ function buildScriptItemRow(section, item) {
   durationLabel.className = "script-row-duration";
   durationLabel.textContent = formatDurationShort(estimateReadSeconds(item.text));
 
-  const removeBtn = buildIconButton("icon-btn icon-btn-danger", "Remove bullet", DELETE_ICON);
-  removeBtn.addEventListener("click", () => {
-    const sourceIndex = section.items.findIndex((entry) => entry.id === item.id);
-    if (sourceIndex < 0) {
+  const archiveBtn = buildIconButton("icon-btn", "Archive line", ARCHIVE_ICON);
+  archiveBtn.addEventListener("click", () => {
+    if (!archiveLineVariant(section.items, section.archivedItems, item.id, createScriptSectionItemRecord, "item")) {
       return;
     }
-    section.items.splice(sourceIndex, 1);
     updateBoardsAndBrief();
   });
 
@@ -3724,7 +3933,7 @@ function buildScriptItemRow(section, item) {
   summaryShell.className = "script-sentence-summary-shell";
   const actions = document.createElement("div");
   actions.className = "script-row-actions";
-  actions.append(durationLabel, removeBtn);
+  actions.append(durationLabel, archiveBtn);
   summaryShell.append(dragBtn, summaryBtn, actions);
 
   const editor = document.createElement("div");
@@ -3736,7 +3945,22 @@ function buildScriptItemRow(section, item) {
   textInput.className = "script-section-line-input";
   textInput.placeholder = "Section line";
   textInput.value = item.text;
-  editor.append(typeSelect, textInput);
+  const editorActions = document.createElement("div");
+  editorActions.className = "script-sentence-editor-actions";
+  const duplicateArchiveBtn = document.createElement("button");
+  duplicateArchiveBtn.type = "button";
+  duplicateArchiveBtn.className = "btn btn-muted btn-compact";
+  duplicateArchiveBtn.textContent = "Duplicate + Archive";
+  duplicateArchiveBtn.addEventListener("click", () => {
+    if (
+      !duplicateAndArchiveLineVariant(section.items, section.archivedItems, item.id, createScriptSectionItemRecord, "item")
+    ) {
+      return;
+    }
+    updateBoardsAndBrief();
+  });
+  editorActions.append(duplicateArchiveBtn);
+  editor.append(typeSelect, textInput, editorActions);
   row.append(summaryShell, editor);
 
   row.dataset.scriptType = item.type;
@@ -3817,13 +4041,29 @@ function renderSkeletonBoard() {
 
   state.scriptSections.forEach((section) => {
     ensureSectionItems(section);
+    section.archivedItems = normalizeArchivedScriptSectionItemCollection(section.archivedItems);
     const { card, body } = createSectionCardBase(section);
     const stack = document.createElement("div");
     stack.className = "script-intro-sentence-stack";
+    if (!section.items.length) {
+      stack.innerHTML = '<p class="pipeline-empty">No live lines in this section.</p>';
+    }
     section.items.forEach((item) => {
       stack.appendChild(buildScriptItemRow(section, item));
     });
     body.appendChild(stack);
+    const archivedSubsection = renderArchivedLineSubsection(section, section.archivedItems, {
+      placeholder: "Archived line",
+      onRevive: (archivedId) => {
+        if (!reviveArchivedLineVariant(section.items, section.archivedItems, archivedId, createScriptSectionItemRecord, "item")) {
+          return;
+        }
+        updateBoardsAndBrief();
+      },
+    });
+    if (archivedSubsection) {
+      body.appendChild(archivedSubsection);
+    }
     refs.skeletonBoard.appendChild(card);
   });
 }
@@ -3851,9 +4091,14 @@ function renderDraftBoard() {
       flashButtonText(copyAllBtn, "Empty", 900);
       return;
     }
-    const didCopy = await copyTextToClipboard(compiled);
-    flashButtonText(copyAllBtn, didCopy ? "Copied" : "Copy Failed", 1100);
-  });
+      const didCopy = await copyTextToClipboard(compiled);
+      flashButtonText(copyAllBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+    });
+  const copyJsonBtn = document.createElement("button");
+  copyJsonBtn.type = "button";
+  copyJsonBtn.className = "btn btn-muted";
+  copyJsonBtn.textContent = "Copy Script JSON";
+  copyJsonBtn.addEventListener("click", () => copyScriptMetadataJson(copyJsonBtn));
   const draftLayout = normalizeScriptDraftLayout(state.scriptDraftLayout);
   state.scriptDraftLayout = draftLayout;
   const colorEnabled = normalizeScriptDraftColorEnabled(state.scriptDraftShowColors);
@@ -3884,6 +4129,7 @@ function renderDraftBoard() {
     updateBoardsAndBrief();
   });
   controls.appendChild(colorBtn);
+  controls.prepend(copyJsonBtn);
   controls.prepend(copyAllBtn);
   refs.draftBoard.appendChild(controls);
 
@@ -3912,7 +4158,7 @@ function renderDraftBoard() {
       id: section.id,
       title: section.title,
       kind: section.kind,
-      lines: normalizeScriptSectionItemCollection(section.items, section.kind).map((item) => ({
+      lines: getLiveScriptSectionItemCollection(section.items).map((item) => ({
         id: item.id,
         text: item.text,
         type: item.type,
@@ -4121,6 +4367,9 @@ function renderBriefExportControls() {
   }
   if (refs.openScriptExportBtn) {
     refs.openScriptExportBtn.disabled = !hasActiveBrief || !hasScript;
+  }
+  if (refs.copyScriptMetadataJsonBtn) {
+    refs.copyScriptMetadataJsonBtn.disabled = !hasActiveBrief || !hasScript;
   }
   if (refs.exportAnalyticsBriefBtn) {
     refs.exportAnalyticsBriefBtn.disabled = true;
@@ -6050,6 +6299,254 @@ function buildBriefViewModel(values) {
   };
 }
 
+function buildScriptTypePayload(type) {
+  const meta = getScriptSentenceTypeMeta(type);
+  return meta.id
+    ? {
+        id: meta.id,
+        label: meta.label,
+        color: meta.color,
+      }
+    : null;
+}
+
+function buildPackagingFieldPayload(values = {}) {
+  return {
+    project_name: toCleanText(values.projectName),
+    idea_focus: toCleanText(values.ideaFocus),
+    core_pain: toCleanText(values.painPoint),
+    desired_outcome: toCleanText(values.desiredOutcome),
+    expected_views: toCleanText(values.expectedViews),
+    intrigue_trigger: toCleanText(values.intrigueTrigger),
+    curiosity_gap: toCleanText(values.curiosityGap),
+    uniqueness_edge: toCleanText(values.uniquenessEdge),
+    treatment: toCleanText(values.treatment),
+    treatment_references: toCleanText(values.treatmentReferences),
+    logline: toCleanText(values.logline),
+    idea_source: toCleanText(values.ideaSource),
+    target_traffic_source: toCleanText(values.targetTrafficSource),
+    upload_strategy: toCleanText(values.uploadStrategy),
+    ccn_core: toCleanText(values.ccnCore),
+    ccn_casual: toCleanText(values.ccnCasual),
+    ccn_new: toCleanText(values.ccnNew),
+    thumbnail_direction_notes: toCleanText(values.thumbnailDirectionNotes),
+  };
+}
+
+function buildScriptLinePayload(line = {}) {
+  const text = toCleanText(line.text);
+  return {
+    text,
+    type: buildScriptTypePayload(line.type),
+    word_count: countWords(text),
+    read_time_seconds: estimateReadSeconds(text),
+    read_time_readable: formatDurationShort(estimateReadSeconds(text)),
+  };
+}
+
+function buildScriptIntroPayload(intro = {}, index = 0) {
+  const normalized = normalizeScriptSentenceCollection(intro.sentences).filter((line) => {
+    return toCleanText(line.text) || normalizeScriptSentenceType(line.type);
+  });
+  const archived = normalizeArchivedScriptSentenceCollection(intro.archivedSentences).filter((line) => {
+    return toCleanText(line.text) || normalizeScriptSentenceType(line.type);
+  });
+  return {
+    label: toCleanText(intro.label) || getDefaultIntroLabel(index),
+    word_count: getIntroWordCount(intro),
+    read_time_seconds: getIntroDurationSeconds(intro),
+    read_time_readable: formatDurationShort(getIntroDurationSeconds(intro)),
+    lines: normalized.map((line) => buildScriptLinePayload(line)),
+    archived_lines: archived.map((line) => buildScriptLinePayload(line)),
+    plain_text: getIntroPlainText(intro),
+  };
+}
+
+function buildScriptSectionPayload(section = {}) {
+  const normalizedItems = getLiveScriptSectionItemCollection(section.items).filter((line) => {
+    return toCleanText(line.text) || normalizeScriptSentenceType(line.type);
+  });
+  const archivedItems = normalizeArchivedScriptSectionItemCollection(section.archivedItems).filter((line) => {
+    return toCleanText(line.text) || normalizeScriptSentenceType(line.type);
+  });
+  return {
+    title: toCleanText(section.title),
+    kind: {
+      id: normalizeScriptSectionKind(section.kind),
+      label: getScriptSectionKindLabel(section.kind),
+    },
+    word_count: normalizedItems.reduce((sum, line) => sum + countWords(line.text), 0),
+    read_time_seconds: getSectionDurationSeconds(section),
+    read_time_readable: formatDurationShort(getSectionDurationSeconds(section)),
+    lines: normalizedItems.map((line) => buildScriptLinePayload(line)),
+    archived_lines: archivedItems.map((line) => buildScriptLinePayload(line)),
+    plain_text: getSectionPlainText(section),
+  };
+}
+
+function buildScriptMetadataPayload(values = getFieldValues()) {
+  const activeBrief = getActiveBriefRecord();
+  const activeChannel = getActiveChannelRecord();
+  const model = buildBriefViewModel(values);
+  const staticViewerStrategy = {
+    channel: VIEWER_STRATEGY.channel,
+    niche: VIEWER_STRATEGY.niche,
+    age_range: VIEWER_STRATEGY.ageRange,
+    main_countries: VIEWER_STRATEGY.mainCountries,
+    similar_channels: VIEWER_STRATEGY.similarChannels,
+    tam_estimate: VIEWER_STRATEGY.tamEstimate,
+    current_baseline: VIEWER_STRATEGY.tamCurrent,
+    tam_share: VIEWER_STRATEGY.tamShare,
+    audience: VIEWER_STRATEGY.audience,
+    avatar: VIEWER_STRATEGY.avatar,
+    cluster: VIEWER_STRATEGY.cluster,
+    personality: VIEWER_STRATEGY.personality,
+    humor_style: VIEWER_STRATEGY.humorStyle,
+    anti_patterns: VIEWER_STRATEGY.antiPatterns,
+    unlock_need: VIEWER_STRATEGY.unlockNeed,
+    rabbit_holes: VIEWER_STRATEGY.rabbitHoles,
+    primary_pain: VIEWER_STRATEGY.primaryPain,
+    desired_outcome: VIEWER_STRATEGY.desiredOutcome,
+    strategy_page: VIEWER_STRATEGY.strategyPage,
+  };
+  const briefSourceSnapshot = activeBrief?.sourceSnapshot
+    ? {
+        video_idea: toCleanText(activeBrief.sourceSnapshot.videoIdea),
+        notes: toCleanText(activeBrief.sourceSnapshot.notes),
+        title_thumb_link: toCleanText(activeBrief.sourceSnapshot.titleThumbLink),
+        hypothesis_metric: toCleanText(activeBrief.sourceSnapshot.hypothesisMetric),
+        insights: toCleanText(activeBrief.sourceSnapshot.insights),
+      }
+    : null;
+  const intros = normalizeIntroVariants(state.scriptIntros).map((intro, index) => buildScriptIntroPayload(intro, index));
+  const sections = normalizeScriptSectionCollection(state.scriptSections).map((section) => buildScriptSectionPayload(section));
+  const compiledIntrosText = intros.map((intro) => `${intro.label}\n${intro.plain_text}`.trim()).filter(Boolean).join("\n\n");
+  const compiledSectionsText = sections.map((section) => `${section.title}\n${section.plain_text}`.trim()).filter(Boolean).join("\n\n");
+  const topTitle = model.topTitle
+    ? {
+        text: toCleanText(model.topTitle.text),
+        notes: toCleanText(model.topTitle.notes),
+        scores: model.topTitle.scores,
+        average_score: Number(averageScore(model.topTitle.scores).toFixed(2)),
+      }
+    : null;
+  const topThumbnailVariation = model.topThumb
+    ? {
+        title: toCleanText(model.topThumb.title),
+        creator: toCleanText(model.topThumb.creator),
+        meta: toCleanText(model.topThumb.meta),
+        notes: toCleanText(model.topThumb.notes),
+        scores: model.topThumb.scores,
+        average_score: Number(averageScore(model.topThumb.scores).toFixed(2)),
+      }
+    : null;
+  const topThumbnailText = state.thumbnailTexts[0]
+    ? {
+        text: toCleanText(state.thumbnailTexts[0].text),
+        notes: toCleanText(state.thumbnailTexts[0].notes),
+        scores: state.thumbnailTexts[0].scores,
+        average_score: Number(averageScore(state.thumbnailTexts[0].scores).toFixed(2)),
+      }
+    : null;
+
+  const payload = {
+    purpose: "llm_script_punch_up_context",
+    brief: {
+      channel_name: toCleanText(activeChannel?.name) || VIEWER_STRATEGY.channel,
+      brief_status: activeBrief ? formatBriefStatus(activeBrief.status) : "Draft",
+      source_type: activeBrief ? formatBriefSourceType(activeBrief.sourceType) : "Manual brief",
+    },
+    viewer_strategy: {
+      static_snapshot: staticViewerStrategy,
+      brief_source_snapshot: briefSourceSnapshot,
+    },
+    packaging: {
+      fields: buildPackagingFieldPayload(values),
+      top_recommendations: {
+        title: topTitle,
+        thumbnail_variation: topThumbnailVariation,
+        thumbnail_text: topThumbnailText,
+      },
+      title_variations: normalizeTitleCollection(state.titles).map((item) => ({
+        text: toCleanText(item.text),
+        notes: toCleanText(item.notes),
+        scores: item.scores,
+        average_score: Number(averageScore(item.scores).toFixed(2)),
+        is_strong: Boolean(item.isStrong),
+      })),
+      thumbnail_text_variations: normalizeThumbnailTextCollection(state.thumbnailTexts).map((item) => ({
+        text: toCleanText(item.text),
+        notes: toCleanText(item.notes),
+        scores: item.scores,
+        average_score: Number(averageScore(item.scores).toFixed(2)),
+        is_strong: Boolean(item.isStrong),
+      })),
+      thumbnail_variations: normalizeThumbnailCollection(state.thumbnails).map((item) => ({
+        title: toCleanText(item.title),
+        creator: toCleanText(item.creator),
+        meta: toCleanText(item.meta),
+        notes: toCleanText(item.notes),
+        scores: item.scores,
+        average_score: Number(averageScore(item.scores).toFixed(2)),
+      })),
+      inspiration_assets: normalizeComparableCollection(state.comparables).map((item) => ({
+        title: toCleanText(item.title),
+        author: toCleanText(item.author),
+        source_url: toCleanText(item.sourceUrl),
+        video_id: toCleanText(item.videoId),
+        notes: toCleanText(item.notes),
+      })),
+    },
+    intros: {
+      target_seconds: INTRO_TARGET_SECONDS,
+      variants: intros,
+    },
+    sections: {
+      ordered: sections,
+    },
+    compiled_script: {
+      total_word_count:
+        intros.reduce((sum, intro) => sum + intro.word_count, 0) + sections.reduce((sum, section) => sum + section.word_count, 0),
+      total_read_time_seconds: getScriptTotalDurationSeconds(),
+      total_read_time_readable: formatDurationShort(getScriptTotalDurationSeconds()),
+      intros_text: compiledIntrosText,
+      sections_text: compiledSectionsText,
+      full_text: [compiledIntrosText, compiledSectionsText].filter(Boolean).join("\n\n"),
+    },
+  };
+  return pruneEmptyForLlm(payload);
+}
+
+function pruneEmptyForLlm(value) {
+  if (Array.isArray(value)) {
+    const cleaned = value
+      .map((item) => pruneEmptyForLlm(item))
+      .filter((item) => item !== null && item !== undefined && !(typeof item === "string" && !item.trim()));
+    return cleaned.length ? cleaned : undefined;
+  }
+  if (value && typeof value === "object") {
+    const cleanedEntries = Object.entries(value)
+      .map(([key, entry]) => [key, pruneEmptyForLlm(entry)])
+      .filter(([, entry]) => {
+        if (entry === null || entry === undefined) {
+          return false;
+        }
+        if (typeof entry === "string" && !entry.trim()) {
+          return false;
+        }
+        if (Array.isArray(entry) && !entry.length) {
+          return false;
+        }
+        if (entry && typeof entry === "object" && !Array.isArray(entry) && !Object.keys(entry).length) {
+          return false;
+        }
+        return true;
+      });
+    return cleanedEntries.length ? Object.fromEntries(cleanedEntries) : undefined;
+  }
+  return value;
+}
+
 function renderIntroCardsHtml(intros, options = {}) {
   if (!intros.length) {
     return "<p>No intros drafted yet.</p>";
@@ -6089,7 +6586,7 @@ function renderStructureSectionsHtml(sections, options = {}) {
 
   return visibleSections
     .map((section) => {
-      const items = normalizeScriptSectionItemCollection(section.items, section.kind).filter((item) => {
+      const items = getLiveScriptSectionItemCollection(section.items).filter((item) => {
         return toCleanText(item.text) || toCleanText(item.type);
       });
       const linesHtml = items.length
@@ -6478,6 +6975,43 @@ function buildScriptExportHtml(values) {
     </main>
   </body>
 </html>`;
+}
+
+function sanitizeFilenamePart(value, fallback = "script") {
+  const cleaned = toCleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || fallback;
+}
+
+function buildScriptExportText(values = getFieldValues()) {
+  const model = buildBriefViewModel(values);
+  const blocks = [];
+  const projectName = toCleanText(values.projectName) || "YouTube Script Export";
+  blocks.push(projectName);
+
+  normalizeIntroVariants(model.intros).forEach((intro, index) => {
+    const lines = normalizeScriptSentenceCollection(intro.sentences)
+      .map((item) => toCleanText(item.text))
+      .filter(Boolean);
+    blocks.push((toCleanText(intro.label) || getDefaultIntroLabel(index)).toUpperCase());
+    if (lines.length) {
+      blocks.push(lines.join("\n"));
+    }
+  });
+
+  normalizeScriptSectionCollection(model.sections).forEach((section) => {
+    const lines = getLiveScriptSectionItemCollection(section.items)
+      .map((item) => toCleanText(item.text))
+      .filter(Boolean);
+    blocks.push((toCleanText(section.title) || "UNTITLED SECTION").toUpperCase());
+    if (lines.length) {
+      blocks.push(lines.join("\n"));
+    }
+  });
+
+  return blocks.filter(Boolean).join("\n\n").trim();
 }
 
 function updateScoreboard(values) {
@@ -7332,6 +7866,23 @@ async function copyTextToClipboard(text) {
   }
 }
 
+async function copyScriptMetadataJson(triggerBtn = refs.copyScriptMetadataJsonBtn) {
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief || !state.scriptSections.length) {
+    if (triggerBtn) {
+      flashButtonText(triggerBtn, "No Script", 1000);
+    }
+    return false;
+  }
+
+  const payload = buildScriptMetadataPayload(getFieldValues());
+  const didCopy = await copyTextToClipboard(JSON.stringify(payload, null, 2));
+  if (triggerBtn) {
+    flashButtonText(triggerBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+  }
+  return didCopy;
+}
+
 function openPdfPrintWindow(html, triggerButton) {
   const printWindow = window.open("", "_blank");
   if (!printWindow) {
@@ -7388,6 +7939,18 @@ function openDocumentWindow(html, triggerButton, successText = "Opened") {
   flashButtonText(triggerButton, successText, 900);
 }
 
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function exportPackagingBriefPdf() {
   if (!getActiveBriefRecord()) {
     flashButtonText(refs.exportPackagingBriefPdfBtn, "No Brief", 1000);
@@ -7413,9 +7976,15 @@ function openScriptExport() {
     flashButtonText(refs.openScriptExportBtn, "No Brief", 1000);
     return;
   }
-
-  const html = buildScriptExportHtml(getFieldValues());
-  openDocumentWindow(html, refs.openScriptExportBtn, "Opened Script");
+  const text = buildScriptExportText(getFieldValues());
+  if (!text) {
+    flashButtonText(refs.openScriptExportBtn, "No Script", 1000);
+    return;
+  }
+  const values = getFieldValues();
+  const filename = `${sanitizeFilenamePart(values.projectName, "youtube-script")}-script.txt`;
+  downloadTextFile(filename, text);
+  flashButtonText(refs.openScriptExportBtn, "Downloaded", 1000);
 }
 
 function readFileAsDataUrl(file) {
@@ -8013,6 +8582,9 @@ function bindEvents() {
   }
   if (refs.openScriptExportBtn) {
     refs.openScriptExportBtn.addEventListener("click", openScriptExport);
+  }
+  if (refs.copyScriptMetadataJsonBtn) {
+    refs.copyScriptMetadataJsonBtn.addEventListener("click", () => copyScriptMetadataJson(refs.copyScriptMetadataJsonBtn));
   }
   if (refs.exportAnalyticsBriefBtn) {
     refs.exportAnalyticsBriefBtn.addEventListener("click", () => {

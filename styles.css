@@ -1617,12 +1617,24 @@ select:focus {
   padding: 0 0.75rem 0.75rem;
 }
 
+.script-sentence-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
 .script-sentence-editor[hidden] {
   display: none;
 }
 
 .script-sentence-input {
   font-size: 1rem;
+}
+
+.btn-compact {
+  padding: 0.34rem 0.6rem;
+  font-size: 0.78rem;
 }
 
 .script-row {
@@ -1698,6 +1710,44 @@ select:focus {
 }
 
 .script-readonly-summary:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.script-archived-block {
+  border-top: 1px solid rgba(8, 33, 52, 0.08);
+  padding-top: 0.2rem;
+}
+
+.script-archived-toggle {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  padding: 0.25rem 0.1rem;
+}
+
+.script-archived-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.script-archived-stack {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+}
+
+.script-archived-row .script-sentence-summary {
+  cursor: default;
+  opacity: 0.92;
+}
+
+.script-archived-row .script-sentence-summary-shell {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.script-archived-row .script-sentence-summary:hover {
   transform: none;
   box-shadow: none;
 }
@@ -1781,6 +1831,15 @@ select:focus {
 .is-script-draft.is-plain-script .script-readonly-line .script-sentence-summary {
   background: transparent;
   color: #111111;
+}
+
+.is-script-draft:not(.is-plain-script) .script-readonly-line .script-sentence-summary {
+  padding: 0.18in 0.2in 0.16in;
+  border-radius: 22px;
+}
+
+.is-script-draft:not(.is-plain-script) .script-readonly-line .script-sentence-summary-content-inline {
+  padding-inline: 0.1in 0.06in;
 }
 
 .is-script-draft.is-plain-script .script-sentence-summary-content-inline {
