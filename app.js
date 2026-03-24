@@ -317,6 +317,8 @@ const state = {
 };
 
 let localDbPromise = null;
+let remotePersistenceAvailable = null;
+let remotePersistenceCheckPromise = null;
 let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
 let queuedSnapshotPayload = null;
@@ -615,6 +617,139 @@ async function deleteFromLocalDb(key) {
   await txDone;
 }
 
+async function checkRemotePersistence(force = false) {
+  if (!force && typeof remotePersistenceAvailable === "boolean") {
+    return remotePersistenceAvailable;
+  }
+  if (!force && remotePersistenceCheckPromise) {
+    return remotePersistenceCheckPromise;
+  }
+
+  remotePersistenceCheckPromise = fetch("/api/health", {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+    },
+  })
+    .then((response) => {
+      remotePersistenceAvailable = response.ok;
+      return remotePersistenceAvailable;
+    })
+    .catch(() => {
+      remotePersistenceAvailable = false;
+      return false;
+    })
+    .finally(() => {
+      remotePersistenceCheckPromise = null;
+    });
+
+  return remotePersistenceCheckPromise;
+}
+
+async function readFromRemoteStorage(key) {
+  const response = await fetch(`/api/storage/${encodeURIComponent(key)}`, {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load ${key} from backend storage.`);
+  }
+  const payload = await response.json();
+  return payload?.value ?? null;
+}
+
+async function writeToRemoteStorage(key, value) {
+  const response = await fetch(`/api/storage/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      value,
+      source: "frontend",
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to save ${key} to backend storage.`);
+  }
+}
+
+async function deleteFromRemoteStorage(key) {
+  const response = await fetch(`/api/storage/${encodeURIComponent(key)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`Failed to clear ${key} from backend storage.`);
+  }
+}
+
+async function readPersistedValue(key) {
+  const useRemote = await checkRemotePersistence();
+  if (useRemote) {
+    try {
+      return await readFromRemoteStorage(key);
+    } catch (error) {
+      console.warn(`Could not load ${key} from backend storage. Falling back to browser storage.`, error);
+      remotePersistenceAvailable = false;
+    }
+  }
+  return readFromLocalDb(key);
+}
+
+async function writePersistedValue(key, value) {
+  const useRemote = await checkRemotePersistence();
+  if (useRemote) {
+    try {
+      await writeToRemoteStorage(key, value);
+      return;
+    } catch (error) {
+      console.warn(`Could not save ${key} to backend storage. Falling back to browser storage.`, error);
+      remotePersistenceAvailable = false;
+    }
+  }
+  await writeToLocalDb(key, value);
+}
+
+async function deletePersistedValue(key) {
+  const useRemote = await checkRemotePersistence();
+  if (useRemote) {
+    try {
+      await deleteFromRemoteStorage(key);
+    } catch (error) {
+      console.warn(`Could not clear ${key} from backend storage. Falling back to browser storage.`, error);
+      remotePersistenceAvailable = false;
+    }
+  }
+  await deleteFromLocalDb(key);
+}
+
+async function loadBrowserLocalDbSnapshot() {
+  const [workspacePayload, ideasPayload, briefsPayload] = await Promise.all([
+    readFromLocalDb(LOCAL_DB_KEY_WORKSPACE),
+    readFromLocalDb(LOCAL_DB_KEY_IDEAS),
+    readFromLocalDb(LOCAL_DB_KEY_BRIEFS),
+  ]);
+
+  if (!workspacePayload && !ideasPayload && !briefsPayload) {
+    return false;
+  }
+
+  applyWorkspacePayload(workspacePayload || {});
+  applyIdeasPayload(ideasPayload || {});
+  applyBriefsPayload(briefsPayload || {});
+  ensureChannelModel();
+  ensureChannelWorkspace(state.activeChannelId);
+  ensureChannelBriefState(state.activeChannelId);
+  applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
+  applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
+  return true;
+}
+
 function enqueuePersistTask(task) {
   persistQueue = persistQueue
     .then(async () => {
@@ -663,46 +798,46 @@ async function flushPersistQueue() {
 
 const workspaceRepo = {
   async load() {
-    return readFromLocalDb(LOCAL_DB_KEY_WORKSPACE);
+    return readPersistedValue(LOCAL_DB_KEY_WORKSPACE);
   },
   async save(payload) {
-    return writeToLocalDb(LOCAL_DB_KEY_WORKSPACE, payload);
+    return writePersistedValue(LOCAL_DB_KEY_WORKSPACE, payload);
   },
   async clear() {
-    return deleteFromLocalDb(LOCAL_DB_KEY_WORKSPACE);
+    return deletePersistedValue(LOCAL_DB_KEY_WORKSPACE);
   },
 };
 
 const ideasRepo = {
   async load() {
-    return readFromLocalDb(LOCAL_DB_KEY_IDEAS);
+    return readPersistedValue(LOCAL_DB_KEY_IDEAS);
   },
   async save(payload) {
-    return writeToLocalDb(LOCAL_DB_KEY_IDEAS, payload);
+    return writePersistedValue(LOCAL_DB_KEY_IDEAS, payload);
   },
   async clear() {
-    return deleteFromLocalDb(LOCAL_DB_KEY_IDEAS);
+    return deletePersistedValue(LOCAL_DB_KEY_IDEAS);
   },
 };
 
 const briefsRepo = {
   async loadCurrent() {
-    return readFromLocalDb(LOCAL_DB_KEY_BRIEFS);
+    return readPersistedValue(LOCAL_DB_KEY_BRIEFS);
   },
   async saveCurrent(payload) {
-    return writeToLocalDb(LOCAL_DB_KEY_BRIEFS, payload);
+    return writePersistedValue(LOCAL_DB_KEY_BRIEFS, payload);
   },
   async clear() {
-    return deleteFromLocalDb(LOCAL_DB_KEY_BRIEFS);
+    return deletePersistedValue(LOCAL_DB_KEY_BRIEFS);
   },
 };
 
 const viewerRepo = {
   async load() {
-    return readFromLocalDb(LOCAL_DB_KEY_VIEWER);
+    return readPersistedValue(LOCAL_DB_KEY_VIEWER);
   },
   async save(payload) {
-    return writeToLocalDb(LOCAL_DB_KEY_VIEWER, payload);
+    return writePersistedValue(LOCAL_DB_KEY_VIEWER, payload);
   },
 };
 
@@ -7614,6 +7749,7 @@ function loadLegacySnapshotFromLocalStorage() {
 
 async function loadSnapshot() {
   try {
+    const useRemote = await checkRemotePersistence();
     const [workspacePayload, ideasPayload, briefsPayload] = await Promise.all([
       workspaceRepo.load(),
       ideasRepo.load(),
@@ -7631,13 +7767,21 @@ async function loadSnapshot() {
       applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
       return true;
     }
+
+    if (useRemote) {
+      const loadedLocalDbSnapshot = await loadBrowserLocalDbSnapshot();
+      if (loadedLocalDbSnapshot) {
+        await saveSnapshot({ immediate: true });
+        return true;
+      }
+    }
   } catch (error) {
     console.warn("Could not load local database snapshot.", error);
   }
 
   const loadedLegacy = loadLegacySnapshotFromLocalStorage();
   if (loadedLegacy) {
-    void saveSnapshot({ immediate: true });
+    await saveSnapshot({ immediate: true });
     return true;
   }
 
@@ -7672,6 +7816,10 @@ function clearPersistedWorkspace() {
     await workspaceRepo.clear();
     await ideasRepo.clear();
     await briefsRepo.clear();
+    await deleteFromLocalDb(LOCAL_DB_KEY_WORKSPACE);
+    await deleteFromLocalDb(LOCAL_DB_KEY_IDEAS);
+    await deleteFromLocalDb(LOCAL_DB_KEY_BRIEFS);
+    await deleteFromLocalDb(LOCAL_DB_KEY_VIEWER);
   });
 }
 
