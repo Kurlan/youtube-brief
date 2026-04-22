@@ -19,9 +19,10 @@ const INSPIRATION_NOTES_SAVE_DEBOUNCE_MS = 700;
 const MAX_LOCAL_STORAGE_SNAPSHOT_CHARS = 900000;
 const DEFAULT_OWNER_NAME = "Steve Huynh";
 const IDEA_STATUSES = ["none", "red"];
-const BRIEF_STATUSES = ["draft", "review", "in-production"];
+const BRIEF_STATUSES = ["draft", "review", "in-production", "published"];
 const STEP3_LIFECYCLE_STATUSES = ["brainstorming", "in-brief"];
 const STEP1_SORT_OPTIONS = ["newest", "oldest", "title-asc", "title-desc", "name-asc"];
+const BRIEF_LIST_SORT_OPTIONS = ["newest", "oldest", "tag-asc"];
 const PAGE_OPTIONS = ["home", "channel", "briefs", "brief-detail"];
 const CHANNEL_VIEW_OPTIONS = ["dashboard", "ideation"];
 const DEFAULT_CHANNEL_ID = "channel-alifeengineered";
@@ -30,9 +31,10 @@ const CHANNEL_MEMBER_ROLES = ["owner", "editor", "viewer"];
 const CHANNEL_ACCESS_ROLES = ["owner"];
 const CHANNEL_ASSET_KINDS = ["avatar", "banner", "thumbnail", "other"];
 const BRIEF_WORKSPACE_OPTIONS = ["packaging", "scripting"];
-const SCRIPTING_VIEW_OPTIONS = ["intros", "sections", "draft"];
+const SCRIPTING_VIEW_OPTIONS = ["draft", "export"];
 const SCRIPT_SECTION_KINDS = ["intro", "content", "sponsor", "outro"];
 const SCRIPT_DRAFT_LAYOUT_OPTIONS = ["plain", "script"];
+const INSPIRATION_LIBRARY_SOURCES = ["brief-inspiration", "brief-thumbnails"];
 const SCRIPT_SENTENCE_TYPES = [
   { id: "", label: "Untyped", color: "#5d6770" },
   { id: "intrigue", label: "Creating Intrigue", color: "#9c6a1a" },
@@ -164,8 +166,11 @@ const refs = {
   channelCardTemplate: document.getElementById("channelCardTemplate"),
   briefListBoard: document.getElementById("briefListBoard"),
   briefListItemTemplate: document.getElementById("briefListItemTemplate"),
+  briefListSort: document.getElementById("briefListSort"),
+  briefTagFilter: document.getElementById("briefTagFilter"),
   backToBriefListBtn: document.getElementById("backToBriefListBtn"),
   briefStatusSelect: document.getElementById("briefStatus"),
+  briefTagsInput: document.getElementById("briefTagsInput"),
   showPackagingWorkspaceBtn: document.getElementById("showPackagingWorkspaceBtn"),
   showScriptingWorkspaceBtn: document.getElementById("showScriptingWorkspaceBtn"),
   briefWorkspaceHint: document.getElementById("briefWorkspaceHint"),
@@ -222,17 +227,31 @@ const refs = {
   comparableUrl: document.getElementById("comparableUrl"),
   addComparableBtn: document.getElementById("addComparableBtn"),
   addInspirationUploadBtn: document.getElementById("addInspirationUploadBtn"),
+  toggleInspirationLibraryBtn: document.getElementById("toggleInspirationLibraryBtn"),
   inspirationFileInput: document.getElementById("inspirationFileInput"),
   inspirationPasteZone: document.getElementById("inspirationPasteZone"),
-  showIntroLabBtn: document.getElementById("showIntroLabBtn"),
-  showSkeletonWorkspaceBtn: document.getElementById("showSkeletonWorkspaceBtn"),
-  showDraftWorkspaceBtn: document.getElementById("showDraftWorkspaceBtn"),
+  inspirationLibraryPopover: document.getElementById("inspirationLibraryPopover"),
+  inspirationLibrarySourceTabs: document.querySelectorAll("[data-inspiration-source]"),
+  inspirationLibraryStatus: document.getElementById("inspirationLibraryStatus"),
+  inspirationLibraryList: document.getElementById("inspirationLibraryList"),
+  showScriptDraftBtn: document.getElementById("showScriptDraftBtn"),
+  showScriptExportBtn: document.getElementById("showScriptExportBtn"),
   scriptingProgressHint: document.getElementById("scriptingProgressHint"),
   introSentenceLegend: document.getElementById("introSentenceLegend"),
-  introsBoard: document.getElementById("introsBoard"),
-  addSkeletonSectionBtn: document.getElementById("addSkeletonSectionBtn"),
+  addScriptSectionBtn: document.getElementById("addScriptSectionBtn"),
+  addIntroVariantBtn: document.getElementById("addIntroVariantBtn"),
   skeletonBoard: document.getElementById("skeletonBoard"),
   draftBoard: document.getElementById("draftBoard"),
+  scriptSectionModal: document.getElementById("scriptSectionModal"),
+  scriptSectionModalTitle: document.getElementById("scriptSectionModalTitle"),
+  scriptSectionModalHint: document.getElementById("scriptSectionModalHint"),
+  scriptSectionModalHelperHint: document.getElementById("scriptSectionModalHelperHint"),
+  scriptSectionModalTextarea: document.getElementById("scriptSectionModalTextarea"),
+  scriptSectionModalCancelBtn: document.getElementById("scriptSectionModalCancelBtn"),
+  scriptSectionModalConfirmBtn: document.getElementById("scriptSectionModalConfirmBtn"),
+  copyScriptSectionModalPromptBtn: document.getElementById("copyScriptSectionModalPromptBtn"),
+  copyScriptSectionModalPlainBtn: document.getElementById("copyScriptSectionModalPlainBtn"),
+  copyScriptSectionModalJsonBtn: document.getElementById("copyScriptSectionModalJsonBtn"),
   packagingPreviewLight: document.getElementById("packagingPreviewLight"),
   packagingPreviewDark: document.getElementById("packagingPreviewDark"),
   titleTemplate: document.getElementById("titleRowTemplate"),
@@ -300,7 +319,7 @@ const state = {
   thumbnailTexts: [],
   thumbnails: [],
   comparables: [],
-  scriptIntros: [],
+  scriptIntroGroup: null,
   scriptSections: [],
   scriptDraftLayout: "plain",
   scriptDraftShowColors: true,
@@ -308,17 +327,28 @@ const state = {
   briefDetailExpanded: false,
   viewerSnapshotExpanded: false,
   briefWorkspaceView: "packaging",
-  scriptingView: "intros",
+  scriptingView: "draft",
   titleExpandedId: "",
   thumbnailTextExpandedId: "",
   thumbnailExpandedId: "",
   comparableExpandedId: "",
   briefListExpandedId: "",
+  briefListSort: "newest",
+  briefTagFilter: "all",
+  inspirationLibraryOpen: false,
+  inspirationLibrarySource: "brief-inspiration",
+};
+
+const scriptSectionModalState = {
+  mode: "bulk-add",
+  sectionId: "",
 };
 
 let localDbPromise = null;
 let remotePersistenceAvailable = null;
 let remotePersistenceCheckPromise = null;
+const remoteStorageUpdatedAt = {};
+let remotePersistenceLastCheckedAt = 0;
 let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
 let queuedSnapshotPayload = null;
@@ -618,7 +648,7 @@ async function deleteFromLocalDb(key) {
 }
 
 async function checkRemotePersistence(force = false) {
-  if (!force && typeof remotePersistenceAvailable === "boolean") {
+  if (!force && remotePersistenceAvailable === true) {
     return remotePersistenceAvailable;
   }
   if (!force && remotePersistenceCheckPromise) {
@@ -634,10 +664,12 @@ async function checkRemotePersistence(force = false) {
   })
     .then((response) => {
       remotePersistenceAvailable = response.ok;
+      remotePersistenceLastCheckedAt = Date.now();
       return remotePersistenceAvailable;
     })
     .catch(() => {
       remotePersistenceAvailable = false;
+      remotePersistenceLastCheckedAt = Date.now();
       return false;
     })
     .finally(() => {
@@ -659,6 +691,7 @@ async function readFromRemoteStorage(key) {
     throw new Error(`Failed to load ${key} from backend storage.`);
   }
   const payload = await response.json();
+  remoteStorageUpdatedAt[key] = payload?.updatedAt ?? null;
   return payload?.value ?? null;
 }
 
@@ -672,11 +705,23 @@ async function writeToRemoteStorage(key, value) {
     body: JSON.stringify({
       value,
       source: "frontend",
+      expectedUpdatedAt: Object.prototype.hasOwnProperty.call(remoteStorageUpdatedAt, key)
+        ? remoteStorageUpdatedAt[key]
+        : null,
     }),
   });
+  if (response.status === 409) {
+    const payload = await response.json().catch(() => ({}));
+    remoteStorageUpdatedAt[key] = payload?.updatedAt ?? null;
+    const conflictError = new Error(`Conflict while saving ${key} to backend storage.`);
+    conflictError.code = "REMOTE_CONFLICT";
+    throw conflictError;
+  }
   if (!response.ok) {
     throw new Error(`Failed to save ${key} to backend storage.`);
   }
+  const payload = await response.json().catch(() => ({}));
+  remoteStorageUpdatedAt[key] = payload?.updatedAt ?? Date.now();
 }
 
 async function deleteFromRemoteStorage(key) {
@@ -691,12 +736,7 @@ async function deleteFromRemoteStorage(key) {
 async function readPersistedValue(key) {
   const useRemote = await checkRemotePersistence();
   if (useRemote) {
-    try {
-      return await readFromRemoteStorage(key);
-    } catch (error) {
-      console.warn(`Could not load ${key} from backend storage. Falling back to browser storage.`, error);
-      remotePersistenceAvailable = false;
-    }
+    return readFromRemoteStorage(key);
   }
   return readFromLocalDb(key);
 }
@@ -704,13 +744,8 @@ async function readPersistedValue(key) {
 async function writePersistedValue(key, value) {
   const useRemote = await checkRemotePersistence();
   if (useRemote) {
-    try {
-      await writeToRemoteStorage(key, value);
-      return;
-    } catch (error) {
-      console.warn(`Could not save ${key} to backend storage. Falling back to browser storage.`, error);
-      remotePersistenceAvailable = false;
-    }
+    await writeToRemoteStorage(key, value);
+    return;
   }
   await writeToLocalDb(key, value);
 }
@@ -718,12 +753,7 @@ async function writePersistedValue(key, value) {
 async function deletePersistedValue(key) {
   const useRemote = await checkRemotePersistence();
   if (useRemote) {
-    try {
-      await deleteFromRemoteStorage(key);
-    } catch (error) {
-      console.warn(`Could not clear ${key} from backend storage. Falling back to browser storage.`, error);
-      remotePersistenceAvailable = false;
-    }
+    await deleteFromRemoteStorage(key);
   }
   await deleteFromLocalDb(key);
 }
@@ -750,6 +780,27 @@ async function loadBrowserLocalDbSnapshot() {
   return true;
 }
 
+async function clearBrowserLocalSnapshotCache() {
+  try {
+    await Promise.all([
+      deleteFromLocalDb(LOCAL_DB_KEY_WORKSPACE),
+      deleteFromLocalDb(LOCAL_DB_KEY_IDEAS),
+      deleteFromLocalDb(LOCAL_DB_KEY_BRIEFS),
+      deleteFromLocalDb(LOCAL_DB_KEY_VIEWER),
+    ]);
+  } catch (error) {
+    console.warn("Could not clear browser IndexedDB snapshot cache.", error);
+  }
+
+  try {
+    [STORAGE_KEY, ...LEGACY_STORAGE_KEYS].forEach((key) => {
+      localStorage.removeItem(key);
+    });
+  } catch (error) {
+    console.warn("Could not clear browser localStorage snapshot cache.", error);
+  }
+}
+
 function enqueuePersistTask(task) {
   persistQueue = persistQueue
     .then(async () => {
@@ -757,6 +808,16 @@ function enqueuePersistTask(task) {
       setSaveStatus("saved", Date.now());
     })
     .catch((error) => {
+      if (error && error.code === "REMOTE_CONFLICT") {
+        setSaveStatus("error");
+        console.warn("Remote snapshot conflict detected. Reloading latest backend state.", error);
+        void loadSnapshot().then((loadedSnapshot) => {
+          if (loadedSnapshot) {
+            updateBoardsAndBrief({ persist: false });
+          }
+        });
+        return;
+      }
       setSaveStatus("error");
       console.warn("Failed to persist snapshot to local database.", error);
     });
@@ -1126,6 +1187,14 @@ function normalizeComparableCollection(items) {
         title: toCleanText(item?.title),
         author: toCleanText(item?.author),
         notes: toCleanText(item?.notes),
+        sourceKind: toCleanText(item?.sourceKind),
+        sourceCollection: toCleanText(item?.sourceCollection),
+        sourceChannelId: toCleanText(item?.sourceChannelId),
+        sourceChannelName: toCleanText(item?.sourceChannelName),
+        sourceBriefId: toCleanText(item?.sourceBriefId),
+        sourceBriefTitle: toCleanText(item?.sourceBriefTitle),
+        sourceThumbnailId: toCleanText(item?.sourceThumbnailId),
+        sourceThumbnailTitle: toCleanText(item?.sourceThumbnailTitle),
         videoId,
         createdAt: normalizeTimestamp(item?.createdAt),
         updatedAt: normalizeTimestamp(item?.updatedAt || item?.createdAt),
@@ -1148,10 +1217,10 @@ function normalizeBriefWorkspaceView(value) {
 
 function normalizeScriptingView(value) {
   const normalized = toCleanText(value);
-  if (normalized === "skeleton") {
-    return "sections";
+  if (normalized === "intros" || normalized === "sections" || normalized === "skeleton") {
+    return "draft";
   }
-  return SCRIPTING_VIEW_OPTIONS.includes(normalized) ? normalized : "intros";
+  return SCRIPTING_VIEW_OPTIONS.includes(normalized) ? normalized : "draft";
 }
 
 function normalizeScriptDraftLayout(value) {
@@ -1240,30 +1309,8 @@ function getDefaultIntroLabel(index) {
   return `Intro ${index + 1}`;
 }
 
-function createIntroVariantRecord(seed = {}, index = 0) {
-  return {
-    id: toCleanText(seed.id) || createRecordId("intro"),
-    label: toCleanText(seed.label) || getDefaultIntroLabel(index),
-    angle: toCleanText(seed.angle),
-    notes: toCleanText(seed.notes),
-    shotNotes: toCleanText(seed.shotNotes),
-    postNotes: toCleanText(seed.postNotes),
-    isShot: Boolean(seed.isShot),
-    sentences: normalizeScriptSentenceCollection(seed.sentences),
-    archivedSentences: normalizeArchivedScriptSentenceCollection(seed.archivedSentences),
-    archivedExpanded: Boolean(seed.archivedExpanded),
-    createdAt: normalizeTimestamp(seed.createdAt),
-    updatedAt: normalizeTimestamp(seed.updatedAt || seed.createdAt),
-  };
-}
-
-function normalizeIntroVariants(items) {
-  const source = Array.isArray(items) ? items : [];
-  const intros = source.slice(0, 3).map((item, index) => createIntroVariantRecord(item, index));
-  while (intros.length < 3) {
-    intros.push(createIntroVariantRecord({}, intros.length));
-  }
-  return intros;
+function getDefaultIntroGroupTitle() {
+  return "Intro Variants";
 }
 
 function createDefaultScriptSectionSeed() {
@@ -1274,6 +1321,10 @@ function createDefaultScriptSectionSeed() {
     { title: "Part 3", kind: "content" },
     { title: "Outro", kind: "outro" },
   ];
+}
+
+function createDefaultIntroVariantSeed() {
+  return [{ title: "Intro 1" }, { title: "Intro 2" }, { title: "Intro 3" }];
 }
 
 function createScriptSectionItemRecord(seed = {}, index = 0, fallbackText = "") {
@@ -1294,11 +1345,6 @@ function createScriptSectionItemRecord(seed = {}, index = 0, fallbackText = "") 
 }
 
 function createDefaultScriptSectionItems(kind = "content") {
-  if (kind === "intro") {
-    return [getDefaultIntroLabel(0), getDefaultIntroLabel(1), getDefaultIntroLabel(2)].map((label, index) =>
-      createScriptSectionItemRecord({ text: label }, index, label),
-    );
-  }
   return [createScriptSectionItemRecord({ text: "" }, 0)];
 }
 
@@ -1361,10 +1407,135 @@ function normalizeScriptSectionCollection(items) {
   return createDefaultScriptSectionSeed().map((seed, index) => createScriptSectionRecord(seed, index, seed));
 }
 
-function normalizeBriefScript(seed = {}) {
+function createIntroVariantSectionRecord(seed = {}, index = 0) {
+  return createScriptSectionRecord(
+    {
+      ...seed,
+      title: toCleanText(seed.title || seed.label) || getDefaultIntroLabel(index),
+      kind: "intro",
+      items: seed.items || seed.sentences,
+      archivedItems: seed.archivedItems || seed.archivedSentences,
+      archivedExpanded: seed.archivedExpanded,
+    },
+    index,
+    { title: getDefaultIntroLabel(index), kind: "intro" },
+  );
+}
+
+function normalizeIntroVariantSectionCollection(items) {
+  const source = Array.isArray(items) ? items : [];
+  const intros = source
+    .map((item, index) => createIntroVariantSectionRecord(item, index))
+    .filter((section) => normalizeScriptSectionKind(section.kind) === "intro");
+  if (intros.length) {
+    return intros;
+  }
+  return createDefaultIntroVariantSeed().map((seed, index) => createIntroVariantSectionRecord(seed, index));
+}
+
+function createScriptIntroGroupRecord(seed = {}) {
   const source = seed && typeof seed === "object" ? seed : {};
   return {
-    intros: normalizeIntroVariants(source.intros),
+    id: toCleanText(source.id) || createRecordId("intro-group"),
+    title: toCleanText(source.title) || getDefaultIntroGroupTitle(),
+    variants: normalizeIntroVariantSectionCollection(source.variants),
+    createdAt: normalizeTimestamp(source.createdAt),
+    updatedAt: normalizeTimestamp(source.updatedAt || source.createdAt),
+  };
+}
+
+function createLegacyIntroGroupRecord(items) {
+  return createScriptIntroGroupRecord({
+    title: getDefaultIntroGroupTitle(),
+    variants: Array.isArray(items)
+      ? items.map((item, index) => {
+          const intro = item && typeof item === "object" ? item : {};
+          return {
+            id: toCleanText(intro.id) || createRecordId("intro"),
+            title: toCleanText(intro.label) || getDefaultIntroLabel(index),
+            kind: "intro",
+            items: normalizeScriptSentenceCollection(intro.sentences).map((line) => ({
+              ...line,
+              draftText: toCleanText(line.text),
+            })),
+            archivedItems: normalizeArchivedScriptSentenceCollection(intro.archivedSentences).map((line) => ({
+              ...line,
+              draftText: toCleanText(line.text),
+            })),
+            archivedExpanded: Boolean(intro.archivedExpanded),
+            createdAt: normalizeTimestamp(intro.createdAt),
+            updatedAt: normalizeTimestamp(intro.updatedAt || intro.createdAt),
+          };
+        })
+      : [],
+  });
+}
+
+function normalizeScriptIntroGroup(seed = {}) {
+  const source = seed && typeof seed === "object" ? seed : {};
+  if (source.introGroup && typeof source.introGroup === "object") {
+    return normalizeScriptIntroGroup({
+      ...source.introGroup,
+      intros: source.intros,
+    });
+  }
+  if (Array.isArray(source.variants)) {
+    const directGroup = createScriptIntroGroupRecord(source);
+    const legacyGroup = Array.isArray(source.intros) ? createLegacyIntroGroupRecord(source.intros) : null;
+    if (!hasMeaningfulIntroGroupContent(directGroup) && legacyGroup && hasMeaningfulIntroGroupContent(legacyGroup)) {
+      return legacyGroup;
+    }
+    return directGroup;
+  }
+  if (Array.isArray(source.intros)) {
+    return createLegacyIntroGroupRecord(source.intros);
+  }
+  return createScriptIntroGroupRecord({});
+}
+
+function normalizeBriefScript(seed = {}) {
+  const source = seed && typeof seed === "object" ? seed : {};
+  const introGroup = normalizeScriptIntroGroup({
+    ...(source.introGroup && typeof source.introGroup === "object" ? source.introGroup : {}),
+    intros: source.intros,
+  });
+  return {
+    introGroup,
+    intros: getIntroVariants(introGroup).map((variant, index) => ({
+      id: variant.id,
+      label: toCleanText(variant.title) || getDefaultIntroLabel(index),
+      title: toCleanText(variant.title) || getDefaultIntroLabel(index),
+      kind: "intro",
+      sentences: getLiveScriptSectionItemCollection(variant.items).map((item) => ({
+        id: item.id,
+        slotId: item.slotId,
+        type: item.type,
+        text: toCleanText(item.text),
+        draftText: toCleanText(item.draftText),
+        notes: "",
+        archivedAt: item.archivedAt,
+        originalIndex: item.originalIndex,
+        replacedById: item.replacedById,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      })),
+      archivedSentences: normalizeArchivedScriptSectionItemCollection(variant.archivedItems).map((item) => ({
+        id: item.id,
+        slotId: item.slotId,
+        type: item.type,
+        text: toCleanText(item.text),
+        draftText: toCleanText(item.draftText),
+        notes: "",
+        archivedAt: item.archivedAt,
+        originalIndex: item.originalIndex,
+        replacedById: item.replacedById,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      })),
+      archivedExpanded: Boolean(variant.archivedExpanded),
+      createdAt: variant.createdAt,
+      updatedAt: variant.updatedAt,
+    })),
     sections: normalizeScriptSectionCollection(source.sections),
   };
 }
@@ -1407,6 +1578,9 @@ function formatBriefStatus(value) {
   if (normalized === "in-production") {
     return "In production";
   }
+  if (normalized === "published") {
+    return "Published";
+  }
   return "Draft";
 }
 
@@ -1435,6 +1609,7 @@ function createBriefRecord(seed = {}) {
     version: Number(seed.version) > 0 ? Number(seed.version) : 1,
     createdAt,
     updatedAt: normalizeTimestamp(seed.updatedAt || createdAt),
+    tags: normalizeBriefTags(seed.tags),
     values,
     titles: normalizeTitleCollection(seed.titles),
     thumbnailTexts: normalizeThumbnailTextCollection(seed.thumbnailTexts),
@@ -1507,6 +1682,15 @@ function normalizeStep1View(view = {}) {
 
 function normalizeShowDiscarded(value) {
   return value !== false;
+}
+
+function normalizeBriefListSort(value) {
+  return BRIEF_LIST_SORT_OPTIONS.includes(value) ? value : "newest";
+}
+
+function normalizeBriefTagFilter(value) {
+  const normalized = toCleanText(value);
+  return normalized || "all";
 }
 
 function normalizePageView(value) {
@@ -2459,7 +2643,10 @@ function withBriefDefaultValues(values = {}) {
 }
 
 function buildActiveChannelWorkspace() {
+  const channelId = toCleanText(state.activeChannelId);
+  const base = normalizeChannelWorkspace(state.channelWorkspaces[channelId] || createEmptyChannelWorkspace());
   return normalizeChannelWorkspace({
+    ...base,
     ideationStepView: state.ideationStepView,
     showDiscarded: state.showDiscarded,
     step1View: state.step1View,
@@ -2496,18 +2683,17 @@ function buildActiveChannelBriefState(values = getFieldValues()) {
     }
 
     hasActiveBrief = true;
+    const persistedScript = getPersistableScriptState(brief.script);
     return createBriefRecord({
       ...brief,
       channelId,
+      tags: brief.tags,
       values: normalizeBriefValues(values),
       titles: state.titles,
       thumbnailTexts: state.thumbnailTexts,
       thumbnails: state.thumbnails,
       comparables: state.comparables,
-      script: {
-        intros: state.scriptIntros,
-        sections: state.scriptSections,
-      },
+      script: persistedScript,
       latestBriefHtml: state.latestBriefHtml,
       updatedAt: Date.now(),
     });
@@ -2532,13 +2718,17 @@ function applyActiveChannelBriefState(briefState = {}) {
     state.thumbnailTexts = [];
     state.thumbnails = [];
     state.comparables = [];
-    state.scriptIntros = normalizeIntroVariants([]);
+    state.scriptIntroGroup = normalizeScriptIntroGroup({});
     state.scriptSections = normalizeScriptSectionCollection([]);
     state.latestBriefHtml = "";
+    state.inspirationLibraryOpen = false;
     state.titleExpandedId = "";
     state.thumbnailTextExpandedId = "";
     state.thumbnailExpandedId = "";
     state.comparableExpandedId = "";
+    if (refs.briefTagsInput) {
+      refs.briefTagsInput.value = "";
+    }
     return;
   }
 
@@ -2559,13 +2749,17 @@ function applyActiveChannelBriefState(briefState = {}) {
     state.thumbnailTexts = [];
     state.thumbnails = [];
     state.comparables = [];
-    state.scriptIntros = normalizeIntroVariants([]);
+    state.scriptIntroGroup = normalizeScriptIntroGroup({});
     state.scriptSections = normalizeScriptSectionCollection([]);
     state.latestBriefHtml = "";
+    state.inspirationLibraryOpen = false;
     state.titleExpandedId = "";
     state.thumbnailTextExpandedId = "";
     state.thumbnailExpandedId = "";
     state.comparableExpandedId = "";
+    if (refs.briefTagsInput) {
+      refs.briefTagsInput.value = "";
+    }
     return;
   }
 
@@ -2575,9 +2769,13 @@ function applyActiveChannelBriefState(briefState = {}) {
   state.thumbnails = normalizeThumbnailCollection(activeBrief.thumbnails);
   syncProjectNameFromTopTitle();
   state.comparables = normalizeComparableCollection(activeBrief.comparables);
-  state.scriptIntros = normalizeIntroVariants(activeBrief.script?.intros);
+  state.scriptIntroGroup = normalizeScriptIntroGroup(activeBrief.script);
   state.scriptSections = normalizeScriptSectionCollection(activeBrief.script?.sections);
   state.latestBriefHtml = toCleanText(activeBrief.latestBriefHtml);
+  state.inspirationLibraryOpen = false;
+  if (refs.briefTagsInput) {
+    refs.briefTagsInput.value = formatBriefTags(activeBrief.tags);
+  }
   state.titleExpandedId = "";
   state.thumbnailTextExpandedId = "";
   state.thumbnailExpandedId = "";
@@ -2908,6 +3106,7 @@ function setActiveBrief(briefId, shouldPersist = true) {
   briefState.activeBriefId = targetBriefId;
   state.briefsByChannel[channelId] = briefState;
   state.activeBriefId = targetBriefId;
+  state.briefWorkspaceView = "packaging";
   applyActiveChannelBriefState(briefState);
 
   if (shouldPersist) {
@@ -2962,6 +3161,54 @@ function updateActiveBriefStatus(statusValue) {
   return true;
 }
 
+function updateActiveBriefTags(tagsValue) {
+  const channelId = toCleanText(state.activeChannelId);
+  if (!channelId) {
+    return false;
+  }
+
+  cacheActiveChannelBriefState();
+  const briefState = normalizeChannelBriefState(state.briefsByChannel[channelId], channelId);
+  const activeBriefId = toCleanText(state.activeBriefId) || briefState.activeBriefId;
+  if (!activeBriefId) {
+    return false;
+  }
+
+  const nextTags = normalizeBriefTags(tagsValue);
+  let changed = false;
+  const nextBriefs = briefState.briefs.map((brief) => {
+    if (brief.id !== activeBriefId) {
+      return brief;
+    }
+    if (formatBriefTags(brief.tags) === formatBriefTags(nextTags)) {
+      return brief;
+    }
+
+    changed = true;
+    return createBriefRecord({
+      ...brief,
+      tags: nextTags,
+      updatedAt: Date.now(),
+    });
+  });
+
+  if (!changed) {
+    return false;
+  }
+
+  const nextState = normalizeChannelBriefState(
+    {
+      activeBriefId,
+      briefs: nextBriefs,
+    },
+    channelId,
+  );
+  state.briefsByChannel[channelId] = nextState;
+  state.activeBriefId = activeBriefId;
+  applyActiveChannelBriefState(nextState);
+  return true;
+}
+
 function createManualBrief() {
   const channel = getActiveChannelRecord();
   if (!channel) {
@@ -2991,6 +3238,7 @@ function createManualBrief() {
   );
   state.briefsByChannel[channelId] = nextState;
   state.activeBriefId = brief.id;
+  state.briefWorkspaceView = "packaging";
   applyActiveChannelBriefState(nextState);
   return brief;
 }
@@ -3056,6 +3304,7 @@ function promoteStep3IdeaToBrief(step3Idea, button) {
 
   state.briefsByChannel[channelId] = nextState;
   state.activeBriefId = brief.id;
+  state.briefWorkspaceView = "packaging";
   step3Idea.lifecycleStatus = "in-brief";
   step3Idea.promotedBriefId = brief.id;
   step3Idea.promotedAt = Date.now();
@@ -3121,21 +3370,6 @@ function formatDurationShort(totalSeconds) {
   return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
 }
 
-function getIntroDurationSeconds(intro = {}) {
-  return normalizeScriptSentenceCollection(intro.sentences).reduce((sum, item) => sum + estimateReadSeconds(item.text), 0);
-}
-
-function getIntroWordCount(intro = {}) {
-  return normalizeScriptSentenceCollection(intro.sentences).reduce((sum, item) => sum + countWords(item.text), 0);
-}
-
-function getIntroPlainText(intro = {}) {
-  return normalizeScriptSentenceCollection(intro.sentences)
-    .map((item) => toCleanText(item.text))
-    .filter(Boolean)
-    .join("\n");
-}
-
 function getSectionPlainText(section = {}) {
   return getLiveScriptSectionItemCollection(section.items)
     .map((item) => toCleanText(item.text))
@@ -3143,16 +3377,107 @@ function getSectionPlainText(section = {}) {
     .join("\n");
 }
 
+function getIntroVariants(group = state.scriptIntroGroup) {
+  return normalizeIntroVariantSectionCollection(group?.variants);
+}
+
+function getIntroVariantDurationSeconds(section = {}) {
+  return getSectionDurationSeconds(section);
+}
+
+function getIntroVariantWordCount(section = {}) {
+  return getLiveScriptSectionItemCollection(section.items).reduce((sum, item) => sum + countWords(item.text), 0);
+}
+
+function getIntroVariantPlainText(section = {}) {
+  return getSectionPlainText(section);
+}
+
+function normalizeIntroVariants(items) {
+  return normalizeIntroVariantSectionCollection(items);
+}
+
+function getIntroDurationSeconds(intro = {}) {
+  return getIntroVariantDurationSeconds(intro);
+}
+
+function getIntroWordCount(intro = {}) {
+  return getIntroVariantWordCount(intro);
+}
+
+function getIntroPlainText(intro = {}) {
+  return getIntroVariantPlainText(intro);
+}
+
+function getIntroGroupPlainText(group = state.scriptIntroGroup) {
+  return getIntroVariants(group)
+    .map((section) => {
+      const body = getIntroVariantPlainText(section);
+      if (!body) {
+        return "";
+      }
+      return `${toCleanText(section.title) || "UNTITLED INTRO"}\n${body}`;
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function getAllScriptSectionsForExport() {
+  return [
+    ...getIntroVariants(state.scriptIntroGroup).map((section) => ({ ...section, kind: "intro" })),
+    ...normalizeScriptSectionCollection(state.scriptSections),
+  ];
+}
+
+function hasMeaningfulScriptLineContent(items = []) {
+  return getLiveScriptSectionItemCollection(items).some((item) => {
+    return Boolean(toCleanText(item.text) || normalizeScriptSentenceType(item.type));
+  });
+}
+
+function hasMeaningfulArchivedScriptLineContent(items = []) {
+  return normalizeArchivedScriptSectionItemCollection(items).some((item) => {
+    return Boolean(toCleanText(item.text) || normalizeScriptSentenceType(item.type));
+  });
+}
+
+function hasMeaningfulIntroGroupContent(group = {}) {
+  return getIntroVariants(group).some((section) => {
+    return hasMeaningfulScriptLineContent(section.items) || hasMeaningfulArchivedScriptLineContent(section.archivedItems);
+  });
+}
+
+function hasMeaningfulSectionCollectionContent(sections = []) {
+  return normalizeScriptSectionCollection(sections).some((section) => {
+    return hasMeaningfulScriptLineContent(section.items) || hasMeaningfulArchivedScriptLineContent(section.archivedItems);
+  });
+}
+
+function getPersistableScriptState(existingScript = null) {
+  const currentIntroGroup = normalizeScriptIntroGroup(state.scriptIntroGroup);
+  const existingIntroGroup = normalizeScriptIntroGroup(existingScript?.introGroup || existingScript);
+  const introGroup =
+    hasMeaningfulIntroGroupContent(currentIntroGroup) || !hasMeaningfulIntroGroupContent(existingIntroGroup)
+      ? currentIntroGroup
+      : existingIntroGroup;
+
+  const currentSections = normalizeScriptSectionCollection(state.scriptSections);
+  const existingSections = normalizeScriptSectionCollection(existingScript?.sections);
+  const sections =
+    hasMeaningfulSectionCollectionContent(currentSections) || !hasMeaningfulSectionCollectionContent(existingSections)
+      ? currentSections
+      : existingSections;
+
+  return {
+    introGroup,
+    intros: getIntroVariants(introGroup),
+    sections,
+  };
+}
+
 function getCompiledScriptText() {
   const blocks = [];
-  normalizeIntroVariants(state.scriptIntros).forEach((intro, index) => {
-    const body = getIntroPlainText(intro);
-    if (!body) {
-      return;
-    }
-    blocks.push(`${intro.label || getDefaultIntroLabel(index)}\n${body}`);
-  });
-  normalizeScriptSectionCollection(state.scriptSections).forEach((section) => {
+  getAllScriptSectionsForExport().forEach((section) => {
     const body = getSectionPlainText(section);
     if (!body) {
       return;
@@ -3171,30 +3496,30 @@ function getSectionDraftedItemCount(section = {}) {
 }
 
 function getTotalScriptItemCount() {
-  return normalizeIntroVariants(state.scriptIntros).length + state.scriptSections.reduce((sum, section) => {
+  return getIntroVariants(state.scriptIntroGroup).length + state.scriptSections.reduce((sum, section) => {
     return sum + getLiveScriptSectionItemCollection(section.items).length;
   }, 0);
 }
 
 function getDraftedScriptItemCount() {
-  return state.scriptSections.reduce((sum, section) => sum + getSectionDraftedItemCount(section), 0);
+  return (
+    getIntroVariants(state.scriptIntroGroup).reduce((sum, section) => sum + getSectionDraftedItemCount(section), 0) +
+    state.scriptSections.reduce((sum, section) => sum + getSectionDraftedItemCount(section), 0)
+  );
 }
 
 function getSkeletonSectionCount() {
-  return state.scriptSections.length;
+  return getIntroVariants(state.scriptIntroGroup).length + state.scriptSections.length;
 }
 
 function getSkeletonBulletCount() {
-  return state.scriptSections.reduce((sum, section) => {
+  return getAllScriptSectionsForExport().reduce((sum, section) => {
     return sum + getLiveScriptSectionItemCollection(section.items).length;
   }, 0);
 }
 
 function getScriptTotalDurationSeconds() {
-  return (
-    state.scriptIntros.reduce((sum, intro) => sum + getIntroDurationSeconds(intro), 0) +
-    state.scriptSections.reduce((sum, section) => sum + getSectionDurationSeconds(section), 0)
-  );
+  return getAllScriptSectionsForExport().reduce((sum, section) => sum + getSectionDurationSeconds(section), 0);
 }
 
 function renderBriefWorkspaceState() {
@@ -3215,7 +3540,7 @@ function renderBriefWorkspaceState() {
     refs.briefWorkspaceHint.textContent =
       briefWorkspaceView === "packaging"
         ? "Develop the packaging, preview the top combinations, and export designer/editor handoff docs."
-        : "Draft 3 intros, build sections, and review the compiled script in the draft tab.";
+        : "Write the script in Draft, then review the compiled output in Export.";
   }
 }
 
@@ -3227,19 +3552,15 @@ function renderScriptingWorkspaceState() {
     panel.hidden = panel.dataset.scriptingView !== scriptingView;
   });
 
-  if (refs.showIntroLabBtn) {
-    refs.showIntroLabBtn.classList.toggle("is-active", scriptingView === "intros");
+  if (refs.showScriptDraftBtn) {
+    refs.showScriptDraftBtn.classList.toggle("is-active", scriptingView === "draft");
   }
-  if (refs.showSkeletonWorkspaceBtn) {
-    refs.showSkeletonWorkspaceBtn.classList.toggle("is-active", scriptingView === "sections");
-  }
-  if (refs.showDraftWorkspaceBtn) {
-    refs.showDraftWorkspaceBtn.classList.toggle("is-active", scriptingView === "draft");
+  if (refs.showScriptExportBtn) {
+    refs.showScriptExportBtn.classList.toggle("is-active", scriptingView === "export");
   }
   if (refs.scriptingProgressHint) {
-    refs.scriptingProgressHint.textContent = `Flow: Intros ${normalizeIntroVariants(state.scriptIntros).filter((intro) =>
-      toCleanText(getIntroPlainText(intro)),
-    ).length}/3 drafted · Sections ${getSkeletonSectionCount()} sections / ${getSkeletonBulletCount()} lines · Draft compiled runtime ${formatDurationShort(
+    const draftedIntroCount = getIntroVariants(state.scriptIntroGroup).filter((section) => toCleanText(getSectionPlainText(section))).length;
+    refs.scriptingProgressHint.textContent = `Draft: ${draftedIntroCount} intro variants · ${state.scriptSections.length} sections · ${getSkeletonBulletCount()} total lines · compiled runtime ${formatDurationShort(
       getScriptTotalDurationSeconds(),
     )}.`;
   }
@@ -4076,7 +4397,7 @@ function buildScriptItemRow(section, item) {
   editor.hidden = true;
 
   const textInput = document.createElement("textarea");
-  textInput.rows = 1;
+  textInput.rows = 5;
   textInput.className = "script-section-line-input";
   textInput.placeholder = "Section line";
   textInput.value = item.text;
@@ -4116,7 +4437,9 @@ function buildScriptItemRow(section, item) {
   const openEditor = () => {
     editor.hidden = false;
     row.classList.add("is-editing");
+    autosizeTextarea(textInput);
     textInput.focus();
+    textInput.setSelectionRange(textInput.value.length, textInput.value.length);
   };
 
   summaryBtn.addEventListener("click", () => {
@@ -4370,6 +4693,893 @@ function renderDraftBoard() {
   });
 }
 
+function findScriptSectionContext(sectionId = "") {
+  const normalizedId = toCleanText(sectionId);
+  if (!normalizedId) {
+    return null;
+  }
+  const introIndex = getIntroVariants(state.scriptIntroGroup).findIndex((section) => section.id === normalizedId);
+  if (introIndex >= 0) {
+    return {
+      section: state.scriptIntroGroup.variants[introIndex],
+      scope: "intro",
+      index: introIndex,
+      group: state.scriptIntroGroup,
+    };
+  }
+  const sectionIndex = state.scriptSections.findIndex((section) => section.id === normalizedId);
+  if (sectionIndex >= 0) {
+    return {
+      section: state.scriptSections[sectionIndex],
+      scope: "section",
+      index: sectionIndex,
+      group: null,
+    };
+  }
+  return null;
+}
+
+function buildSectionImportExportPayload(section = {}) {
+  return {
+    title: toCleanText(section.title),
+    kind: normalizeScriptSectionKind(section.kind),
+    lines: getLiveScriptSectionItemCollection(section.items)
+      .filter((line) => toCleanText(line.text) || normalizeScriptSentenceType(line.type))
+      .map((line) => ({
+        type: normalizeScriptSentenceType(line.type) || "untyped",
+        text: toCleanText(line.text),
+      })),
+  };
+}
+
+function buildIntroGroupImportExportPayload(group = state.scriptIntroGroup) {
+  return {
+    title: toCleanText(group?.title) || getDefaultIntroGroupTitle(),
+    variants: getIntroVariants(group).map((section) => buildSectionImportExportPayload(section)),
+  };
+}
+
+function normalizeImportTypeId(raw = "") {
+  const normalized = toCleanText(raw)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!normalized || normalized === "untyped") {
+    return "";
+  }
+  if (SCRIPT_SENTENCE_TYPES.some((item) => item.id === normalized)) {
+    return normalized;
+  }
+  const matched = SCRIPT_SENTENCE_TYPES.find((item) => {
+    const labelKey = item.label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return labelKey === normalized;
+  });
+  return matched?.id || "";
+}
+
+function isRecognizedImportTypeToken(raw = "") {
+  const normalized = toCleanText(raw)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!normalized) {
+    return false;
+  }
+  if (normalized === "untyped") {
+    return true;
+  }
+  return Boolean(normalizeImportTypeId(raw));
+}
+
+function normalizeImportSectionKind(raw = "", fallback = "content") {
+  const normalized = toCleanText(raw)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!normalized) {
+    return normalizeScriptSectionKind(fallback);
+  }
+  if (SCRIPT_SECTION_KINDS.includes(normalized)) {
+    return normalized;
+  }
+  const matched = SCRIPT_SECTION_KINDS.find((kind) => {
+    const labelKey = getScriptSectionKindLabel(kind)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return labelKey === normalized;
+  });
+  return matched || normalizeScriptSectionKind(fallback);
+}
+
+function parseImportedSectionLines(lines = []) {
+  const source = Array.isArray(lines) ? lines : [];
+  return source
+    .map((line, index) => {
+      if (typeof line === "string") {
+        return createScriptSectionItemRecord({
+          type: "",
+          text: toCleanText(line),
+        }, index);
+      }
+      if (!line || typeof line !== "object") {
+        return null;
+      }
+      const rawType = typeof line.type === "string" ? line.type : toCleanText(line.type?.id || line.type?.label);
+      return createScriptSectionItemRecord({
+        type: normalizeImportTypeId(rawType),
+        text: toCleanText(line.text),
+      }, index);
+    })
+    .filter((line) => line && toCleanText(line.text));
+}
+
+function parseSectionImportJson(rawText = "", fallbackKind = "content") {
+  const trimmed = toCleanText(rawText);
+  if (!trimmed || !/^[{\[]/.test(trimmed)) {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (_error) {
+    return null;
+  }
+
+  const section = Array.isArray(parsed)
+    ? { title: "", kind: fallbackKind, lines: parsed }
+    : parsed && typeof parsed === "object"
+      ? parsed
+      : null;
+  if (!section) {
+    return null;
+  }
+
+  const kindSource =
+    typeof section.kind === "string"
+      ? section.kind
+      : toCleanText(section.kind?.id || section.kind?.label);
+
+  return {
+    title: toCleanText(section.title),
+    kind: normalizeImportSectionKind(kindSource, fallbackKind),
+    lines: parseImportedSectionLines(section.lines),
+  };
+}
+
+function parseSectionImportText(text = "", fallbackKind = "content") {
+  const jsonPayload = parseSectionImportJson(text, fallbackKind);
+  if (jsonPayload) {
+    return jsonPayload;
+  }
+
+  const lines = String(text).replace(/\r/g, "").split("\n");
+  let title = "";
+  let kind = "";
+  let bodyStarted = false;
+  const parsedLines = [];
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      if (bodyStarted) {
+        return;
+      }
+      return;
+    }
+
+    const headerMatch = !bodyStarted ? line.match(/^(title|kind)\s*:\s*(.+)$/i) : null;
+    if (headerMatch) {
+      const key = headerMatch[1].toLowerCase();
+      const value = toCleanText(headerMatch[2]);
+      if (key === "title") {
+        title = value;
+      } else if (key === "kind") {
+        kind = value;
+      }
+      return;
+    }
+
+    bodyStarted = true;
+    const typedMatch = line.match(/^([a-z0-9 _-]+)\s*:\s*(.+)$/i);
+    if (typedMatch && isRecognizedImportTypeToken(typedMatch[1])) {
+      parsedLines.push(
+        createScriptSectionItemRecord({
+          type: normalizeImportTypeId(typedMatch[1]),
+          text: toCleanText(typedMatch[2]),
+        }),
+      );
+      return;
+    }
+    parsedLines.push(
+      createScriptSectionItemRecord({
+        type: "",
+        text: line,
+      }),
+    );
+  });
+
+  return {
+    title: toCleanText(title),
+    kind: normalizeImportSectionKind(kind, fallbackKind),
+    lines: parsedLines.filter((line) => toCleanText(line.text)),
+  };
+}
+
+function getScriptSectionImportTemplate(section = {}, mode = "bulk-add") {
+  const normalizedKind = normalizeScriptSectionKind(section?.kind);
+  const title = toCleanText(section?.title) || "Section Title";
+  if (mode === "import-section") {
+    return [
+      `title: ${title}`,
+      `kind: ${normalizedKind}`,
+      "",
+      "intrigue: Open with the strongest claim or tension.",
+      "supporting-facts: Add concrete detail or evidence.",
+      "credibility: Explain why this point is trustworthy.",
+      "untyped: Use an untyped line when no tag is useful.",
+    ].join("\n");
+  }
+  return [
+    "Open with the strongest claim or tension.",
+    "Add concrete detail or evidence.",
+    "Explain why this point is trustworthy.",
+    "Use one line per row. Leave tags out in bulk add mode.",
+  ].join("\n");
+}
+
+function getScriptSectionImportJsonExample(section = {}) {
+  return JSON.stringify(
+    {
+      title: toCleanText(section?.title) || "Section Title",
+      kind: normalizeScriptSectionKind(section?.kind),
+      lines: [
+        { type: "intrigue", text: "Open with the strongest claim or tension." },
+        { type: "supporting-facts", text: "Add concrete detail or evidence." },
+        { type: "credibility", text: "Explain why this point is trustworthy." },
+        { type: "untyped", text: "Use an untyped line when no tag is useful." },
+      ],
+    },
+    null,
+    2,
+  );
+}
+
+function getScriptSectionTypePromptGuide() {
+  return [
+    "Type ids and when to use them:",
+    "- intrigue: create curiosity, tension, or a strong hook",
+    "- question: ask the viewer a direct or implied question",
+    "- quote-proof: cite a source, quote, or outside proof point",
+    "- credibility: establish authority, experience, or trust",
+    "- core-takeaway: deliver the main promised point or conclusion",
+    "- supporting-fact: add detail, evidence, context, or examples",
+    "- transition: bridge from one idea or section to the next",
+    "- pain-point: name the core frustration or problem",
+    "- cost-of-problem: show what the problem is costing the viewer",
+    "- introducing-solution: introduce the solution or new approach",
+    "- how-it-works: explain the mechanism or process",
+    "- showing-result: describe the outcome, payoff, or transformation",
+    "- removing-objections: answer doubts, resistance, or counterarguments",
+    "- actionable-instruction: give a concrete step or instruction",
+    "- tease: hint at what is coming later",
+    "- untyped: use only when none of the tags fit cleanly",
+  ].join("\n");
+}
+
+function getScriptSectionLlmPrompt(section = {}, mode = "bulk-add") {
+  const title = toCleanText(section?.title) || "Section Title";
+  const kind = normalizeScriptSectionKind(section?.kind);
+  const typeGuide = getScriptSectionTypePromptGuide();
+
+  if (mode === "import-section") {
+    return [
+      `Format the script for the section "${title}" (${kind}) so it can be pasted into the import tool.`,
+      "Return either:",
+      "1. plain text with optional title/kind headers and one line per row using `type-id: text`, or",
+      "2. JSON with { title, kind, lines: [{ type, text }] }.",
+      "Tag every line with the best fitting type id when possible.",
+      typeGuide,
+      "If no tag fits, use `untyped` or omit the type in plain text.",
+      "Do not add markdown fences, bullets, numbering, or commentary.",
+    ].join("\n");
+  }
+
+  return [
+    `Format script lines for the section "${title}" (${kind}) so they can be pasted into the bulk add tool.`,
+    "Return one script line per row.",
+    "Bulk add ignores tags, but use this tagging rubric while drafting so the same lines can also be reformatted for import if needed.",
+    typeGuide,
+    "Do not add numbering, bullets, labels, markdown fences, or commentary.",
+    "Keep each row as plain script text only.",
+  ].join("\n");
+}
+
+function syncScriptSectionModalHelper(section = {}, mode = "bulk-add") {
+  if (refs.scriptSectionModalHelperHint) {
+    refs.scriptSectionModalHelperHint.textContent =
+      mode === "import-section"
+        ? "Copy a prompt, plain-text example, or JSON example to give your LLM the exact section import shape."
+        : "Copy a prompt or example to get one script line per row for bulk add. JSON is available as a reference for import mode.";
+  }
+
+  if (refs.copyScriptSectionModalPromptBtn) {
+    refs.copyScriptSectionModalPromptBtn.dataset.copyPayload = getScriptSectionLlmPrompt(section, mode);
+  }
+  if (refs.copyScriptSectionModalPlainBtn) {
+    refs.copyScriptSectionModalPlainBtn.dataset.copyPayload = getScriptSectionImportTemplate(section, mode);
+  }
+  if (refs.copyScriptSectionModalJsonBtn) {
+    refs.copyScriptSectionModalJsonBtn.dataset.copyPayload = getScriptSectionImportJsonExample(section);
+  }
+}
+
+function openScriptSectionModal(section, mode = "bulk-add") {
+  if (!refs.scriptSectionModal || !refs.scriptSectionModalTextarea) {
+    return;
+  }
+  scriptSectionModalState.mode = mode;
+  scriptSectionModalState.sectionId = toCleanText(section?.id);
+  refs.scriptSectionModal.hidden = false;
+  refs.scriptSectionModal.dataset.mode = mode;
+  refs.scriptSectionModalTitle.textContent = mode === "import-section" ? "Import Section" : "Bulk Add Lines";
+  refs.scriptSectionModalHint.textContent =
+    mode === "import-section"
+      ? "Paste plain text or JSON. Plain text supports optional title/kind headers, then one line per row using type-id: text."
+      : "Paste one script line per row. Blank lines are ignored. New lines start as untyped.";
+  refs.scriptSectionModalTextarea.value =
+    mode === "import-section"
+      ? `title: ${toCleanText(section?.title)}\nkind: ${normalizeScriptSectionKind(section?.kind)}\n\n`
+      : "";
+  refs.scriptSectionModalConfirmBtn.textContent = mode === "import-section" ? "Import" : "Add Lines";
+  syncScriptSectionModalHelper(section, mode);
+  refs.scriptSectionModalTextarea.focus();
+  refs.scriptSectionModalTextarea.select();
+}
+
+function closeScriptSectionModal() {
+  if (!refs.scriptSectionModal) {
+    return;
+  }
+  refs.scriptSectionModal.hidden = true;
+  scriptSectionModalState.mode = "bulk-add";
+  scriptSectionModalState.sectionId = "";
+  refs.scriptSectionModalTextarea.value = "";
+}
+
+function submitScriptSectionModal() {
+  const context = findScriptSectionContext(scriptSectionModalState.sectionId);
+  if (!context || !refs.scriptSectionModalTextarea) {
+    closeScriptSectionModal();
+    return;
+  }
+  const section = context.section;
+  if (scriptSectionModalState.mode === "import-section") {
+    const parsed = parseSectionImportText(refs.scriptSectionModalTextarea.value, section.kind);
+    if (parsed.title) {
+      section.title = parsed.title;
+    }
+    if (context.scope !== "intro") {
+      section.kind = normalizeImportSectionKind(parsed.kind, section.kind);
+    } else {
+      section.kind = "intro";
+    }
+    section.items = parsed.lines.map((line, index) => createScriptSectionItemRecord(line, index));
+  } else {
+    const lines = refs.scriptSectionModalTextarea.value
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((line) => toCleanText(line))
+      .filter(Boolean)
+      .map((line, index) => createScriptSectionItemRecord({ text: line }, section.items.length + index));
+    section.items.push(...lines);
+  }
+  closeScriptSectionModal();
+  updateBoardsAndBrief();
+}
+
+async function copySectionJson(section, triggerBtn) {
+  const didCopy = await copyTextToClipboard(JSON.stringify(buildSectionImportExportPayload(section), null, 2));
+  flashButtonText(triggerBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+}
+
+async function copyIntroGroupJson(group, triggerBtn) {
+  const didCopy = await copyTextToClipboard(JSON.stringify(buildIntroGroupImportExportPayload(group), null, 2));
+  flashButtonText(triggerBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+}
+
+function buildEditableSectionCard(section, options = {}) {
+  ensureSectionItems(section);
+  section.archivedItems = normalizeArchivedScriptSectionItemCollection(section.archivedItems);
+  const card = document.createElement("article");
+  card.className = "script-section-card pipeline-card list-row";
+  card.dataset.variationId = section.id;
+
+  const dragBtn = buildIconButton("icon-btn drag-handle-btn", "Reorder section", DRAG_HANDLE_ICON, {
+    title: "Drag to reorder",
+  });
+  dragBtn.draggable = true;
+  dragBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const titleShell = document.createElement("div");
+  titleShell.className = "intro-card-title-shell";
+  const titleInput = document.createElement("input");
+  titleInput.className = "intro-card-title-input";
+  titleInput.value = toCleanText(section.title);
+  titleInput.placeholder = options.titlePlaceholder || "Section title";
+  titleInput.setAttribute("aria-label", options.titlePlaceholder || "Section title");
+  titleShell.appendChild(titleInput);
+
+  const header = document.createElement("div");
+  header.className = "script-section-header";
+  const leading = document.createElement("div");
+  leading.className = "script-section-leading";
+  leading.append(dragBtn, titleShell);
+  header.appendChild(leading);
+
+  const controls = document.createElement("div");
+  controls.className = "intro-card-controls";
+  const meta = document.createElement("div");
+  meta.className = "script-section-meta";
+  meta.innerHTML = `
+    <span class="script-stat" data-role="sectionDuration"></span>
+    <span class="script-stat" data-role="sectionKind"></span>
+    <span class="script-stat" data-role="sectionCount"></span>
+  `;
+  controls.appendChild(meta);
+
+  const actions = document.createElement("div");
+  actions.className = "intro-card-actions";
+
+  if (!options.lockKind) {
+    const kindSelect = createSectionKindSelect(section);
+    kindSelect.classList.add("script-section-kind-inline");
+    kindSelect.addEventListener("change", () => {
+      section.kind = normalizeScriptSectionKind(kindSelect.value);
+      updateBoardsAndBrief();
+    });
+    actions.appendChild(kindSelect);
+  }
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "btn btn-muted";
+  copyBtn.textContent = options.copyLabel || "Copy Section";
+  copyBtn.addEventListener("click", async () => {
+    const sectionText = getSectionPlainText(section);
+    if (!sectionText) {
+      flashButtonText(copyBtn, "Empty", 900);
+      return;
+    }
+    const didCopy = await copyTextToClipboard(sectionText);
+    flashButtonText(copyBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+  });
+  actions.appendChild(copyBtn);
+
+  const copyJsonBtn = document.createElement("button");
+  copyJsonBtn.type = "button";
+  copyJsonBtn.className = "btn btn-muted";
+  copyJsonBtn.textContent = "Copy JSON";
+  copyJsonBtn.addEventListener("click", () => copySectionJson(section, copyJsonBtn));
+  actions.appendChild(copyJsonBtn);
+
+  const bulkAddBtn = document.createElement("button");
+  bulkAddBtn.type = "button";
+  bulkAddBtn.className = "btn btn-muted";
+  bulkAddBtn.textContent = "Bulk Add";
+  bulkAddBtn.addEventListener("click", () => openScriptSectionModal(section, "bulk-add"));
+  actions.appendChild(bulkAddBtn);
+
+  const importBtn = document.createElement("button");
+  importBtn.type = "button";
+  importBtn.className = "btn btn-muted";
+  importBtn.textContent = "Import";
+  importBtn.addEventListener("click", () => openScriptSectionModal(section, "import-section"));
+  actions.appendChild(importBtn);
+
+  const addLineBtn = document.createElement("button");
+  addLineBtn.type = "button";
+  addLineBtn.className = "btn btn-muted";
+  addLineBtn.textContent = "Add Line";
+  addLineBtn.addEventListener("click", () => {
+    section.items.push(createScriptSectionItemRecord({}, section.items.length));
+    updateBoardsAndBrief();
+  });
+  actions.appendChild(addLineBtn);
+
+  const removeBtn = buildIconButton("icon-btn icon-btn-danger", options.removeLabel || "Remove section", DELETE_ICON);
+  removeBtn.addEventListener("click", () => {
+    if (options.onRemove) {
+      options.onRemove(section);
+    }
+  });
+  const removeShell = document.createElement("div");
+  removeShell.className = "script-row-actions";
+  removeShell.append(removeBtn);
+  actions.append(removeShell);
+
+  controls.append(actions);
+  header.appendChild(controls);
+  card.appendChild(header);
+
+  titleInput.addEventListener("input", (event) => {
+    section.title = event.target.value;
+    saveSnapshot();
+  });
+
+  if (options.dragType && options.onDrop) {
+    dragBtn.addEventListener("dragstart", (event) => {
+      beginVariationDrag(event, options.dragType, section.id);
+    });
+    dragBtn.addEventListener("dragend", clearVariationDropTargets);
+    card.addEventListener("dragover", (event) => {
+      if (canVariationDrop(options.dragType, section.id)) {
+        event.preventDefault();
+        card.classList.add("is-drop-target");
+      }
+    });
+    card.addEventListener("dragleave", () => card.classList.remove("is-drop-target"));
+    card.addEventListener("drop", (event) => {
+      if (!canVariationDrop(options.dragType, section.id)) {
+        return;
+      }
+      event.preventDefault();
+      options.onDrop(section.id);
+      clearVariationDropTargets();
+    });
+  }
+
+  const stack = document.createElement("div");
+  stack.className = "script-intro-sentence-stack";
+  if (!section.items.length) {
+    stack.innerHTML = '<p class="pipeline-empty">No lines in this section yet.</p>';
+  }
+  section.items.forEach((item) => stack.appendChild(buildScriptItemRow(section, item)));
+  card.appendChild(stack);
+
+  const archivedSubsection = renderArchivedLineSubsection(section, section.archivedItems, {
+    placeholder: "Archived line",
+    onRevive: (archivedId) => {
+      if (!reviveArchivedLineVariant(section.items, section.archivedItems, archivedId, createScriptSectionItemRecord, "item")) {
+        return;
+      }
+      updateBoardsAndBrief();
+    },
+  });
+  if (archivedSubsection) {
+    card.appendChild(archivedSubsection);
+  }
+
+  updateSectionCardStats(card, section);
+  return card;
+}
+
+function renderScriptDraftWorkspace() {
+  if (!refs.skeletonBoard) {
+    return;
+  }
+  refs.skeletonBoard.innerHTML = "";
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    refs.skeletonBoard.innerHTML = '<p class="pipeline-empty">Create or select a brief to draft the script.</p>';
+    return;
+  }
+
+  state.scriptIntroGroup = normalizeScriptIntroGroup(state.scriptIntroGroup);
+  state.scriptSections = normalizeScriptSectionCollection(state.scriptSections);
+
+  const introGroupCard = document.createElement("article");
+  introGroupCard.className = "script-section-card pipeline-card list-row script-intro-group-card";
+  introGroupCard.innerHTML = `
+    <div class="script-section-header">
+      <div class="script-section-leading">
+        <div class="intro-card-title-shell">
+          <input class="intro-card-title-input" data-role="introGroupTitle" placeholder="Intro group title" />
+        </div>
+      </div>
+      <div class="intro-card-controls">
+        <div class="script-section-meta">
+          <span class="script-stat">Runtime ${formatDurationShort(
+            getIntroVariants(state.scriptIntroGroup).reduce((sum, section) => sum + getSectionDurationSeconds(section), 0),
+          )}</span>
+          <span class="script-stat">Intro group</span>
+          <span class="script-stat">${getIntroVariants(state.scriptIntroGroup).length} variants</span>
+        </div>
+      </div>
+    </div>
+  `;
+  const introGroupTitleInput = introGroupCard.querySelector("[data-role='introGroupTitle']");
+  introGroupTitleInput.value = toCleanText(state.scriptIntroGroup.title) || getDefaultIntroGroupTitle();
+  introGroupTitleInput.addEventListener("input", (event) => {
+    state.scriptIntroGroup.title = event.target.value;
+    saveSnapshot();
+  });
+  const introGroupActions = document.createElement("div");
+  introGroupActions.className = "intro-card-actions";
+  const copyIntroGroupBtn = document.createElement("button");
+  copyIntroGroupBtn.type = "button";
+  copyIntroGroupBtn.className = "btn btn-muted";
+  copyIntroGroupBtn.textContent = "Copy Intro Group";
+  copyIntroGroupBtn.addEventListener("click", async () => {
+    const text = getIntroGroupPlainText(state.scriptIntroGroup);
+    if (!text) {
+      flashButtonText(copyIntroGroupBtn, "Empty", 900);
+      return;
+    }
+    const didCopy = await copyTextToClipboard(text);
+    flashButtonText(copyIntroGroupBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+  });
+  const copyIntroGroupJsonBtn = document.createElement("button");
+  copyIntroGroupJsonBtn.type = "button";
+  copyIntroGroupJsonBtn.className = "btn btn-muted";
+  copyIntroGroupJsonBtn.textContent = "Copy JSON";
+  copyIntroGroupJsonBtn.addEventListener("click", () => copyIntroGroupJson(state.scriptIntroGroup, copyIntroGroupJsonBtn));
+  const addIntroVariantBtn = document.createElement("button");
+  addIntroVariantBtn.type = "button";
+  addIntroVariantBtn.className = "btn btn-muted";
+  addIntroVariantBtn.textContent = "Add Intro Variant";
+  addIntroVariantBtn.addEventListener("click", () => {
+    state.scriptIntroGroup.variants.push(
+      createIntroVariantSectionRecord({}, getIntroVariants(state.scriptIntroGroup).length),
+    );
+    updateBoardsAndBrief();
+  });
+  introGroupActions.append(copyIntroGroupBtn, copyIntroGroupJsonBtn, addIntroVariantBtn);
+  introGroupCard.querySelector(".intro-card-controls").appendChild(introGroupActions);
+
+  const introVariantStack = document.createElement("div");
+  introVariantStack.className = "script-subsection-stack";
+  getIntroVariants(state.scriptIntroGroup).forEach((section) => {
+    introVariantStack.appendChild(
+      buildEditableSectionCard(section, {
+        lockKind: true,
+        copyLabel: "Copy Intro",
+        titlePlaceholder: "Intro variant title",
+        dragType: "intro-variant",
+        onDrop: (targetId) => {
+          const fromIndex = state.scriptIntroGroup.variants.findIndex((entry) => entry.id === variationDragState.id);
+          const toIndex = state.scriptIntroGroup.variants.findIndex((entry) => entry.id === targetId);
+          if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+            return;
+          }
+          moveItemInArray(state.scriptIntroGroup.variants, fromIndex, toIndex);
+          updateBoardsAndBrief();
+        },
+        onRemove: (targetSection) => {
+          const sourceIndex = state.scriptIntroGroup.variants.findIndex((entry) => entry.id === targetSection.id);
+          if (sourceIndex < 0) {
+            return;
+          }
+          state.scriptIntroGroup.variants.splice(sourceIndex, 1);
+          updateBoardsAndBrief();
+        },
+      }),
+    );
+  });
+  introGroupCard.appendChild(introVariantStack);
+  refs.skeletonBoard.appendChild(introGroupCard);
+
+  state.scriptSections.forEach((section) => {
+    refs.skeletonBoard.appendChild(
+      buildEditableSectionCard(section, {
+        lockKind: false,
+        copyLabel: "Copy Section",
+        titlePlaceholder: "Section title",
+        dragType: "script-section",
+        onDrop: (targetId) => {
+          const fromIndex = state.scriptSections.findIndex((entry) => entry.id === variationDragState.id);
+          const toIndex = state.scriptSections.findIndex((entry) => entry.id === targetId);
+          if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+            return;
+          }
+          moveItemInArray(state.scriptSections, fromIndex, toIndex);
+          updateBoardsAndBrief();
+        },
+        onRemove: (targetSection) => {
+          const sourceIndex = state.scriptSections.findIndex((entry) => entry.id === targetSection.id);
+          if (sourceIndex < 0) {
+            return;
+          }
+          state.scriptSections.splice(sourceIndex, 1);
+          updateBoardsAndBrief();
+        },
+      }),
+    );
+  });
+}
+
+function renderScriptExportWorkspace() {
+  if (!refs.draftBoard) {
+    return;
+  }
+  refs.draftBoard.innerHTML = "";
+  const activeBrief = getActiveBriefRecord();
+  if (!activeBrief) {
+    refs.draftBoard.innerHTML = '<p class="pipeline-empty">Create or select a brief to review the compiled script.</p>';
+    return;
+  }
+
+  const controls = document.createElement("div");
+  controls.className = "script-draft-read-toolbar";
+  const copyAllBtn = document.createElement("button");
+  copyAllBtn.type = "button";
+  copyAllBtn.className = "btn btn-muted";
+  copyAllBtn.textContent = "Copy Full Script";
+  copyAllBtn.addEventListener("click", async () => {
+    const compiled = getCompiledScriptText();
+    if (!compiled) {
+      flashButtonText(copyAllBtn, "Empty", 900);
+      return;
+    }
+    const didCopy = await copyTextToClipboard(compiled);
+    flashButtonText(copyAllBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+  });
+  const copyJsonBtn = document.createElement("button");
+  copyJsonBtn.type = "button";
+  copyJsonBtn.className = "btn btn-muted";
+  copyJsonBtn.textContent = "Copy Script JSON";
+  copyJsonBtn.addEventListener("click", () => copyScriptMetadataJson(copyJsonBtn));
+  const draftLayout = normalizeScriptDraftLayout(state.scriptDraftLayout);
+  state.scriptDraftLayout = draftLayout;
+  const colorEnabled = normalizeScriptDraftColorEnabled(state.scriptDraftShowColors);
+  state.scriptDraftShowColors = colorEnabled;
+
+  [
+    { id: "plain", label: "Plain" },
+    { id: "script", label: "Script" },
+  ].forEach((option) => {
+    const viewBtn = document.createElement("button");
+    viewBtn.type = "button";
+    viewBtn.className = "btn btn-muted";
+    viewBtn.textContent = option.label;
+    viewBtn.classList.toggle("is-active", draftLayout === option.id);
+    viewBtn.addEventListener("click", () => {
+      state.scriptDraftLayout = option.id;
+      updateBoardsAndBrief();
+    });
+    controls.appendChild(viewBtn);
+  });
+  const colorBtn = document.createElement("button");
+  colorBtn.type = "button";
+  colorBtn.className = "btn btn-muted";
+  colorBtn.textContent = colorEnabled ? "Color On" : "Color Off";
+  colorBtn.classList.toggle("is-active", colorEnabled);
+  colorBtn.addEventListener("click", () => {
+    state.scriptDraftShowColors = !state.scriptDraftShowColors;
+    updateBoardsAndBrief();
+  });
+  controls.appendChild(colorBtn);
+  controls.prepend(copyJsonBtn);
+  controls.prepend(copyAllBtn);
+  refs.draftBoard.appendChild(controls);
+
+  refs.draftBoard.classList.toggle("is-plain-script", !colorEnabled);
+  refs.draftBoard.classList.toggle("is-script-draft", draftLayout === "script");
+
+  const introGroup = normalizeScriptIntroGroup(state.scriptIntroGroup);
+  state.scriptIntroGroup = introGroup;
+  if (getIntroVariants(introGroup).length) {
+    const groupCard = document.createElement("article");
+    groupCard.className = "script-section-card pipeline-card list-row";
+    groupCard.innerHTML = `
+      <div class="script-section-header">
+        <div><h3>${escapeHtml(toCleanText(introGroup.title) || getDefaultIntroGroupTitle())}</h3></div>
+        <div class="intro-card-controls">
+          <div class="script-section-meta">
+            <span class="script-stat">Runtime ${formatDurationShort(
+              getIntroVariants(introGroup).reduce((sum, section) => sum + getSectionDurationSeconds(section), 0),
+            )}</span>
+            <span class="script-stat">Intro group</span>
+          </div>
+        </div>
+      </div>
+    `;
+    const groupActions = document.createElement("div");
+    groupActions.className = "intro-card-actions";
+    const copyGroupBtn = document.createElement("button");
+    copyGroupBtn.type = "button";
+    copyGroupBtn.className = "btn btn-muted";
+    copyGroupBtn.textContent = "Copy Intro Group";
+    copyGroupBtn.addEventListener("click", async () => {
+      const text = getIntroGroupPlainText(introGroup);
+      if (!text) {
+        flashButtonText(copyGroupBtn, "Empty", 900);
+        return;
+      }
+      const didCopy = await copyTextToClipboard(text);
+      flashButtonText(copyGroupBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+    });
+    groupActions.appendChild(copyGroupBtn);
+    groupCard.querySelector(".intro-card-controls").appendChild(groupActions);
+
+    const variantStack = document.createElement("div");
+    variantStack.className = "script-subsection-stack";
+    getIntroVariants(introGroup).forEach((section) => {
+      variantStack.appendChild(buildReadonlyScriptSectionCard(section, colorEnabled));
+    });
+    groupCard.appendChild(variantStack);
+    refs.draftBoard.appendChild(groupCard);
+  }
+
+  normalizeScriptSectionCollection(state.scriptSections).forEach((section) => {
+    refs.draftBoard.appendChild(buildReadonlyScriptSectionCard(section, colorEnabled));
+  });
+}
+
+function buildReadonlyScriptSectionCard(section, colorEnabled) {
+  const card = document.createElement("article");
+  card.className = "script-section-card pipeline-card list-row";
+  const header = document.createElement("div");
+  header.className = "script-section-header";
+  header.innerHTML = `
+    <div>
+      <h3>${escapeHtml(section.title)}</h3>
+    </div>
+    <div class="intro-card-controls">
+      <div class="script-section-meta">
+        <span class="script-stat">Runtime ${formatDurationShort(getSectionDurationSeconds(section))}</span>
+        <span class="script-stat">${escapeHtml(getScriptSectionKindLabel(section.kind))}</span>
+      </div>
+    </div>
+  `;
+  const headerTools = document.createElement("div");
+  headerTools.className = "intro-card-actions";
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "btn btn-muted";
+  copyBtn.textContent = section.kind === "intro" ? "Copy Intro" : "Copy Section";
+  copyBtn.addEventListener("click", async () => {
+    const copyText = getSectionPlainText(section);
+    if (!copyText) {
+      flashButtonText(copyBtn, "Empty", 900);
+      return;
+    }
+    const didCopy = await copyTextToClipboard(copyText);
+    flashButtonText(copyBtn, didCopy ? "Copied" : "Copy Failed", 1100);
+  });
+  headerTools.appendChild(copyBtn);
+  header.querySelector(".intro-card-controls").appendChild(headerTools);
+  card.appendChild(header);
+
+  const stack = document.createElement("div");
+  stack.className = "script-intro-sentence-stack";
+  const nonEmptyLines = getLiveScriptSectionItemCollection(section.items).filter((item) => toCleanText(item.text));
+  if (!nonEmptyLines.length) {
+    stack.innerHTML = '<p class="pipeline-empty">No script lines yet.</p>';
+  } else {
+    nonEmptyLines.forEach((item) => {
+      const lineCard = document.createElement("article");
+      lineCard.className = "script-sentence-card script-readonly-line";
+      lineCard.dataset.scriptType = colorEnabled ? item.type : "";
+      const summary = document.createElement("div");
+      summary.className = "script-sentence-summary script-readonly-summary";
+      const content = document.createElement("div");
+      content.className = "script-sentence-summary-content script-sentence-summary-content-inline";
+      const badge = document.createElement("span");
+      badge.className = "script-sentence-type-badge";
+      const typeMeta = getScriptSentenceTypeMeta(item.type);
+      badge.hidden = !colorEnabled || !typeMeta.id;
+      badge.textContent = typeMeta.id ? typeMeta.label : "";
+      const text = document.createElement("span");
+      text.className = "script-sentence-line";
+      text.textContent = item.text;
+      content.append(text, badge);
+      summary.append(content);
+      lineCard.append(summary);
+      stack.appendChild(lineCard);
+    });
+  }
+  card.appendChild(stack);
+  return card;
+}
+
 function renderBriefListBoard() {
   if (!refs.briefListBoard || !refs.briefListItemTemplate) {
     return;
@@ -4378,6 +5588,29 @@ function renderBriefListBoard() {
   refs.briefListBoard.innerHTML = "";
   const briefState = getActiveChannelBriefState();
   const activeBriefId = toCleanText(state.activeBriefId) || briefState.activeBriefId;
+  const allTags = Array.from(
+    new Set(briefState.briefs.flatMap((brief) => normalizeBriefTags(brief.tags))),
+  ).sort((left, right) => left.localeCompare(right));
+
+  if (refs.briefListSort) {
+    setInputValueIfChanged(refs.briefListSort, normalizeBriefListSort(state.briefListSort));
+  }
+  if (refs.briefTagFilter) {
+    const normalizedFilter = normalizeBriefTagFilter(state.briefTagFilter);
+    state.briefTagFilter = normalizedFilter === "all" || allTags.includes(normalizedFilter) ? normalizedFilter : "all";
+    refs.briefTagFilter.innerHTML = "";
+    const allOption = document.createElement("option");
+    allOption.value = "all";
+    allOption.textContent = "All tags";
+    refs.briefTagFilter.appendChild(allOption);
+    allTags.forEach((tag) => {
+      const option = document.createElement("option");
+      option.value = tag;
+      option.textContent = tag;
+      refs.briefTagFilter.appendChild(option);
+    });
+    refs.briefTagFilter.value = state.briefTagFilter;
+  }
 
   if (!briefState.briefs.length) {
     refs.briefListBoard.innerHTML =
@@ -4385,7 +5618,39 @@ function renderBriefListBoard() {
     return;
   }
 
-  briefState.briefs.forEach((brief, index) => {
+  const filteredBriefs =
+    state.briefTagFilter === "all"
+      ? [...briefState.briefs]
+      : briefState.briefs.filter((brief) => normalizeBriefTags(brief.tags).includes(state.briefTagFilter));
+  const sortedBriefs = filteredBriefs.sort((left, right) => {
+    const leftCreated = normalizeTimestamp(left.createdAt);
+    const rightCreated = normalizeTimestamp(right.createdAt);
+    if (state.briefListSort === "oldest") {
+      return leftCreated - rightCreated;
+    }
+    if (state.briefListSort === "tag-asc") {
+      const leftTag = getPrimaryBriefTag(left);
+      const rightTag = getPrimaryBriefTag(right);
+      if (leftTag && rightTag) {
+        const byTag = leftTag.localeCompare(rightTag);
+        if (byTag !== 0) {
+          return byTag;
+        }
+      } else if (leftTag || rightTag) {
+        return leftTag ? -1 : 1;
+      }
+    }
+    return rightCreated - leftCreated;
+  });
+
+  if (!sortedBriefs.length) {
+    refs.briefListBoard.innerHTML =
+      '<p class="pipeline-empty">No briefs match the selected tag yet. Clear the filter or add tags inside a brief.</p>';
+    return;
+  }
+
+  sortedBriefs.forEach((brief) => {
+    const index = briefState.briefs.findIndex((item) => item.id === brief.id);
     const fragment = refs.briefListItemTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".pipeline-card");
     const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
@@ -4393,12 +5658,23 @@ function renderBriefListBoard() {
     const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
     const openBtn = fragment.querySelector('button[data-action="openBrief"]');
     const titleEl = fragment.querySelector('[data-role="briefTitle"]');
+    const tagsEl = fragment.querySelector('[data-role="briefTags"]');
     const metaEl = fragment.querySelector('[data-role="briefMeta"]');
     const statusEl = fragment.querySelector('[data-role="briefStatus"]');
     const updatedEl = fragment.querySelector('[data-role="briefUpdated"]');
 
     titleEl.textContent = getBriefDisplayTitle(brief, index);
     metaEl.textContent = `Created ${formatBriefCreatedAt(brief.createdAt)}`;
+    if (tagsEl) {
+      tagsEl.innerHTML = "";
+      normalizeBriefTags(brief.tags).forEach((tag) => {
+        const pill = document.createElement("span");
+        pill.className = "brief-tag-pill";
+        pill.textContent = tag;
+        tagsEl.appendChild(pill);
+      });
+      tagsEl.hidden = !tagsEl.childElementCount;
+    }
     statusEl.textContent = formatBriefStatus(brief.status);
     updatedEl.textContent = `Updated ${formatBriefUpdatedAt(brief.updatedAt)}`;
     card.classList.toggle("is-active", brief.id === activeBriefId);
@@ -4457,6 +5733,12 @@ function setBriefEditorEnabled(enabled) {
   if (refs.addComparableBtn) {
     refs.addComparableBtn.disabled = !enabled;
   }
+  if (refs.toggleInspirationLibraryBtn) {
+    refs.toggleInspirationLibraryBtn.disabled = !enabled;
+  }
+  if (refs.briefTagsInput) {
+    refs.briefTagsInput.disabled = !enabled;
+  }
   if (refs.addInspirationUploadBtn) {
     refs.addInspirationUploadBtn.disabled = !enabled;
   }
@@ -4476,24 +5758,24 @@ function setBriefEditorEnabled(enabled) {
   if (refs.showScriptingWorkspaceBtn) {
     refs.showScriptingWorkspaceBtn.disabled = !enabled;
   }
-  if (refs.showIntroLabBtn) {
-    refs.showIntroLabBtn.disabled = !enabled;
+  if (refs.showScriptDraftBtn) {
+    refs.showScriptDraftBtn.disabled = !enabled;
   }
-  if (refs.showSkeletonWorkspaceBtn) {
-    refs.showSkeletonWorkspaceBtn.disabled = !enabled;
+  if (refs.showScriptExportBtn) {
+    refs.showScriptExportBtn.disabled = !enabled;
   }
-  if (refs.showDraftWorkspaceBtn) {
-    refs.showDraftWorkspaceBtn.disabled = !enabled;
+  if (refs.addScriptSectionBtn) {
+    refs.addScriptSectionBtn.disabled = !enabled;
   }
-  if (refs.addSkeletonSectionBtn) {
-    refs.addSkeletonSectionBtn.disabled = !enabled;
+  if (refs.addIntroVariantBtn) {
+    refs.addIntroVariantBtn.disabled = !enabled;
   }
 }
 
 function renderBriefExportControls() {
   const activeBrief = getActiveBriefRecord();
   const hasActiveBrief = Boolean(activeBrief);
-  const hasScript = state.scriptSections.length > 0;
+  const hasScript = Boolean(getCompiledScriptText());
   if (refs.exportPackagingBriefPdfBtn) {
     refs.exportPackagingBriefPdfBtn.disabled = !hasActiveBrief;
   }
@@ -5220,6 +6502,32 @@ function uniqueItems(items) {
   });
 }
 
+function normalizeBriefTags(tags) {
+  const source = Array.isArray(tags)
+    ? tags
+    : String(tags || "")
+        .split(",");
+  const seen = new Set();
+  return source
+    .map((tag) => toCleanText(tag))
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+}
+
+function formatBriefTags(tags) {
+  return normalizeBriefTags(tags).join(", ");
+}
+
+function getPrimaryBriefTag(brief = {}) {
+  return normalizeBriefTags(brief.tags)[0] || "";
+}
+
 function averageScore(scores) {
   const values = Object.values(scores);
   const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
@@ -5484,6 +6792,32 @@ function getThumbUrl(videoId, quality = "hq") {
   }
 
   return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+}
+
+function applyComparablePreviewImage(img, item = {}) {
+  if (!(img instanceof HTMLImageElement)) {
+    return;
+  }
+
+  const videoId = toCleanText(item.videoId);
+  const fallbackSrc = toCleanText(item.imageSrc) || (videoId ? getThumbUrl(videoId, "hq") : "");
+  const preferredSrc = videoId ? getThumbUrl(videoId, "max") : fallbackSrc;
+  if (!preferredSrc) {
+    img.removeAttribute("src");
+    return;
+  }
+
+  let retriedFallback = false;
+  img.onerror = () => {
+    if (retriedFallback || !fallbackSrc || fallbackSrc === preferredSrc) {
+      img.onerror = null;
+      return;
+    }
+
+    retriedFallback = true;
+    img.src = fallbackSrc;
+  };
+  img.src = preferredSrc;
 }
 
 async function fetchComparableMetadata(url) {
@@ -6021,6 +7355,14 @@ function renderThumbBoard() {
 }
 
 function getInspirationSourceMeta(item = {}) {
+  const sourceKind = toCleanText(item.sourceKind);
+  if (sourceKind === "brief-thumbnail") {
+    return item.author ? `Thumbnail variation · ${item.author}` : "Thumbnail variation";
+  }
+  if (sourceKind === "brief-inspiration") {
+    return item.author ? `Brief inspiration · ${item.author}` : "Brief inspiration";
+  }
+
   const sourceUrl = toCleanText(item.sourceUrl);
   if (!sourceUrl) {
     return item.author ? `Channel: ${item.author}` : "Uploaded or pasted image.";
@@ -6037,6 +7379,217 @@ function getInspirationSourceMeta(item = {}) {
   }
 }
 
+function getComparableOriginContext(item = {}) {
+  const sourceKind = toCleanText(item.sourceKind);
+  const sourceBriefTitle = toCleanText(item.sourceBriefTitle);
+  if (sourceKind === "brief-thumbnail") {
+    const thumbTitle = toCleanText(item.sourceThumbnailTitle || item.title);
+    if (sourceBriefTitle && thumbTitle) {
+      return `Copied from thumbnail variation "${thumbTitle}" in ${sourceBriefTitle}`;
+    }
+    if (sourceBriefTitle) {
+      return `Copied from thumbnail variations in ${sourceBriefTitle}`;
+    }
+  }
+  if (sourceKind === "brief-inspiration" || sourceBriefTitle) {
+    return sourceBriefTitle ? `Copied from inspiration in ${sourceBriefTitle}` : "Copied from another brief";
+  }
+  return "";
+}
+
+function getComparableSignature(item = {}) {
+  return (
+    toCleanText(item.videoId) ||
+    toCleanText(item.sourceUrl) ||
+    toCleanText(item.imageSrc) ||
+    toCleanText(item.title)
+  );
+}
+
+function copyComparableRecord(item = {}, overrides = {}) {
+  return {
+    id: createRecordId("insp"),
+    imageSrc: toCleanText(overrides.imageSrc ?? item.imageSrc),
+    sourceUrl: toCleanText(overrides.sourceUrl ?? item.sourceUrl),
+    title: toCleanText(overrides.title ?? item.title),
+    author: toCleanText(overrides.author ?? item.author),
+    notes: toCleanText(overrides.notes ?? item.notes),
+    sourceKind: toCleanText(overrides.sourceKind ?? item.sourceKind),
+    sourceCollection: toCleanText(overrides.sourceCollection ?? item.sourceCollection),
+    sourceChannelId: toCleanText(overrides.sourceChannelId ?? item.sourceChannelId),
+    sourceChannelName: toCleanText(overrides.sourceChannelName ?? item.sourceChannelName),
+    sourceBriefId: toCleanText(overrides.sourceBriefId ?? item.sourceBriefId),
+    sourceBriefTitle: toCleanText(overrides.sourceBriefTitle ?? item.sourceBriefTitle),
+    sourceThumbnailId: toCleanText(overrides.sourceThumbnailId ?? item.sourceThumbnailId),
+    sourceThumbnailTitle: toCleanText(overrides.sourceThumbnailTitle ?? item.sourceThumbnailTitle),
+    videoId: toCleanText(overrides.videoId ?? item.videoId),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
+function getAllCrossBriefInspirations() {
+  const activeBriefId = toCleanText(state.activeBriefId);
+  const assets = [];
+
+  Object.values(state.briefsByChannel || {}).forEach((briefState) => {
+    normalizeChannelBriefState(briefState).briefs.forEach((brief, index) => {
+      if (brief.id === activeBriefId) {
+        return;
+      }
+
+      normalizeComparableCollection(brief.comparables).forEach((item) => {
+        assets.push({
+          ...item,
+          sourceKind: "brief-inspiration",
+          sourceCollection: "brief-inspiration",
+          sourceBriefId: brief.id,
+          sourceBriefTitle: getBriefDisplayTitle(brief, index),
+          sourceBriefStatus: formatBriefStatus(brief.status),
+          sourceBriefTags: normalizeBriefTags(brief.tags),
+        });
+      });
+    });
+  });
+
+  return assets;
+}
+
+function getAllCrossBriefThumbnailVariations() {
+  const activeBriefId = toCleanText(state.activeBriefId);
+  const assets = [];
+
+  Object.values(state.briefsByChannel || {}).forEach((briefState) => {
+    normalizeChannelBriefState(briefState).briefs.forEach((brief, index) => {
+      if (brief.id === activeBriefId) {
+        return;
+      }
+
+      normalizeThumbnailCollection(brief.thumbnails)
+        .filter((item) => toCleanText(item.imageSrc))
+        .forEach((item) => {
+          assets.push({
+            id: `thumblib-${item.id}`,
+            imageSrc: toCleanText(item.imageSrc),
+            sourceUrl: "",
+            title: toCleanText(item.title),
+            author: toCleanText(item.creator),
+            notes: toCleanText(item.notes || item.meta),
+            sourceKind: "brief-thumbnail",
+            sourceCollection: "brief-thumbnails",
+            sourceBriefId: brief.id,
+            sourceBriefTitle: getBriefDisplayTitle(brief, index),
+            sourceBriefStatus: formatBriefStatus(brief.status),
+            sourceBriefTags: normalizeBriefTags(brief.tags),
+            sourceThumbnailId: toCleanText(item.id),
+            sourceThumbnailTitle: toCleanText(item.title),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        });
+    });
+  });
+
+  return assets;
+}
+
+function getInspirationLibrarySourceAssets() {
+  if (state.inspirationLibrarySource === "brief-thumbnails") {
+    return getAllCrossBriefThumbnailVariations();
+  }
+  return getAllCrossBriefInspirations();
+}
+
+function getInspirationLibrarySourceText(item = {}) {
+  if (item.sourceKind === "brief-thumbnail") {
+    return item.sourceBriefTitle
+      ? `Thumbnail variation · ${item.sourceBriefTitle}${item.sourceBriefTags?.length ? ` · ${item.sourceBriefTags.join(", ")}` : ""}`
+      : "Thumbnail variation · another brief";
+  }
+  return item.sourceBriefTitle
+    ? `From ${item.sourceBriefTitle}${item.sourceBriefTags?.length ? ` · ${item.sourceBriefTags.join(", ")}` : ""}`
+    : "From another brief";
+}
+
+function renderInspirationLibraryPopover() {
+  if (!refs.inspirationLibraryPopover || !refs.inspirationLibraryList) {
+    return;
+  }
+
+  refs.inspirationLibraryPopover.hidden = !state.inspirationLibraryOpen;
+  if (!state.inspirationLibraryOpen) {
+    return;
+  }
+
+  refs.inspirationLibrarySourceTabs.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.inspirationSource === state.inspirationLibrarySource);
+  });
+
+  const assets = getInspirationLibrarySourceAssets().sort(
+    (left, right) => normalizeTimestamp(right.updatedAt) - normalizeTimestamp(left.updatedAt),
+  );
+  if (refs.inspirationLibraryStatus) {
+    refs.inspirationLibraryStatus.textContent = `${assets.length} available`;
+  }
+
+  const existingSignatures = new Set(state.comparables.map((item) => getComparableSignature(item)));
+  refs.inspirationLibraryList.innerHTML = "";
+
+  if (!assets.length) {
+    const emptyText =
+      state.inspirationLibrarySource === "brief-thumbnails"
+        ? "No image-backed thumbnail variations exist in other briefs yet."
+        : "No inspiration assets exist in other briefs yet.";
+    refs.inspirationLibraryList.innerHTML = `<p class="hint">${escapeHtml(emptyText)}</p>`;
+    return;
+  }
+
+  assets.forEach((item) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "inspiration-library-item";
+    row.disabled = existingSignatures.has(getComparableSignature(item));
+
+    const sourceText = getInspirationLibrarySourceText(item);
+    row.innerHTML = `
+      <span class="inspiration-library-thumb">
+        <img src="${escapeHtml(toCleanText(item.imageSrc))}" alt="Inspiration asset preview" />
+      </span>
+      <span class="inspiration-library-copy">
+        <span class="inspiration-library-title">${escapeHtml(toCleanText(item.title) || "Untitled inspiration")}</span>
+        <span class="inspiration-library-meta">${escapeHtml(toCleanText(item.author) || "Unknown creator")}</span>
+        <span class="inspiration-library-source">${sourceText}</span>
+      </span>
+      <span class="inspiration-library-add">${row.disabled ? "Added" : "Add"}</span>
+    `;
+
+    row.addEventListener("click", async () => {
+      if (row.disabled) {
+        return;
+      }
+
+      state.comparables.push(
+        copyComparableRecord(item, {
+          sourceKind: item.sourceKind,
+          sourceCollection: item.sourceCollection,
+          sourceChannelId: item.sourceChannelId,
+          sourceChannelName: item.sourceChannelName,
+          sourceBriefId: item.sourceBriefId,
+          sourceBriefTitle: item.sourceBriefTitle,
+          sourceThumbnailId: item.sourceThumbnailId,
+          sourceThumbnailTitle: item.sourceThumbnailTitle,
+        }),
+      );
+      updateBoardsAndBrief({ persist: false });
+      await saveSnapshot({ immediate: true });
+      renderInspirationLibraryPopover();
+      flashButtonText(refs.toggleInspirationLibraryBtn, "Added", 900);
+    });
+
+    refs.inspirationLibraryList.appendChild(row);
+  });
+}
+
 function renderComparableBoard() {
   if (!refs.comparableBoard || !refs.comparableTemplate) {
     return;
@@ -6045,6 +7598,7 @@ function renderComparableBoard() {
   const previousPositions = pendingComparableReorderPositions;
   pendingComparableReorderPositions = null;
   refs.comparableBoard.innerHTML = "";
+  renderInspirationLibraryPopover();
   const activeBrief = getActiveBriefRecord();
   if (!activeBrief) {
     refs.comparableBoard.innerHTML = '<p class="hint">Create or select a brief to add thumbnail inspiration.</p>';
@@ -6057,10 +7611,17 @@ function renderComparableBoard() {
     return;
   }
 
-  state.comparables.forEach((item) => {
+  const leadStack = document.createElement("div");
+  leadStack.className = "inspiration-lead-stack";
+  const compactGrid = document.createElement("div");
+  compactGrid.className = "inspiration-compact-grid";
+  refs.comparableBoard.append(leadStack, compactGrid);
+
+  state.comparables.forEach((item, index) => {
     const itemId = toCleanText(item.id);
     const fragment = refs.comparableTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".pipeline-card");
+    card.classList.toggle("comparable-row--compact", index >= 3);
     const summaryBtn = fragment.querySelector('button[data-action="toggle"]');
     const detailsEl = fragment.querySelector('[data-role="details"]');
     const arrowEl = fragment.querySelector('[data-role="expandArrow"]');
@@ -6075,21 +7636,35 @@ function renderComparableBoard() {
     const sourceInput = fragment.querySelector('[data-field="sourceUrl"]');
     const notesInput = fragment.querySelector('[data-field="notes"]');
     const sourceLink = fragment.querySelector('[data-role="sourceLink"]');
+    const sourceContextEl = fragment.querySelector('[data-role="sourceBrief"]');
 
     const imageSrc = toCleanText(item.imageSrc) || "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
     const creator = toCleanText(item.author) || "Uploaded image";
-    const summaryLineTwo = toCleanText(item.notes) || toCleanText(item.title);
+    const sourceBriefText = toCleanText(item.sourceBriefTitle);
+    const sourceContextText = getComparableOriginContext(item);
+    const summaryTitle = toCleanText(item.title) || (item.videoId ? `YouTube inspiration · ${item.videoId}` : "Image inspiration");
+    const summaryMeta = [
+      getInspirationSourceMeta(item),
+      sourceContextText,
+      toCleanText(item.notes),
+    ]
+      .filter(Boolean)
+      .join(" · ");
     card.dataset.variationId = itemId;
-    lineImage.src = imageSrc;
-    detailImage.src = imageSrc;
-    lineCreator.textContent = creator;
-    lineMeta.textContent = summarizeRowNotes(summaryLineTwo, "");
+    applyComparablePreviewImage(lineImage, item);
+    applyComparablePreviewImage(detailImage, item);
+    lineCreator.textContent = summaryTitle;
+    lineMeta.textContent = summarizeRowNotes(summaryMeta, creator);
     authorInput.value = item.author;
     titleInput.value = item.title;
     sourceInput.value = item.sourceUrl;
     notesInput.value = item.notes;
     sourceLink.href = item.sourceUrl || "#";
     sourceLink.hidden = !toCleanText(item.sourceUrl);
+    if (sourceContextEl) {
+      sourceContextEl.textContent = sourceContextText;
+      sourceContextEl.hidden = !sourceContextText;
+    }
     setPipelineRowExpanded(card, detailsEl, arrowEl, state.comparableExpandedId === itemId);
 
     summaryBtn.addEventListener("click", () => {
@@ -6148,7 +7723,14 @@ function renderComparableBoard() {
 
       record.title = titleInput.value;
       record.updatedAt = Date.now();
-      lineMeta.textContent = summarizeRowNotes(record.notes || record.title, "");
+      lineCreator.textContent =
+        toCleanText(record.title) || (record.videoId ? `YouTube inspiration · ${record.videoId}` : "Image inspiration");
+      lineMeta.textContent = summarizeRowNotes(
+        [getInspirationSourceMeta(record), getComparableOriginContext(record), toCleanText(record.notes)]
+          .filter(Boolean)
+          .join(" · "),
+        toCleanText(record.author) || "Uploaded image",
+      );
       saveSnapshot();
     });
 
@@ -6160,7 +7742,12 @@ function renderComparableBoard() {
 
       record.author = authorInput.value;
       record.updatedAt = Date.now();
-      lineCreator.textContent = toCleanText(record.author) || "Uploaded image";
+      lineMeta.textContent = summarizeRowNotes(
+        [getInspirationSourceMeta(record), getComparableOriginContext(record), toCleanText(record.notes)]
+          .filter(Boolean)
+          .join(" · "),
+        toCleanText(record.author) || "Uploaded image",
+      );
       saveSnapshot();
     });
 
@@ -6185,7 +7772,12 @@ function renderComparableBoard() {
 
       record.notes = notesInput.value;
       record.updatedAt = Date.now();
-      lineMeta.textContent = summarizeRowNotes(record.notes || record.title, "");
+      lineMeta.textContent = summarizeRowNotes(
+        [getInspirationSourceMeta(record), getComparableOriginContext(record), toCleanText(record.notes)]
+          .filter(Boolean)
+          .join(" · "),
+        toCleanText(record.author) || "Uploaded image",
+      );
       queueInspirationNotesSave();
     });
     notesInput.addEventListener("blur", () => {
@@ -6208,7 +7800,11 @@ function renderComparableBoard() {
       void saveSnapshot({ immediate: true });
     });
 
-    refs.comparableBoard.appendChild(fragment);
+    if (index < 3) {
+      leadStack.appendChild(fragment);
+    } else {
+      compactGrid.appendChild(fragment);
+    }
   });
 
   if (previousPositions) {
@@ -6428,7 +8024,8 @@ function buildBriefViewModel(values) {
     titleList,
     thumbnailTextList,
     thumbList,
-    intros: normalizeIntroVariants(state.scriptIntros),
+    introGroup: normalizeScriptIntroGroup(state.scriptIntroGroup),
+    intros: getIntroVariants(state.scriptIntroGroup),
     sections: normalizeScriptSectionCollection(state.scriptSections),
     values,
   };
@@ -6480,20 +8077,20 @@ function buildScriptLinePayload(line = {}) {
 }
 
 function buildScriptIntroPayload(intro = {}, index = 0) {
-  const normalized = normalizeScriptSentenceCollection(intro.sentences).filter((line) => {
+  const normalized = getLiveScriptSectionItemCollection(intro.items).filter((line) => {
     return toCleanText(line.text) || normalizeScriptSentenceType(line.type);
   });
-  const archived = normalizeArchivedScriptSentenceCollection(intro.archivedSentences).filter((line) => {
+  const archived = normalizeArchivedScriptSectionItemCollection(intro.archivedItems).filter((line) => {
     return toCleanText(line.text) || normalizeScriptSentenceType(line.type);
   });
   return {
-    label: toCleanText(intro.label) || getDefaultIntroLabel(index),
-    word_count: getIntroWordCount(intro),
-    read_time_seconds: getIntroDurationSeconds(intro),
-    read_time_readable: formatDurationShort(getIntroDurationSeconds(intro)),
+    label: toCleanText(intro.title) || getDefaultIntroLabel(index),
+    word_count: getIntroVariantWordCount(intro),
+    read_time_seconds: getIntroVariantDurationSeconds(intro),
+    read_time_readable: formatDurationShort(getIntroVariantDurationSeconds(intro)),
     lines: normalized.map((line) => buildScriptLinePayload(line)),
     archived_lines: archived.map((line) => buildScriptLinePayload(line)),
-    plain_text: getIntroPlainText(intro),
+    plain_text: getIntroVariantPlainText(intro),
   };
 }
 
@@ -6553,7 +8150,8 @@ function buildScriptMetadataPayload(values = getFieldValues()) {
         insights: toCleanText(activeBrief.sourceSnapshot.insights),
       }
     : null;
-  const intros = normalizeIntroVariants(state.scriptIntros).map((intro, index) => buildScriptIntroPayload(intro, index));
+  const introGroup = normalizeScriptIntroGroup(state.scriptIntroGroup);
+  const intros = getIntroVariants(introGroup).map((intro, index) => buildScriptIntroPayload(intro, index));
   const sections = normalizeScriptSectionCollection(state.scriptSections).map((section) => buildScriptSectionPayload(section));
   const compiledIntrosText = intros.map((intro) => `${intro.label}\n${intro.plain_text}`.trim()).filter(Boolean).join("\n\n");
   const compiledSectionsText = sections.map((section) => `${section.title}\n${section.plain_text}`.trim()).filter(Boolean).join("\n\n");
@@ -6590,6 +8188,7 @@ function buildScriptMetadataPayload(values = getFieldValues()) {
       channel_name: toCleanText(activeChannel?.name) || VIEWER_STRATEGY.channel,
       brief_status: activeBrief ? formatBriefStatus(activeBrief.status) : "Draft",
       source_type: activeBrief ? formatBriefSourceType(activeBrief.sourceType) : "Manual brief",
+      tags: normalizeBriefTags(activeBrief?.tags),
     },
     viewer_strategy: {
       static_snapshot: staticViewerStrategy,
@@ -6629,10 +8228,19 @@ function buildScriptMetadataPayload(values = getFieldValues()) {
         author: toCleanText(item.author),
         source_url: toCleanText(item.sourceUrl),
         video_id: toCleanText(item.videoId),
+        source_kind: toCleanText(item.sourceKind),
+        source_collection: toCleanText(item.sourceCollection),
+        source_channel_id: toCleanText(item.sourceChannelId),
+        source_channel_name: toCleanText(item.sourceChannelName),
+        source_brief_id: toCleanText(item.sourceBriefId),
+        source_brief_title: toCleanText(item.sourceBriefTitle),
+        source_thumbnail_id: toCleanText(item.sourceThumbnailId),
+        source_thumbnail_title: toCleanText(item.sourceThumbnailTitle),
         notes: toCleanText(item.notes),
       })),
     },
-    intros: {
+    intro_group: {
+      title: toCleanText(introGroup.title) || getDefaultIntroGroupTitle(),
       target_seconds: INTRO_TARGET_SECONDS,
       variants: intros,
     },
@@ -6682,15 +8290,16 @@ function pruneEmptyForLlm(value) {
   return value;
 }
 
-function renderIntroCardsHtml(intros, options = {}) {
+function renderIntroCardsHtml(introGroup, options = {}) {
+  const intros = getIntroVariants(introGroup);
   if (!intros.length) {
     return "<p>No intros drafted yet.</p>";
   }
 
   return intros
     .map((intro, index) => {
-      const sentences = normalizeScriptSentenceCollection(intro.sentences).filter(
-        (item) => toCleanText(item.text) || toCleanText(item.notes) || toCleanText(item.type),
+      const sentences = getLiveScriptSectionItemCollection(intro.items).filter(
+        (item) => toCleanText(item.text) || toCleanText(item.type),
       );
       const sentenceList = sentences.length
         ? `<ol>${sentences
@@ -6701,10 +8310,10 @@ function renderIntroCardsHtml(intros, options = {}) {
             })
             .join("")}</ol>`
         : "<p>No intro sentences yet.</p>";
-      const notesHtml = `<p class="muted">Estimated runtime: ${formatDurationShort(getIntroDurationSeconds(intro))}</p>`;
+      const notesHtml = `<p class="muted">Estimated runtime: ${formatDurationShort(getIntroVariantDurationSeconds(intro))}</p>`;
       return `
         <article class="card">
-          <h2>${escapeHtml(intro.label || `Intro ${index + 1}`)}</h2>
+          <h2>${escapeHtml(intro.title || `Intro ${index + 1}`)}</h2>
           ${notesHtml}
           ${sentenceList}
         </article>
@@ -7063,7 +8672,7 @@ function buildProductionBriefExportHtml(values) {
       </section>
 
       <section class="grid two">
-        ${renderIntroCardsHtml(model.intros, { includeNotes: true, includeTypes: true })}
+        ${renderIntroCardsHtml(model.introGroup, { includeNotes: true, includeTypes: true })}
       </section>
 
       <section class="card">
@@ -7100,7 +8709,7 @@ function buildScriptExportHtml(values) {
       </section>
 
       <section class="grid two">
-        ${renderIntroCardsHtml(model.intros, { includeNotes: false, includeTypes: false })}
+        ${renderIntroCardsHtml(model.introGroup, { includeNotes: false, includeTypes: false })}
       </section>
 
       <section class="card">
@@ -7126,11 +8735,11 @@ function buildScriptExportText(values = getFieldValues()) {
   const projectName = toCleanText(values.projectName) || "YouTube Script Export";
   blocks.push(projectName);
 
-  normalizeIntroVariants(model.intros).forEach((intro, index) => {
-    const lines = normalizeScriptSentenceCollection(intro.sentences)
+  getIntroVariants(model.introGroup).forEach((intro, index) => {
+    const lines = getLiveScriptSectionItemCollection(intro.items)
       .map((item) => toCleanText(item.text))
       .filter(Boolean);
-    blocks.push((toCleanText(intro.label) || getDefaultIntroLabel(index)).toUpperCase());
+    blocks.push((toCleanText(intro.title) || getDefaultIntroLabel(index)).toUpperCase());
     if (lines.length) {
       blocks.push(lines.join("\n"));
     }
@@ -7327,6 +8936,8 @@ function buildWorkspacePayload(values = getFieldValues()) {
     channelView: state.channelView,
     briefWorkspaceView: normalizeBriefWorkspaceView(state.briefWorkspaceView),
     scriptingView: normalizeScriptingView(state.scriptingView),
+    briefListSort: normalizeBriefListSort(state.briefListSort),
+    briefTagFilter: normalizeBriefTagFilter(state.briefTagFilter),
     scriptDraftLayout: normalizeScriptDraftLayout(state.scriptDraftLayout),
     scriptDraftShowColors: normalizeScriptDraftColorEnabled(state.scriptDraftShowColors),
     channels: state.channels,
@@ -7397,6 +9008,8 @@ function applyWorkspacePayload(payload = {}) {
     state.channelView = normalizeChannelView(payload.channelView);
     state.briefWorkspaceView = normalizeBriefWorkspaceView(payload.briefWorkspaceView);
     state.scriptingView = normalizeScriptingView(payload.scriptingView);
+    state.briefListSort = normalizeBriefListSort(payload.briefListSort);
+    state.briefTagFilter = normalizeBriefTagFilter(payload.briefTagFilter);
     state.scriptDraftLayout = normalizeScriptDraftLayout(payload.scriptDraftLayout || payload.scriptDraftView);
     state.scriptDraftShowColors = normalizeScriptDraftColorEnabled(
       payload.scriptDraftShowColors,
@@ -7748,8 +9361,8 @@ function loadLegacySnapshotFromLocalStorage() {
 }
 
 async function loadSnapshot() {
+  const useRemote = await checkRemotePersistence();
   try {
-    const useRemote = await checkRemotePersistence();
     const [workspacePayload, ideasPayload, briefsPayload] = await Promise.all([
       workspaceRepo.load(),
       ideasRepo.load(),
@@ -7765,6 +9378,9 @@ async function loadSnapshot() {
       ensureChannelBriefState(state.activeChannelId);
       applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
       applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
+      if (useRemote) {
+        await clearBrowserLocalSnapshotCache();
+      }
       return true;
     }
 
@@ -7772,11 +9388,15 @@ async function loadSnapshot() {
       const loadedLocalDbSnapshot = await loadBrowserLocalDbSnapshot();
       if (loadedLocalDbSnapshot) {
         await saveSnapshot({ immediate: true });
+        await clearBrowserLocalSnapshotCache();
         return true;
       }
     }
   } catch (error) {
-    console.warn("Could not load local database snapshot.", error);
+    console.warn("Could not load persisted snapshot.", error);
+    if (useRemote) {
+      return false;
+    }
   }
 
   const loadedLegacy = loadLegacySnapshotFromLocalStorage();
@@ -7870,14 +9490,17 @@ function resetAll() {
     [defaultChannel.id]: normalizeChannelBriefState(createEmptyChannelBriefState(), defaultChannel.id),
   };
   state.activeBriefId = "";
-  state.scriptIntros = normalizeIntroVariants([]);
+  state.scriptIntroGroup = normalizeScriptIntroGroup({});
   state.scriptSections = normalizeScriptSectionCollection([]);
   state.scriptDraftLayout = "plain";
   state.scriptDraftShowColors = true;
   state.briefDetailExpanded = false;
   state.viewerSnapshotExpanded = false;
   state.briefWorkspaceView = "packaging";
-  state.scriptingView = "intros";
+  state.scriptingView = "draft";
+  state.briefListSort = "newest";
+  state.briefTagFilter = "all";
+  state.inspirationLibraryOpen = false;
   state.titleExpandedId = "";
   state.thumbnailTextExpandedId = "";
   state.thumbnailExpandedId = "";
@@ -7933,9 +9556,8 @@ function updateBoardsAndBrief(options = {}) {
       renderViewerSnapshotCollapseState();
       renderBriefSourceSnapshot();
       renderIntroSentenceLegend();
-      renderIntroBoards();
-      renderSkeletonBoard();
-      renderDraftBoard();
+      renderScriptDraftWorkspace();
+      renderScriptExportWorkspace();
       renderTitleBoard();
       renderThumbnailTextBoard();
       renderThumbBoard();
@@ -8205,7 +9827,7 @@ async function addInspirationFiles(files, options = {}) {
         continue;
       }
 
-      state.comparables.unshift({
+      state.comparables.push({
         id: createRecordId("insp"),
         imageSrc,
         sourceUrl: "",
@@ -8331,7 +9953,7 @@ async function addComparable() {
     updatedAt: Date.now(),
   };
 
-  state.comparables.unshift(record);
+  state.comparables.push(record);
   refs.comparableUrl.value = "";
   updateBoardsAndBrief({ persist: false });
   void saveSnapshot({ immediate: true });
@@ -8554,6 +10176,32 @@ function bindEvents() {
     });
   }
 
+  if (refs.briefListSort) {
+    refs.briefListSort.addEventListener("change", () => {
+      state.briefListSort = normalizeBriefListSort(refs.briefListSort.value);
+      renderBriefListBoard();
+      saveSnapshot();
+    });
+  }
+
+  if (refs.briefTagFilter) {
+    refs.briefTagFilter.addEventListener("change", () => {
+      state.briefTagFilter = normalizeBriefTagFilter(refs.briefTagFilter.value);
+      renderBriefListBoard();
+      saveSnapshot();
+    });
+  }
+
+  if (refs.briefTagsInput) {
+    refs.briefTagsInput.addEventListener("change", () => {
+      if (!updateActiveBriefTags(refs.briefTagsInput.value)) {
+        return;
+      }
+      saveSnapshot();
+      renderBriefListBoard();
+    });
+  }
+
   if (refs.showPackagingWorkspaceBtn) {
     refs.showPackagingWorkspaceBtn.addEventListener("click", () => {
       state.briefWorkspaceView = "packaging";
@@ -8568,33 +10216,85 @@ function bindEvents() {
     });
   }
 
-  if (refs.showIntroLabBtn) {
-    refs.showIntroLabBtn.addEventListener("click", () => {
-      state.scriptingView = "intros";
-      updateBoardsAndBrief();
-    });
-  }
-
-  if (refs.showSkeletonWorkspaceBtn) {
-    refs.showSkeletonWorkspaceBtn.addEventListener("click", () => {
-      state.scriptingView = "sections";
-      updateBoardsAndBrief();
-    });
-  }
-
-  if (refs.showDraftWorkspaceBtn) {
-    refs.showDraftWorkspaceBtn.addEventListener("click", () => {
+  if (refs.showScriptDraftBtn) {
+    refs.showScriptDraftBtn.addEventListener("click", () => {
       state.scriptingView = "draft";
       updateBoardsAndBrief();
     });
   }
 
-  if (refs.addSkeletonSectionBtn) {
-    refs.addSkeletonSectionBtn.addEventListener("click", () => {
+  if (refs.showScriptExportBtn) {
+    refs.showScriptExportBtn.addEventListener("click", () => {
+      state.scriptingView = "export";
+      updateBoardsAndBrief();
+    });
+  }
+
+  if (refs.addScriptSectionBtn) {
+    refs.addScriptSectionBtn.addEventListener("click", () => {
       state.scriptSections.push(createScriptSectionRecord({}, state.scriptSections.length));
-      state.scriptingView = "sections";
+      state.scriptingView = "draft";
       state.briefWorkspaceView = "scripting";
       updateBoardsAndBrief();
+    });
+  }
+
+  if (refs.addIntroVariantBtn) {
+    refs.addIntroVariantBtn.addEventListener("click", () => {
+      state.scriptIntroGroup = normalizeScriptIntroGroup(state.scriptIntroGroup);
+      state.scriptIntroGroup.variants.push(
+        createIntroVariantSectionRecord({}, getIntroVariants(state.scriptIntroGroup).length),
+      );
+      state.scriptingView = "draft";
+      state.briefWorkspaceView = "scripting";
+      updateBoardsAndBrief();
+    });
+  }
+
+  if (refs.scriptSectionModalCancelBtn) {
+    refs.scriptSectionModalCancelBtn.addEventListener("click", closeScriptSectionModal);
+  }
+
+  if (refs.scriptSectionModalConfirmBtn) {
+    refs.scriptSectionModalConfirmBtn.addEventListener("click", submitScriptSectionModal);
+  }
+
+  [
+    refs.copyScriptSectionModalPromptBtn,
+    refs.copyScriptSectionModalPlainBtn,
+    refs.copyScriptSectionModalJsonBtn,
+  ]
+    .filter(Boolean)
+    .forEach((button) => {
+      button.addEventListener("click", async () => {
+        const payload = toCleanText(button.dataset.copyPayload);
+        if (!payload) {
+          flashButtonText(button, "Empty", 900);
+          return;
+        }
+        const didCopy = await copyTextToClipboard(payload);
+        flashButtonText(button, didCopy ? "Copied" : "Copy Failed", 1100);
+      });
+    });
+
+  if (refs.scriptSectionModal) {
+    refs.scriptSectionModal.addEventListener("click", (event) => {
+      if (event.target === refs.scriptSectionModal) {
+        closeScriptSectionModal();
+      }
+    });
+  }
+
+  if (refs.scriptSectionModalTextarea) {
+    refs.scriptSectionModalTextarea.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        submitScriptSectionModal();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeScriptSectionModal();
+      }
     });
   }
 
@@ -8743,6 +10443,64 @@ function bindEvents() {
   if (refs.addComparableBtn) {
     refs.addComparableBtn.addEventListener("click", addComparable);
   }
+
+  if (refs.toggleInspirationLibraryBtn) {
+    refs.toggleInspirationLibraryBtn.addEventListener("click", () => {
+      if (!getActiveBriefRecord()) {
+        flashButtonText(refs.toggleInspirationLibraryBtn, "Create Brief First", 1300);
+        return;
+      }
+
+      state.inspirationLibraryOpen = !state.inspirationLibraryOpen;
+      renderInspirationLibraryPopover();
+      if (state.inspirationLibraryOpen) {
+        refs.inspirationLibraryPopover?.focus();
+      }
+    });
+  }
+
+  refs.inspirationLibrarySourceTabs.forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextSource = toCleanText(button.dataset.inspirationSource);
+      if (!INSPIRATION_LIBRARY_SOURCES.includes(nextSource)) {
+        return;
+      }
+      state.inspirationLibrarySource = nextSource;
+      renderInspirationLibraryPopover();
+    });
+  });
+
+  if (refs.inspirationLibraryPopover) {
+    refs.inspirationLibraryPopover.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      state.inspirationLibraryOpen = false;
+      renderInspirationLibraryPopover();
+      refs.toggleInspirationLibraryBtn?.focus();
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (!state.inspirationLibraryOpen || !refs.inspirationLibraryPopover || !refs.toggleInspirationLibraryBtn) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof Node)) {
+      return;
+    }
+
+    if (
+      refs.inspirationLibraryPopover.contains(target) ||
+      refs.toggleInspirationLibraryBtn.contains(target)
+    ) {
+      return;
+    }
+
+    state.inspirationLibraryOpen = false;
+    renderInspirationLibraryPopover();
+  });
 
   if (refs.comparableUrl) {
     refs.comparableUrl.addEventListener("keydown", (event) => {

@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Space+Grotesk:wght@300..700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260316a" />
+    <link rel="stylesheet" href="styles.css?v=20260422i" />
   </head>
   <body>
     <div class="background-glow bg-one"></div>
@@ -185,6 +185,22 @@
         <p class="hint">
           Briefs are production-intent records. Select a brief below to open the full workspace.
         </p>
+        <div class="brief-list-controls">
+          <label class="brief-list-control" for="briefListSort">
+            Sort
+            <select id="briefListSort">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="tag-asc">Tag</option>
+            </select>
+          </label>
+          <label class="brief-list-control" for="briefTagFilter">
+            Filter Tag
+            <select id="briefTagFilter">
+              <option value="all">All tags</option>
+            </select>
+          </label>
+        </div>
         <div id="briefListBoard" class="brief-list-board pipeline-board"></div>
       </section>
 
@@ -207,6 +223,7 @@
                 <option value="draft">Draft</option>
                 <option value="review">Review</option>
                 <option value="in-production">In production</option>
+                <option value="published">Published</option>
               </select>
             </label>
             <button id="backToBriefListBtn" class="btn btn-muted" type="button">Back to Briefs List</button>
@@ -214,6 +231,10 @@
         </div>
         <div id="briefDetailContent" hidden>
           <p class="hint">Reference context captured when the brief was created.</p>
+          <label class="brief-tags-field" for="briefTagsInput">
+            Tags
+            <input id="briefTagsInput" type="text" placeholder="Comma-separated tags, e.g. Batch 2, Newsletter" />
+          </label>
           <div class="grid two-up brief-source-grid">
           <article class="brief-source-card">
             <h3>Source</h3>
@@ -415,18 +436,6 @@
         <p class="hint">Collect thumbnail inspiration assets for this brief.</p>
         <div class="thumbnail-studio-grid">
           <article class="thumbnail-studio-column">
-            <h3>Thumbnail Variations</h3>
-            <p class="hint">Upload files, drag/drop, or paste images. Top row is your lead thumbnail concept.</p>
-            <div class="inspiration-tools-row">
-              <button id="addThumbnailUploadBtn" class="btn btn-muted" type="button">Upload Thumbnails</button>
-              <input id="thumbnailFileInput" type="file" accept="image/*" multiple hidden />
-            </div>
-            <div id="thumbnailPasteZone" class="inspiration-paste-zone" tabindex="0">
-              Paste an image here or drag/drop image files.
-            </div>
-            <div id="thumbnailBoard" class="pipeline-board thumbnail-variation-board"></div>
-          </article>
-          <article class="thumbnail-studio-column">
             <h3>Inspiration Assets</h3>
             <p class="hint">
               Add a YouTube URL, upload image files, drag/drop files, or paste an image directly.
@@ -437,7 +446,22 @@
             </div>
             <div class="inspiration-tools-row">
               <button id="addInspirationUploadBtn" class="btn btn-muted" type="button">Upload Images</button>
+              <button id="toggleInspirationLibraryBtn" class="btn btn-muted" type="button">Browse Sources</button>
               <input id="inspirationFileInput" type="file" accept="image/*" multiple hidden />
+            </div>
+            <div id="inspirationLibraryPopover" class="inspiration-library-popover" tabindex="-1" hidden>
+              <div class="inspiration-library-head">
+                <div class="inspiration-library-controls">
+                  <div class="inspiration-library-tabs" role="tablist" aria-label="Inspiration library sources">
+                    <button type="button" class="pill-toggle is-active" data-inspiration-source="brief-inspiration">Brief Inspiration</button>
+                    <button type="button" class="pill-toggle" data-inspiration-source="brief-thumbnails">Thumbnail Variations</button>
+                  </div>
+                  <div class="inspiration-library-actions">
+                    <span id="inspirationLibraryStatus" class="hint"></span>
+                  </div>
+                </div>
+              </div>
+              <div id="inspirationLibraryList" class="inspiration-library-list"></div>
             </div>
             <div id="inspirationPasteZone" class="inspiration-paste-zone" tabindex="0">
               Paste an image here or drag/drop image files.
@@ -562,6 +586,20 @@
             <div id="packagingPreviewDark" class="packaging-preview-shell"></div>
           </article>
         </div>
+        <div class="packaging-preview-thumbnails">
+          <div class="panel-header">
+            <h3>Thumbnail Variations</h3>
+          </div>
+          <p class="hint">Upload files, drag/drop, or paste images. Top row is your lead thumbnail concept.</p>
+          <div class="inspiration-tools-row">
+            <button id="addThumbnailUploadBtn" class="btn btn-muted" type="button">Upload Thumbnails</button>
+            <input id="thumbnailFileInput" type="file" accept="image/*" multiple hidden />
+          </div>
+          <div id="thumbnailPasteZone" class="inspiration-paste-zone" tabindex="0">
+            Paste an image here or drag/drop image files.
+          </div>
+          <div id="thumbnailBoard" class="pipeline-board thumbnail-variation-board"></div>
+        </div>
       </section>
 
       <section class="panel" data-page="brief-detail" data-brief-workspace="scripting">
@@ -569,47 +607,36 @@
           <h2>Scripting Workspace</h2>
         </div>
         <p class="hint">
-          Draft 3 shootable intros, build your sections, then review the compiled draft.
+          Write the script in Draft, then review the compiled output in Export.
         </p>
         <div class="brief-workspace-nav" aria-label="Scripting navigation">
-          <button id="showIntroLabBtn" class="btn btn-muted" type="button">Intros</button>
-          <button id="showSkeletonWorkspaceBtn" class="btn btn-muted" type="button">Sections</button>
-          <button id="showDraftWorkspaceBtn" class="btn btn-muted" type="button">Draft</button>
+          <button id="showScriptDraftBtn" class="btn btn-muted" type="button">Draft</button>
+          <button id="showScriptExportBtn" class="btn btn-muted" type="button">Export</button>
         </div>
         <p id="scriptingProgressHint" class="hint"></p>
       </section>
 
-      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="intros">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="draft">
         <div class="panel-header">
-          <h2>Intro Lab</h2>
-        </div>
-        <p class="hint">
-          Draft all 3 intros for shooting. Sentence type is optional. Aim for a tight cold open with a soft target of
-          20-35 seconds.
-        </p>
-        <div id="introSentenceLegend" class="script-type-legend"></div>
-        <div id="introsBoard" class="script-intros-board"></div>
-      </section>
-
-      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="sections">
-        <div class="panel-header">
-          <h2>Sections</h2>
+          <h2>Draft</h2>
           <div class="panel-header-tools">
-            <button id="addSkeletonSectionBtn" class="btn btn-muted" type="button">Add Section</button>
+            <button id="addScriptSectionBtn" class="btn btn-muted" type="button">Add Section</button>
           </div>
         </div>
         <p class="hint">
-          Build the body of the script here. Each section uses the same typed-line workflow as Intro Lab.
+          The intro group and all script sections use the same typed-line workflow here. Use bulk add or import when
+          you want to move faster.
         </p>
+        <div id="introSentenceLegend" class="script-type-legend"></div>
         <div id="skeletonBoard" class="pipeline-board script-structure-board"></div>
       </section>
 
-      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="draft">
+      <section class="panel" data-page="brief-detail" data-brief-workspace="scripting" data-scripting-view="export">
         <div class="panel-header">
-          <h2>Script Draft</h2>
+          <h2>Export</h2>
         </div>
         <p class="hint">
-          Review the compiled script here. Intros appear first, followed by all sections in order.
+          Review the compiled script here. The intro group appears first, followed by all sections in order.
         </p>
         <div id="draftBoard" class="pipeline-board script-structure-board"></div>
       </section>
@@ -689,6 +716,36 @@
         </div>
       </article>
     </template>
+
+    <div id="scriptSectionModal" class="script-section-modal" hidden>
+      <div class="script-section-modal-dialog">
+        <div class="panel-header">
+          <h3 id="scriptSectionModalTitle">Bulk Add Lines</h3>
+        </div>
+        <p id="scriptSectionModalHint" class="hint"></p>
+        <div class="script-section-modal-helper">
+          <div class="script-section-modal-helper-header">
+            <strong>LLM Formatting Help</strong>
+            <div class="script-section-modal-helper-actions">
+              <button id="copyScriptSectionModalPromptBtn" class="btn btn-muted btn-compact" type="button">Copy Prompt</button>
+              <button id="copyScriptSectionModalPlainBtn" class="btn btn-muted btn-compact" type="button">Copy Plain Example</button>
+              <button id="copyScriptSectionModalJsonBtn" class="btn btn-muted btn-compact" type="button">Copy JSON Example</button>
+            </div>
+          </div>
+          <p class="hint" id="scriptSectionModalHelperHint"></p>
+        </div>
+        <textarea
+          id="scriptSectionModalTextarea"
+          class="script-section-modal-textarea"
+          rows="12"
+          placeholder="Paste script lines here"
+        ></textarea>
+        <div class="script-section-modal-actions">
+          <button id="scriptSectionModalCancelBtn" class="btn btn-muted" type="button">Cancel</button>
+          <button id="scriptSectionModalConfirmBtn" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
 
     <template id="thumbRowTemplate">
       <article class="pipeline-card pipeline-row list-row thumb-row">
@@ -818,6 +875,7 @@
               Notes / Thoughts
               <textarea rows="3" data-field="notes"></textarea>
             </label>
+            <p class="comparable-source-brief" data-role="sourceBrief" hidden></p>
           </div>
           <a class="comparable-link" data-role="sourceLink" target="_blank" rel="noreferrer noopener">Open Source</a>
         </div>
@@ -850,7 +908,10 @@
       <article class="pipeline-card pipeline-row list-row brief-list-row">
         <button type="button" class="pipeline-row-summary list-row-summary brief-list-summary" data-action="toggle">
           <span class="pipeline-row-arrow" data-role="expandArrow">▶</span>
-          <span class="pipeline-row-title" data-role="briefTitle"></span>
+          <span class="brief-list-copy">
+            <span class="pipeline-row-title" data-role="briefTitle"></span>
+            <span class="brief-list-tags" data-role="briefTags"></span>
+          </span>
           <span class="pipeline-row-status brief-list-badge" data-role="briefStatus"></span>
           <span class="pipeline-row-meta" data-role="briefMeta"></span>
         </button>
@@ -1013,6 +1074,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=20260316a"></script>
+    <script src="app.js?v=20260422i"></script>
   </body>
 </html>

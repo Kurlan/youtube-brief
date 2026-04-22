@@ -49,7 +49,21 @@ app.put("/api/storage/:key", (req, res) => {
     res.status(400).json({ error: "Missing value" });
     return;
   }
-  const result = store.save(key, req.body.value, req.body.source || "app");
+  if ((req.body.source || "app") === "frontend" && !Object.prototype.hasOwnProperty.call(req.body, "expectedUpdatedAt")) {
+    res.status(409).json({
+      error: "Conflict",
+      updatedAt: store.load(key)?.updatedAt ?? null,
+    });
+    return;
+  }
+  const result = store.save(key, req.body.value, req.body.source || "app", req.body.expectedUpdatedAt);
+  if (result.conflict) {
+    res.status(409).json({
+      error: "Conflict",
+      updatedAt: result.updatedAt ?? null,
+    });
+    return;
+  }
   res.json({
     ok: true,
     changed: result.changed,
@@ -65,6 +79,10 @@ app.delete("/api/storage/:key", (req, res) => {
   }
   store.clear(key);
   res.status(204).end();
+});
+
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Unknown API route" });
 });
 
 app.use((req, res, next) => {
@@ -95,6 +113,7 @@ app.use(
 );
 
 app.get("/", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(rootDir, "index.html"));
 });
 
@@ -103,6 +122,7 @@ app.get("*", (req, res) => {
     res.status(404).end();
     return;
   }
+  res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(rootDir, "index.html"));
 });
 
