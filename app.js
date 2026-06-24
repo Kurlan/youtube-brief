@@ -1433,6 +1433,17 @@ function normalizeIntroVariantSectionCollection(items) {
   return createDefaultIntroVariantSeed().map((seed, index) => createIntroVariantSectionRecord(seed, index));
 }
 
+function isLiveIntroVariantSectionRecord(item) {
+  return (
+    item &&
+    typeof item === "object" &&
+    toCleanText(item.id) &&
+    normalizeScriptSectionKind(item.kind) === "intro" &&
+    Array.isArray(item.items) &&
+    Array.isArray(item.archivedItems)
+  );
+}
+
 function createScriptIntroGroupRecord(seed = {}) {
   const source = seed && typeof seed === "object" ? seed : {};
   return {
@@ -3378,7 +3389,14 @@ function getSectionPlainText(section = {}) {
 }
 
 function getIntroVariants(group = state.scriptIntroGroup) {
-  return normalizeIntroVariantSectionCollection(group?.variants);
+  if (!group || typeof group !== "object") {
+    return normalizeIntroVariantSectionCollection([]);
+  }
+  if (Array.isArray(group.variants) && group.variants.length && group.variants.every(isLiveIntroVariantSectionRecord)) {
+    return group.variants;
+  }
+  group.variants = normalizeIntroVariantSectionCollection(group.variants);
+  return group.variants;
 }
 
 function getIntroVariantDurationSeconds(section = {}) {
