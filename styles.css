@@ -537,8 +537,119 @@ select:focus {
   }
 }
 
+.channel-setup {
+  border: 1px solid rgba(8, 33, 52, 0.18);
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.9rem;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.channel-setup summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.channel-setup .hint {
+  margin: 0.7rem 0;
+}
+
+.channel-status {
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.channel-status[data-tone="success"] {
+  color: var(--sea);
+  font-weight: 600;
+}
+
+.channel-status[data-tone="error"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.channel-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: start;
+  padding: 0.9rem;
+  border: 1px solid rgba(8, 33, 52, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  margin-bottom: 1rem;
+}
+
+.channel-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: rgba(8, 33, 52, 0.08);
+}
+
+.channel-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+}
+
+.channel-stats p {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.channel-video-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 0.9rem;
+}
+
+.channel-video-card {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 0.8rem;
+  border: 1px solid rgba(8, 33, 52, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.7rem;
+}
+
+.channel-video-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+  background: rgba(8, 33, 52, 0.08);
+}
+
+.channel-video-meta {
+  margin: 0 0 0.6rem;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.channel-video-form {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+}
+
+.channel-video-form-status {
+  margin: 0;
+}
+
 @media (max-width: 900px) {
   .two-up {
+    grid-template-columns: 1fr;
+  }
+
+  .channel-video-card {
     grid-template-columns: 1fr;
   }
 

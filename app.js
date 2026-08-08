@@ -1193,6 +1193,27 @@ async function addComparable() {
   updateBoardsAndBrief();
 }
 
+/**
+ * Attach a known video (for example one pulled from the connected channel) to
+ * the comparable board without another metadata lookup.
+ * @returns {boolean} false when the video is already on the board
+ */
+function addComparableFromVideo({ videoId, title, author }) {
+  if (!videoId || state.comparables.some((item) => item.videoId === videoId)) {
+    return false;
+  }
+
+  state.comparables.unshift({
+    videoId,
+    url: normalizeVideoUrl(videoId),
+    title: title || `Comparable: ${videoId}`,
+    author: author || "",
+  });
+
+  updateBoardsAndBrief();
+  return true;
+}
+
 function bindEvents() {
   document.getElementById("generateTitlesBtn").addEventListener("click", () => {
     const values = getFieldValues();
@@ -1247,5 +1268,7 @@ function init() {
   bindEvents();
   updateBoardsAndBrief();
 }
+
+window.briefStudio = { addComparableFromVideo };
 
 init();
