@@ -1,0 +1,39 @@
+app = "yt-brief"
+primary_region = "sjc"
+
+[build]
+
+[env]
+  PORT = "8080"
+  HOST = "0.0.0.0"
+  DB_PATH = "/data/youtube-brief.sqlite"
+  NODE_ENV = "production"
+
+[mounts]
+  source = "yt_brief_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+  # SQLite lives on a single volume, so never run more than one machine.
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 50
+    soft_limit = 25
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

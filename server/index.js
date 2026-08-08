@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDocumentStore, STORAGE_KEYS } from "./db.js";
+import { createPasswordGate } from "./auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,8 +15,16 @@ const store = createDocumentStore({ dbPath, migrationsDir });
 const app = express();
 const port = Number(process.env.PORT) || 4173;
 const host = process.env.HOST || "0.0.0.0";
+const appPassword = process.env.APP_PASSWORD || "";
 
+app.set("trust proxy", true);
 app.use(express.json({ limit: "10mb" }));
+
+if (appPassword) {
+  createPasswordGate({ password: appPassword, secure: process.env.NODE_ENV === "production" }).register(app);
+} else {
+  console.warn("APP_PASSWORD is not set; the app is served without any access control.");
+}
 
 app.get("/api/health", (_req, res) => {
   res.json({

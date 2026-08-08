@@ -41,6 +41,48 @@ python3 -m http.server 4173
 
 Then open `http://localhost:4173`.
 
+## Production
+
+The app runs on Fly.io at https://yt-brief.fly.dev, behind a shared password (interim access
+control until Google sign-in lands). A 1GB Fly volume is mounted at `/data` and holds the SQLite
+database; because SQLite is a single file on that volume, the app must stay on **one** machine.
+
+### Environment
+
+| Variable | Where it is set | Purpose |
+| --- | --- | --- |
+| `PORT` | `fly.toml` (8080) | HTTP port |
+| `HOST` | `fly.toml` (0.0.0.0) | Bind address |
+| `DB_PATH` | `fly.toml` (`/data/youtube-brief.sqlite`) | SQLite file on the mounted volume |
+| `NODE_ENV` | `fly.toml` (`production`) | Marks the session cookie `Secure` |
+| `APP_PASSWORD` | Fly secret | Shared password for the login gate. When unset, the app serves with no access control. |
+
+### Deploy
+
+Pushing to `main` deploys automatically via `.github/workflows/deploy.yml`, which needs a
+`FLY_API_TOKEN` repository secret.
+
+To deploy by hand:
+
+```bash
+fly deploy --remote-only --ha=false
+```
+
+### Changing the password
+
+```bash
+fly secrets set APP_PASSWORD='new-password' -a yt-brief
+```
+
+### First-time provisioning
+
+```bash
+fly apps create yt-brief --org personal
+fly volumes create yt_brief_data --region sjc --size 1
+fly secrets set APP_PASSWORD='choose-a-password' -a yt-brief
+fly deploy --remote-only --ha=false
+```
+
 ## Files
 
 - `index.html`: main brief workflow
