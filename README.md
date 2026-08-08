@@ -100,6 +100,51 @@ State lives in `data/youtube-brief.sqlite` (git-ignored). Migrations in `server/
 | Comparable videos do not attach metadata | Metadata is fetched from YouTube/noembed in the browser, so it needs outbound network access. Everything else works offline. |
 | Google sign-in rejects the origin | The YouTube integration requires an `http://localhost` origin, so it only works through the server — not from a `file://` URL. |
 
+## Production
+
+The app runs on Fly.io at https://yt-brief.fly.dev, behind a shared password (interim access
+control until Google sign-in lands). A 1GB Fly volume is mounted at `/data` and holds the SQLite
+database; because SQLite is a single file on that volume, the app must stay on **one** machine.
+
+### Environment
+
+| Variable | Where it is set | Purpose |
+| --- | --- | --- |
+| `PORT` | `fly.toml` (8080) | HTTP port |
+| `HOST` | `fly.toml` (0.0.0.0) | Bind address |
+| `DB_PATH` | `fly.toml` (`/data/youtube-brief.sqlite`) | SQLite file on the mounted volume |
+| `NODE_ENV` | `fly.toml` (`production`) | Marks the session cookie `Secure` |
+| `APP_PASSWORD` | Fly secret | Shared password for the login gate. When unset, the app serves with no access control. |
+
+### Deploy
+
+Pushing to `main` deploys automatically via `.github/workflows/deploy.yml`, which needs a
+`FLY_API_TOKEN` repository secret.
+
+To deploy by hand:
+
+```bash
+fly deploy --remote-only --ha=false
+```
+
+### Changing the password
+
+```bash
+fly secrets set APP_PASSWORD='new-password' -a yt-brief
+```
+
+### First-time provisioning
+
+```bash
+fly apps create yt-brief --org personal
+fly volumes create yt_brief_data --region sjc --size 1
+fly secrets set APP_PASSWORD='choose-a-password' -a yt-brief
+fly deploy --remote-only --ha=false
+```
+
+The YouTube integration is browser-side OAuth, so `https://yt-brief.fly.dev` also has to be listed
+under **Authorized JavaScript origins** for the Google OAuth client.
+
 ## Connect your YouTube channel
 
 The channel dashboard has a **Live Channel Data** panel that reads from the
