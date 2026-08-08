@@ -52,6 +52,10 @@ One-time setup in [Google Cloud](https://console.cloud.google.com/):
    origins**.
 5. Copy the client ID into the app's "API setup" section, or into `config.js`.
 
+While the consent screen is in **Testing**, only the listed test users can sign
+in (others get `Error 403: access_denied`), and Google shows an "unverified app"
+interstitial: choose Advanced > Go to YouTube Brief Studio.
+
 ```bash
 cp config.example.js config.js
 # then set googleClientId in config.js
