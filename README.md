@@ -31,15 +31,72 @@ This MVP is a web app because it is the fastest path to:
 
 ## Run locally
 
-Open `index.html` in your browser.
+The app is served by a small Express server that also owns the SQLite persistence API, so it must be started with Node — a plain static file server or opening `index.html` from disk is not supported (see [Persistence](#persistence)).
 
-Or run a local server:
+### Requirements
+
+- Node.js 20.11+ (`node --version`; the repo pins a major version in `.nvmrc`, so `nvm use` works)
+- npm 10+
+- No database to install — SQLite lives in a local file created on first run
+
+### First run
 
 ```bash
-python3 -m http.server 4173
+nvm use          # optional, if you use nvm
+npm ci           # installs express + better-sqlite3
+npm run doctor   # preflight: Node version, deps, native binding, DB path, port
+npm start
 ```
 
-Then open `http://localhost:4173`.
+`npm start` prints exactly where to go:
+
+```
+youtube-brief server running on http://localhost:4173
+sqlite database: /path/to/youtube-brief/data/youtube-brief.sqlite
+```
+
+Open that URL. It is up when `http://localhost:4173/api/health` returns `{"ok":true,"storage":"sqlite",...}` and the home view lists channel cards.
+
+Stop the server with `Ctrl+C`.
+
+### Day-to-day
+
+```bash
+npm run dev      # same server, restarts on file changes (node --watch)
+npm run doctor   # run this first whenever startup misbehaves
+```
+
+Only the server restarts on change; reload the browser for frontend edits. HTML/CSS/JS are served with `Cache-Control: no-store`, so a plain reload is enough — no hard-refresh needed.
+
+### Configuration
+
+All optional, read from the environment at startup:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `4173` | HTTP port |
+| `HOST` | `0.0.0.0` | Bind address (`127.0.0.1` to keep it off your LAN) |
+| `DB_PATH` | `data/youtube-brief.sqlite` | SQLite file location |
+
+Example: `PORT=4180 DB_PATH=/tmp/scratch.sqlite npm start`.
+
+### Persistence
+
+The frontend prefers the server API and falls back to browser storage when `/api/health` is unreachable. That fallback is why the app *appears* to work behind a static file server such as `python3 -m http.server` — it loads, but every change is written only to the browser, is invisible to the SQLite database, and disappears when browser storage is cleared. Always start it with `npm start` / `npm run dev`.
+
+State lives in `data/youtube-brief.sqlite` (git-ignored). Migrations in `server/migrations/` are applied automatically at startup. To start clean, stop the server and delete the file — it is recreated on the next start.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `Port 4173 is already in use, so the server did not start.` | An earlier server is still running. Stop it (`pkill -f "node server/index.js"`) or use another port: `PORT=4174 npm start`. |
+| `Failed to load the SQLite driver.` / `better-sqlite3 native binding failed to load` | Node version changed since `npm ci`, so the native module no longer matches. Run `nvm use && npm rebuild better-sqlite3`, or delete `node_modules` and `npm ci` again. |
+| `Failed to open the SQLite database at ...` | The `data/` directory is not writable, or `DB_PATH` points somewhere unwritable. Fix permissions or set a different `DB_PATH`. |
+| `npm ci` fails compiling `better-sqlite3` | No prebuilt binary matched your platform/Node version, so it fell back to a source build. Install build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `apt install build-essential python3`) or switch to a Node version with prebuilds. |
+| App loads but edits vanish on reload, or the page shows local-only persistence | You are on a static file server or `file://`. Stop it and use `npm start`; confirm `/api/health` returns `ok: true`. |
+| Server starts but the browser shows a stale UI | Confirm the port in the URL matches the one the server printed — an old tab may point at a previous port. |
+| Comparable videos do not attach metadata | Metadata is fetched from YouTube/noembed in the browser, so it needs outbound network access. Everything else works offline. |
 
 ## Files
 
@@ -47,8 +104,11 @@ Then open `http://localhost:4173`.
 - `viewer-strategy.html`: static strategy reference page
 - `styles.css`: visual design and responsive layout
 - `app.js`: generation logic, scoring, and HTML export
+- `server/index.js`: Express server, static hosting, and `/api/storage` endpoints
+- `server/db.js`, `server/migrations/`: SQLite document store and schema migrations
+- `scripts/doctor.mjs`: local-startup preflight checks (`npm run doctor`)
 
 ## Notes
 
-- Data is persisted in browser IndexedDB (`yt-brief-studio-local`), with localStorage fallback under `yt-brief-studio-v7`.
+- Data is persisted server-side in SQLite (`data/youtube-brief.sqlite`) when the app is served by `npm start`; browser IndexedDB (`yt-brief-studio-local`) with a localStorage fallback under `yt-brief-studio-v7` is used only when the API is unreachable.
 - This is a starter. The next layer is adding AI-assisted research and thumbnail image references.

@@ -9,7 +9,31 @@ const rootDir = path.resolve(__dirname, "..");
 const dataDir = path.join(rootDir, "data");
 const dbPath = process.env.DB_PATH || path.join(dataDir, "youtube-brief.sqlite");
 const migrationsDir = path.join(__dirname, "migrations");
-const store = createDocumentStore({ dbPath, migrationsDir });
+
+function exitWithMessage(lines) {
+  for (const line of lines) {
+    console.error(line);
+  }
+  process.exit(1);
+}
+
+let store;
+try {
+  store = createDocumentStore({ dbPath, migrationsDir });
+} catch (error) {
+  if (error?.code === "MODULE_NOT_FOUND" || error?.code === "ERR_DLOPEN_FAILED") {
+    exitWithMessage([
+      "Failed to load the SQLite driver.",
+      "Run `npm install` (or `npm ci`) with a supported Node version, then try again.",
+      String(error.message),
+    ]);
+  }
+  exitWithMessage([
+    `Failed to open the SQLite database at ${dbPath}.`,
+    "Check that the path is writable, or point DB_PATH somewhere else.",
+    String(error?.message ?? error),
+  ]);
+}
 
 const app = express();
 const port = Number(process.env.PORT) || 4173;
@@ -126,7 +150,25 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(rootDir, "index.html"));
 });
 
-app.listen(port, host, () => {
-  console.log(`youtube-brief server running on http://${host}:${port}`);
+const server = app.listen(port, host, () => {
+  const displayHost = host === "0.0.0.0" || host === "::" ? "localhost" : host;
+  console.log(`youtube-brief server running on http://${displayHost}:${port}`);
   console.log(`sqlite database: ${dbPath}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    exitWithMessage([
+      `Port ${port} is already in use, so the server did not start.`,
+      "Another copy of this server is probably still running. Stop it, or start on a different port:",
+      `  PORT=${port + 1} npm start`,
+    ]);
+  }
+  if (error.code === "EACCES") {
+    exitWithMessage([
+      `Not allowed to bind port ${port}.`,
+      "Ports below 1024 need elevated privileges; pick a higher port with PORT=<port> npm start.",
+    ]);
+  }
+  throw error;
 });
