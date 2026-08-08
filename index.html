@@ -67,6 +67,70 @@
         </div>
       </section>
 
+      <section class="panel" id="channelPanel" data-page="channel" data-channel-view="dashboard">
+        <div class="panel-header">
+          <h2>Live Channel Data</h2>
+          <div class="row">
+            <button id="channelConnectBtn" class="btn" type="button">Connect Channel</button>
+            <button id="channelRefreshBtn" class="btn btn-muted" type="button">Refresh</button>
+            <button id="channelDisconnectBtn" class="btn btn-muted" type="button">Disconnect</button>
+          </div>
+        </div>
+        <p class="hint">
+          Pull real data from your own channel with the YouTube Data API. Sign in with the Google
+          account that owns the channel to read stats, list recent uploads, and update video metadata.
+        </p>
+
+        <details id="channelSetup" class="channel-setup">
+          <summary>API setup (OAuth client ID)</summary>
+          <p class="hint">
+            In
+            <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noreferrer noopener">Google Cloud</a>
+            enable the YouTube Data API v3, then create an OAuth client of type <span>Web application</span>
+            with this page's origin as an authorized JavaScript origin. The client ID is a public
+            identifier; no client secret is used by this app.
+          </p>
+          <div class="channel-setup-entry">
+            <input id="channelClientId" placeholder="1234567890-abc123.apps.googleusercontent.com" />
+            <button id="channelSaveClientIdBtn" class="btn btn-muted" type="button">Save Client ID</button>
+          </div>
+          <p class="hint">
+            Prefer not to paste it every time? Copy <span>config.example.js</span> to
+            <span>config.js</span> (git-ignored) and set your client ID there.
+          </p>
+        </details>
+
+        <p id="channelStatus" class="channel-status">Not connected.</p>
+
+        <div id="channelSummary" class="channel-summary" hidden>
+          <img id="channelAvatar" class="channel-live-avatar" alt="Channel avatar" />
+          <div>
+            <h3 id="channelTitle"></h3>
+            <p id="channelHandle" class="hint"></p>
+            <div class="channel-live-stats">
+              <article>
+                <h3>Subscribers</h3>
+                <p id="channelSubs"></p>
+              </article>
+              <article>
+                <h3>Total Views</h3>
+                <p id="channelViews"></p>
+              </article>
+              <article>
+                <h3>Videos</h3>
+                <p id="channelVideos"></p>
+              </article>
+              <article>
+                <h3>Avg Views / Video</h3>
+                <p id="channelAvgViews"></p>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div id="channelVideoBoard" class="channel-video-board"></div>
+      </section>
+
       <section class="panel" data-page="channel" data-channel-view="ideation">
         <h2>1-3. Ideation Phases (Pre-Brief)</h2>
         <p class="hint">
@@ -1074,6 +1138,39 @@
       </article>
     </template>
 
+    <template id="channelVideoTemplate">
+      <article class="channel-video-card">
+        <img class="channel-video-thumb" alt="Video thumbnail" />
+        <div class="channel-video-content">
+          <h3 class="channel-video-title"></h3>
+          <p class="channel-video-meta"></p>
+          <div class="row">
+            <a class="btn btn-muted link-btn channel-video-link" target="_blank" rel="noreferrer noopener">Open</a>
+            <button class="btn btn-muted channel-video-edit" type="button">Edit Metadata</button>
+          </div>
+          <form class="channel-video-form" hidden>
+            <label>
+              Title
+              <input class="channel-video-title-input" maxlength="100" />
+            </label>
+            <label>
+              Description
+              <textarea class="channel-video-description-input" rows="4"></textarea>
+            </label>
+            <div class="row">
+              <button class="btn channel-video-save" type="submit">Save to YouTube</button>
+              <button class="btn btn-muted channel-video-cancel" type="button">Cancel</button>
+            </div>
+            <p class="hint channel-video-form-status"></p>
+          </form>
+        </div>
+      </article>
+    </template>
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="config.js" onerror="this.remove()"></script>
+    <script src="youtube-api.js?v=20260423a"></script>
     <script src="app.js?v=20260423a"></script>
+    <script src="channel-panel.js?v=20260423a"></script>
   </body>
 </html>
