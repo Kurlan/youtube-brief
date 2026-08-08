@@ -12,6 +12,7 @@ A packaging-first YouTube brief generator focused on:
 - One-click promotion between ideation phases and explicit "Promote to Brief" from phase 3
 - Phase 1 backlog view with date-added records, filtering, sorting, and ultra-fast title capture
 - Ideation records use one-line rows with click-to-expand details and arrow navigation between phases
+- Live channel data from the YouTube Data API for the authenticated channel
 - Static viewer strategy profile for `@ALifeEngineered`
 - Deep viewer signals (humor, taste, anti-patterns, unlock expectations)
 - Accelerator playbook integration (Idea Funnel, CCN, packaging stages, traffic strategy)
@@ -31,7 +32,7 @@ This MVP is a web app because it is the fastest path to:
 
 ## Run locally
 
-The app is served by a small Express server that also owns the SQLite persistence API, so it must be started with Node — a plain static file server or opening `index.html` from disk is not supported (see [Persistence](#persistence)).
+The app is served by a small Express server that also owns the SQLite persistence API, so it must be started with Node — a plain static file server or opening `index.html` from disk is not supported (see [Persistence](#persistence)), and the YouTube integration needs an `http://localhost` origin.
 
 ### Requirements
 
@@ -97,6 +98,49 @@ State lives in `data/youtube-brief.sqlite` (git-ignored). Migrations in `server/
 | App loads but edits vanish on reload, or the page shows local-only persistence | You are on a static file server or `file://`. Stop it and use `npm start`; confirm `/api/health` returns `ok: true`. |
 | Server starts but the browser shows a stale UI | Confirm the port in the URL matches the one the server printed — an old tab may point at a previous port. |
 | Comparable videos do not attach metadata | Metadata is fetched from YouTube/noembed in the browser, so it needs outbound network access. Everything else works offline. |
+| Google sign-in rejects the origin | The YouTube integration requires an `http://localhost` origin, so it only works through the server — not from a `file://` URL. |
+
+## Connect your YouTube channel
+
+The channel dashboard has a **Live Channel Data** panel that reads from the
+channel of the signed-in Google account: subscriber/view/video totals, the 10
+most recent uploads with their stats, and in-place editing of a video's title
+and description.
+
+One-time setup in [Google Cloud](https://console.cloud.google.com/):
+
+1. Create (or pick) a project.
+2. Enable **YouTube Data API v3** under APIs & Services > Library.
+3. Configure the OAuth consent screen as **External**, add yourself as a test
+   user, and add the scopes `youtube.readonly` and `youtube.force-ssl`.
+4. Create credentials > **OAuth client ID** > **Web application**, and add your
+   origin (for example `http://localhost:4173`) to **Authorized JavaScript
+   origins**.
+5. Copy the client ID into the panel's "API setup" section, or into `config.js`.
+
+While the consent screen is in **Testing**, only the listed test users can sign
+in (others get `Error 403: access_denied`), and Google shows an "unverified app"
+interstitial: choose Advanced > Go to YouTube Brief Studio.
+
+```bash
+cp config.example.js config.js
+# then set googleClientId in config.js
+```
+
+### Secret handling
+
+- No client secret or API key exists in this app. Browser apps use the OAuth
+  client ID only, which is a public identifier.
+- `config.js` is git-ignored; nothing credential-shaped is committed.
+- Access tokens are kept in `sessionStorage` and are revoked with Google on
+  **Disconnect**.
+- Scopes: `youtube.readonly` for reading, `youtube.force-ssl` for metadata
+  updates.
+
+### Quota note
+
+The YouTube Data API has a default quota of 10,000 units/day. Loading the panel
+costs a handful of units; refresh sparingly if you also use the quota elsewhere.
 
 ## Files
 
@@ -104,6 +148,9 @@ State lives in `data/youtube-brief.sqlite` (git-ignored). Migrations in `server/
 - `viewer-strategy.html`: static strategy reference page
 - `styles.css`: visual design and responsive layout
 - `app.js`: generation logic, scoring, and HTML export
+- `youtube-api.js`: YouTube Data API v3 client and Google OAuth token handling
+- `channel-panel.js`: UI for the live channel data panel
+- `config.example.js`: template for the git-ignored `config.js`
 - `server/index.js`: Express server, static hosting, and `/api/storage` endpoints
 - `server/db.js`, `server/migrations/`: SQLite document store and schema migrations
 - `scripts/doctor.mjs`: local-startup preflight checks (`npm run doctor`)
