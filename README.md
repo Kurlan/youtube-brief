@@ -32,18 +32,55 @@ This MVP is a web app because it is the fastest path to:
 
 ## Run locally
 
-Open `index.html` in your browser.
-
-Or run a local server:
+The app needs its own server and a PostgreSQL database; a static file server is
+not enough (without `/api` the frontend silently falls back to browser-only
+storage).
 
 ```bash
-python3 -m http.server 4173
+docker compose up -d db          # PostgreSQL on localhost:5432
+cp .env.example .env             # then: set -a && source .env
+npm install
+npm start                        # http://localhost:4173
 ```
 
-Then open `http://localhost:4173`.
+Migrations run automatically at boot; `npm run db:migrate` applies them without
+starting the server. `npm run dev` restarts on file changes.
 
-The YouTube integration requires an `http://localhost` origin, so use a local
-server rather than opening the file directly.
+The YouTube integration requires an `http://localhost` origin, so use the server
+rather than opening `index.html` directly.
+
+## Persistence
+
+| Env var | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string (required) |
+| `BUCKET_NAME`, `AWS_REGION`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3-compatible bucket for images; set by `fly storage create` |
+| `REVISION_LIMIT` | Revisions kept per document/brief (default 50) |
+| `BODY_LIMIT` | Request body limit (default 25mb) |
+| `PORT`, `HOST` | Listen address (default 4173, 0.0.0.0) |
+
+Data model: `workspace`, `ideas`, and `viewer` are single `jsonb` documents;
+each brief is its own row in `briefs`, so a save writes one brief instead of the
+whole collection. Image bytes never enter the database — uploads are downscaled
+in the browser, stored in the bucket keyed by content hash, and briefs keep only
+a `/api/assets/<id>` reference. Revisions are hash-deduplicated and pruned to
+`REVISION_LIMIT` per record.
+
+Without `BUCKET_NAME` the server writes objects under `data/assets/`, which is
+what local development uses.
+
+## Backup and recovery
+
+Rows and image bytes live in two systems, so both are part of a restore:
+
+- **PostgreSQL** (Fly Managed Postgres in production): automatic backups and
+  point-in-time restore via `fly mpg restore`.
+- **Object storage** (Tigris): enable bucket versioning; objects are not covered
+  by database backups.
+
+A restore of only one side leaves briefs pointing at objects that do not exist;
+`GET /api/assets/:id` answers `410` in that case rather than hanging the page.
+Run a restore drill covering both sides before trusting the setup.
 
 ## Connect your YouTube channel
 
@@ -96,8 +133,10 @@ costs a handful of units; refresh sparingly if you also use the quota elsewhere.
 - `youtube-api.js`: YouTube Data API v3 client and Google OAuth token handling
 - `channel-panel.js`: UI for the live channel data panel
 - `config.example.js`: template for the git-ignored `config.js`
+- `server/`: Express API, PostgreSQL store, object storage, SQL migrations
+- `scripts/`: `db:migrate` and the one-off `repair:intro-shapes` pass
 
 ## Notes
 
-- Data is persisted in browser IndexedDB (`yt-brief-studio-local`), with localStorage fallback under `yt-brief-studio-v7`.
+- Data is persisted in PostgreSQL through the server. When `/api` is unreachable the app degrades to browser IndexedDB (`yt-brief-studio-local`), with a localStorage fallback under `yt-brief-studio-v7`, and images stay inline until a server is available again.
 - This is a starter. The next layer is adding AI-assisted research and thumbnail image references.
