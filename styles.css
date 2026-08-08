@@ -354,6 +354,36 @@ select:focus {
   font-size: 0.82rem;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.channel-video-card {
+  min-height: auto;
+}
+
+.channel-video-edit {
+  justify-self: start;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.82rem;
+}
+
+.channel-video-form {
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px solid rgba(8, 33, 52, 0.16);
+  padding-top: 0.7rem;
+}
+
+.channel-video-message {
+  margin: 0;
+  min-height: 1.1rem;
+}
+
+.channel-video-message.is-error {
+  color: var(--accent);
+}
+
 .idea-card {
   border: 1px solid rgba(8, 33, 52, 0.18);
   background: rgba(255, 255, 255, 0.78);

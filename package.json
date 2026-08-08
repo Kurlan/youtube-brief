@@ -1,0 +1,14 @@
+{
+  "name": "youtube-brief-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Packaging-first YouTube brief generator with authenticated YouTube Data API access.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test test"
+  }
+}

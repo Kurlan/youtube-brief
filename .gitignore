@@ -1,0 +1,4 @@
+.env
+.env.local
+.youtube-tokens.json
+node_modules/

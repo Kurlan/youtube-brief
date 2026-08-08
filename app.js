@@ -96,6 +96,16 @@ const refs = {
   checkThumbTextRule: document.getElementById("checkThumbTextRule"),
   checkPackagingStages: document.getElementById("checkPackagingStages"),
   checkCCN: document.getElementById("checkCCN"),
+  channelStatus: document.getElementById("channelStatus"),
+  channelSummary: document.getElementById("channelSummary"),
+  channelName: document.getElementById("channelName"),
+  channelSubs: document.getElementById("channelSubs"),
+  channelViews: document.getElementById("channelViews"),
+  channelVideoCount: document.getElementById("channelVideoCount"),
+  channelVideoBoard: document.getElementById("channelVideoBoard"),
+  channelVideoTemplate: document.getElementById("channelVideoCardTemplate"),
+  refreshChannelBtn: document.getElementById("refreshChannelBtn"),
+  connectChannelBtn: document.getElementById("connectChannelBtn"),
 };
 
 const state = {
@@ -103,6 +113,8 @@ const state = {
   thumbnails: [],
   comparables: [],
   latestBriefHtml: "",
+  channel: null,
+  channelVideos: [],
 };
 
 const BRIEF_EXPORT_STYLES = `
@@ -1193,6 +1205,196 @@ async function addComparable() {
   updateBoardsAndBrief();
 }
 
+function formatCount(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function formatPublishedAt(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString();
+}
+
+function setChannelStatus(message, isError = false) {
+  refs.channelStatus.textContent = message;
+  refs.channelStatus.classList.toggle("is-error", isError);
+}
+
+async function channelApi(path, options = {}) {
+  const response = await fetch(path, {
+    headers: options.body ? { "content-type": "application/json" } : undefined,
+    ...options,
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed (${response.status})`);
+  }
+
+  return data;
+}
+
+function renderChannelSummary() {
+  if (!state.channel) {
+    refs.channelSummary.classList.add("hidden");
+    return;
+  }
+
+  const { channel } = state;
+  refs.channelSummary.classList.remove("hidden");
+  refs.channelName.textContent = channel.handle ? `${channel.title} (${channel.handle})` : channel.title;
+  refs.channelSubs.textContent = channel.stats.hiddenSubscriberCount
+    ? "Hidden"
+    : formatCount(channel.stats.subscribers);
+  refs.channelViews.textContent = formatCount(channel.stats.views);
+  refs.channelVideoCount.textContent = formatCount(channel.stats.videos);
+}
+
+function renderChannelVideoCard(video, index) {
+  const fragment = refs.channelVideoTemplate.content.cloneNode(true);
+  const card = fragment.querySelector(".channel-video-card");
+  const image = card.querySelector(".comparable-thumb");
+  const title = card.querySelector(".comparable-title");
+  const meta = card.querySelector(".comparable-meta");
+  const link = card.querySelector(".comparable-link");
+  const editBtn = card.querySelector(".channel-video-edit");
+  const form = card.querySelector(".channel-video-form");
+  const titleInput = card.querySelector(".channel-video-title");
+  const descriptionInput = card.querySelector(".channel-video-description");
+  const tagsInput = card.querySelector(".channel-video-tags");
+  const cancelBtn = card.querySelector(".channel-video-cancel");
+  const saveBtn = card.querySelector(".channel-video-save");
+  const message = card.querySelector(".channel-video-message");
+
+  const fillForm = () => {
+    titleInput.value = video.title;
+    descriptionInput.value = video.description;
+    tagsInput.value = (video.tags || []).join(", ");
+  };
+
+  image.src = video.thumbnail || getThumbUrl(video.id);
+  image.alt = `Thumbnail for ${video.title}`;
+  title.textContent = video.title;
+  meta.textContent = [
+    `${formatCount(video.stats.views)} views`,
+    `${formatCount(video.stats.likes)} likes`,
+    `${formatCount(video.stats.comments)} comments`,
+    formatPublishedAt(video.publishedAt),
+    video.privacyStatus,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+  link.href = video.url;
+  fillForm();
+
+  editBtn.addEventListener("click", () => {
+    form.classList.toggle("hidden");
+    if (!form.classList.contains("hidden")) {
+      fillForm();
+      message.textContent = "";
+    }
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    fillForm();
+    form.classList.add("hidden");
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    saveBtn.disabled = true;
+    message.classList.remove("is-error");
+    message.textContent = "Saving to YouTube...";
+
+    try {
+      const payload = await channelApi(`/api/youtube/videos/${video.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          title: titleInput.value,
+          description: descriptionInput.value,
+          tags: tagsInput.value
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        }),
+      });
+
+      state.channelVideos[index] = payload.video;
+      renderChannelVideos();
+    } catch (error) {
+      message.classList.add("is-error");
+      message.textContent = error.message;
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  return fragment;
+}
+
+function renderChannelVideos() {
+  refs.channelVideoBoard.innerHTML = "";
+
+  if (!state.channelVideos.length) {
+    return;
+  }
+
+  state.channelVideos.forEach((video, index) => {
+    refs.channelVideoBoard.appendChild(renderChannelVideoCard(video, index));
+  });
+}
+
+async function loadChannelData() {
+  refs.channelVideoBoard.innerHTML = "";
+  state.channel = null;
+  state.channelVideos = [];
+  renderChannelSummary();
+
+  let status;
+  try {
+    status = await channelApi("/api/youtube/status");
+  } catch {
+    setChannelStatus(
+      "Live channel data needs the local server. Run `npm start` and open http://localhost:4173.",
+      true,
+    );
+    return;
+  }
+
+  if (!status.configured) {
+    refs.connectChannelBtn.classList.add("hidden");
+    setChannelStatus(
+      `Google OAuth is not configured yet (missing ${status.missingCredentials.join(", ")}). See .env.example.`,
+      true,
+    );
+    return;
+  }
+
+  if (!status.connected) {
+    refs.connectChannelBtn.classList.remove("hidden");
+    setChannelStatus("Not connected yet. Click \"Connect YouTube\" to grant access once.");
+    return;
+  }
+
+  refs.connectChannelBtn.classList.add("hidden");
+  setChannelStatus("Loading channel data...");
+
+  try {
+    const payload = await channelApi("/api/youtube/videos?limit=10");
+    state.channel = payload.channel;
+    state.channelVideos = payload.videos;
+    renderChannelSummary();
+    renderChannelVideos();
+    setChannelStatus(`Showing the ${payload.videos.length} most recent uploads.`);
+  } catch (error) {
+    refs.connectChannelBtn.classList.remove("hidden");
+    setChannelStatus(error.message, true);
+  }
+}
+
 function bindEvents() {
   document.getElementById("generateTitlesBtn").addEventListener("click", () => {
     const values = getFieldValues();
@@ -1214,6 +1416,8 @@ function bindEvents() {
   document.getElementById("resetStateBtn").addEventListener("click", resetAll);
   document.getElementById("downloadBriefBtn").addEventListener("click", downloadBriefHtml);
   refs.copyHtmlBtn.addEventListener("click", copyBriefHtml);
+
+  refs.refreshChannelBtn.addEventListener("click", loadChannelData);
 
   refs.addComparableBtn.addEventListener("click", addComparable);
   refs.comparableUrl.addEventListener("keydown", (event) => {
@@ -1246,6 +1450,7 @@ function init() {
   applyDefaultPlaybookValues();
   bindEvents();
   updateBoardsAndBrief();
+  loadChannelData();
 }
 
 init();
