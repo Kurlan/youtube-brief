@@ -20,13 +20,28 @@ function record(ok, label, hint = "") {
   results.push({ ok, label, hint });
 }
 
+function parseVersion(value) {
+  const [major = 0, minor = 0, patch = 0] = value.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  return [major, minor, patch];
+}
+
+function compareVersions(a, b) {
+  const left = parseVersion(a);
+  const right = parseVersion(b);
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index];
+    }
+  }
+  return 0;
+}
+
 function checkNodeVersion() {
-  const required = Number((pkg.engines?.node ?? ">=20").replace(/[^\d]*(\d+).*/, "$1"));
-  const current = Number(process.versions.node.split(".")[0]);
+  const required = (pkg.engines?.node ?? ">=20.0.0").replace(/^[^\d]*/, "");
   record(
-    current >= required,
+    compareVersions(process.versions.node, required) >= 0,
     `Node ${process.versions.node} (requires >=${required})`,
-    `Install Node ${required}+ (see .nvmrc: \`nvm use\`).`,
+    `Install Node ${required}+ (see .nvmrc: \`nvm install && nvm use\`).`,
   );
 }
 

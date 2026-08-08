@@ -35,14 +35,14 @@ The app is served by a small Express server that also owns the SQLite persistenc
 
 ### Requirements
 
-- Node.js 20.11+ (`node --version`; the repo pins a major version in `.nvmrc`, so `nvm use` works)
+- Node.js 20.11+ (`node --version`; the repo pins a major version in `.nvmrc`, so `nvm install && nvm use` selects it)
 - npm 10+
 - No database to install — SQLite lives in a local file created on first run
 
 ### First run
 
 ```bash
-nvm use          # optional, if you use nvm
+nvm install && nvm use   # optional, if you use nvm (`nvm use` alone fails when Node 20 isn't installed yet)
 npm ci           # installs express + better-sqlite3
 npm run doctor   # preflight: Node version, deps, native binding, DB path, port
 npm start
@@ -91,7 +91,7 @@ State lives in `data/youtube-brief.sqlite` (git-ignored). Migrations in `server/
 | Symptom | Cause and fix |
 | --- | --- |
 | `Port 4173 is already in use, so the server did not start.` | An earlier server is still running. Stop it (`pkill -f "node server/index.js"`) or use another port: `PORT=4174 npm start`. |
-| `Failed to load the SQLite driver.` / `better-sqlite3 native binding failed to load` | Node version changed since `npm ci`, so the native module no longer matches. Run `nvm use && npm rebuild better-sqlite3`, or delete `node_modules` and `npm ci` again. |
+| `Failed to load the SQLite driver.` / `better-sqlite3 native binding failed to load` | Node version changed since `npm ci`, so the native module no longer matches. Run `nvm install && nvm use`, then `npm rebuild better-sqlite3` — or delete `node_modules` and `npm ci` again. |
 | `Failed to open the SQLite database at ...` | The `data/` directory is not writable, or `DB_PATH` points somewhere unwritable. Fix permissions or set a different `DB_PATH`. |
 | `npm ci` fails compiling `better-sqlite3` | No prebuilt binary matched your platform/Node version, so it fell back to a source build. Install build tools (macOS: `xcode-select --install`; Debian/Ubuntu: `apt install build-essential python3`) or switch to a Node version with prebuilds. |
 | App loads but edits vanish on reload, or the page shows local-only persistence | You are on a static file server or `file://`. Stop it and use `npm start`; confirm `/api/health` returns `ok: true`. |
