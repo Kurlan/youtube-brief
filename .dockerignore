@@ -2,5 +2,6 @@
 .github
 node_modules
 data
+config.js
 npm-debug.log*
 .DS_Store
