@@ -167,7 +167,9 @@ h1 {
   color: #0b5f3f;
 }
 
-.save-status[data-state="error"] {
+.save-status[data-state="error"],
+.save-status[data-state="conflict"],
+.save-status[data-state="load-failed"] {
   color: #8b2f2f;
 }
 

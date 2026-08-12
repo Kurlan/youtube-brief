@@ -354,6 +354,7 @@ const remoteStorageUpdatedAt = {};
 const remoteBriefUpdatedAt = {};
 const remoteBriefSerialized = {};
 let pendingBriefActiveIds = {};
+let remoteLoadFailed = false;
 let remotePersistenceLastCheckedAt = 0;
 let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
@@ -934,15 +935,18 @@ function enqueuePersistTask(task) {
       await task();
       setSaveStatus("saved", Date.now());
     })
-    .catch((error) => {
+    .catch(async (error) => {
       if (error && error.code === "REMOTE_CONFLICT") {
-        setSaveStatus("error");
-        console.warn("Remote snapshot conflict detected. Reloading latest backend state.", error);
-        void loadSnapshot().then((loadedSnapshot) => {
-          if (loadedSnapshot) {
-            updateBoardsAndBrief({ persist: false });
-          }
-        });
+        // The conflict response refreshes the expected timestamps, so retrying keeps the
+        // edit that is on screen instead of replacing it with the stored version.
+        console.warn("Remote snapshot conflict detected. Retrying with refreshed timestamps.", error);
+        try {
+          await task();
+          setSaveStatus("saved", Date.now());
+        } catch (retryError) {
+          setSaveStatus("conflict");
+          console.warn("Remote snapshot conflict persists; unsaved edits are kept on screen.", retryError);
+        }
         return;
       }
       setSaveStatus("error");
@@ -1082,6 +1086,16 @@ function setSaveStatus(status, timestamp = Date.now()) {
 
   if (normalized === "error") {
     refs.saveStatus.textContent = "Save failed";
+    return;
+  }
+
+  if (normalized === "load-failed") {
+    refs.saveStatus.textContent = "Load failed - reload to retry";
+    return;
+  }
+
+  if (normalized === "conflict") {
+    refs.saveStatus.textContent = "Not saved - changed elsewhere";
     return;
   }
 
@@ -9477,11 +9491,19 @@ async function runQueuedSnapshotPersist() {
   }
 
   const payload = queuedSnapshotPayload;
-  queuedSnapshotPayload = null;
   await persistSnapshotToDb(payload);
+  if (queuedSnapshotPayload === payload) {
+    queuedSnapshotPayload = null;
+  }
 }
 
 function saveSnapshot(options = {}) {
+  // Briefs load one request each, so a partial load must never be written back as the truth.
+  if (remoteLoadFailed) {
+    setSaveStatus("load-failed");
+    return Promise.resolve();
+  }
+
   const values = getFieldValues();
   ensureChannelModel();
   cacheActiveChannelWorkspace(values);
@@ -9566,6 +9588,7 @@ async function loadSnapshot() {
   } catch (error) {
     console.warn("Could not load persisted snapshot.", error);
     if (useRemote) {
+      remoteLoadFailed = true;
       return false;
     }
   }
@@ -10946,7 +10969,7 @@ async function init() {
   const locationNav = getNavigationStateFromLocation();
   applyNavigationState(locationNav, { persist: false, syncHistory: false });
   syncNavigationHistory("replace");
-  setSaveStatus("saved", Date.now());
+  setSaveStatus(remoteLoadFailed ? "load-failed" : "saved", Date.now());
 }
 
 void init();
