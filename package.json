@@ -6,8 +6,12 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "doctor": "node scripts/doctor.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "repair:intro-shapes": "node scripts/repair-intro-shapes.mjs"
+  },
+  "engines": {
+    "node": ">=20.11.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1101.0",

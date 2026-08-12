@@ -32,55 +32,140 @@ This MVP is a web app because it is the fastest path to:
 
 ## Run locally
 
-The app needs its own server and a PostgreSQL database; a static file server is
-not enough (without `/api` the frontend silently falls back to browser-only
-storage).
+The app is served by a small Express server that also owns the persistence API, so it must be started with Node — a plain static file server or opening `index.html` from disk is not supported (see [Persistence](#persistence)), and the YouTube integration needs an `http://localhost` origin.
+
+### Requirements
+
+- Node.js 20.11+ (`node --version`; the repo pins a major version in `.nvmrc`, so `nvm install && nvm use` selects it)
+- npm 10+
+- Docker, for the local PostgreSQL container in `docker-compose.yml`
+
+### First run
 
 ```bash
-docker compose up -d db          # PostgreSQL on localhost:5432
-cp .env.example .env             # then: set -a && source .env
-npm install
-npm start                        # http://localhost:4173
+nvm install && nvm use   # optional, if you use nvm (`nvm use` alone fails when Node 20 isn't installed yet)
+npm ci
+docker compose up -d db  # PostgreSQL on localhost:5432
+cp .env.example .env     # then: set -a && source .env && set +a
+npm run doctor           # preflight: Node version, deps, database, port
+npm start
 ```
 
-Migrations run automatically at boot; `npm run db:migrate` applies them without
-starting the server. `npm run dev` restarts on file changes.
+`npm start` prints exactly where to go:
 
-The YouTube integration requires an `http://localhost` origin, so use the server
-rather than opening `index.html` directly.
+```
+youtube-brief server running on http://localhost:4173
+postgres: localhost:5432
+object storage: file:///path/to/youtube-brief/data/assets
+```
 
-## Persistence
+Open that URL. It is up when `http://localhost:4173/api/health` returns `{"ok":true,"storage":"postgres",...}` and the home view lists channel cards.
 
-| Env var | Purpose |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string (required) |
-| `BUCKET_NAME`, `AWS_REGION`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3-compatible bucket for images; set by `fly storage create` |
-| `REVISION_LIMIT` | Revisions kept per document/brief (default 50) |
-| `BODY_LIMIT` | Request body limit (default 25mb) |
-| `PORT`, `HOST` | Listen address (default 4173, 0.0.0.0) |
+Stop the server with `Ctrl+C`.
 
-Data model: `workspace`, `ideas`, and `viewer` are single `jsonb` documents;
-each brief is its own row in `briefs`, so a save writes one brief instead of the
-whole collection. Image bytes never enter the database — uploads are downscaled
-in the browser, stored in the bucket keyed by content hash, and briefs keep only
-a `/api/assets/<id>` reference. Revisions are hash-deduplicated and pruned to
-`REVISION_LIMIT` per record.
+### Day-to-day
 
-Without `BUCKET_NAME` the server writes objects under `data/assets/`, which is
-what local development uses.
+```bash
+npm run dev                  # same server, restarts on file changes (node --watch)
+npm run doctor               # run this first whenever startup misbehaves
+npm run db:migrate           # apply server/migrations without starting the server
+npm run repair:intro-shapes  # one-off: re-sync script.introGroup and legacy script.intros
+```
 
-## Backup and recovery
+Only the server restarts on change; reload the browser for frontend edits. HTML/CSS/JS are served with `Cache-Control: no-store`, so a plain reload is enough — no hard-refresh needed.
+
+### Configuration
+
+Read from the environment at startup; `DATABASE_URL` is required, the rest are optional:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | — | PostgreSQL connection string |
+| `PORT` | `4173` | HTTP port |
+| `HOST` | `0.0.0.0` | Bind address (`127.0.0.1` to keep it off your LAN) |
+| `BUCKET_NAME`, `AWS_REGION`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | unset | S3-compatible bucket for images; unset stores them under `data/assets/` |
+| `REVISION_LIMIT` | `50` | Revisions kept per document and per brief |
+| `BODY_LIMIT` | `25mb` | Request body limit |
+| `APP_PASSWORD` | unset | Shared password gate; unset serves with no access control |
+
+Example: `PORT=4180 npm start`.
+
+### Persistence
+
+The frontend prefers the server API and falls back to browser storage when `/api/health` is unreachable. That fallback is why the app *appears* to work behind a static file server such as `python3 -m http.server` — it loads, but every change is written only to the browser, is invisible to the database, and disappears when browser storage is cleared. Always start it with `npm start` / `npm run dev`.
+
+State lives in PostgreSQL. Migrations in `server/migrations/` are applied automatically at startup, guarded by an advisory lock so several machines can boot at once. To start clean: `docker compose down -v && docker compose up -d db`.
+
+Data model: `workspace`, `ideas`, and `viewer` are single `jsonb` documents; each brief is its own row in `briefs`, so a save writes one brief instead of the whole collection. Image bytes never enter the database — uploads are downscaled in the browser, stored keyed by content hash, and briefs keep only a `/api/assets/<id>` reference. Revisions are hash-deduplicated and pruned to `REVISION_LIMIT` per record.
+
+### Backup and recovery
 
 Rows and image bytes live in two systems, so both are part of a restore:
 
-- **PostgreSQL** (Fly Managed Postgres in production): automatic backups and
-  point-in-time restore via `fly mpg restore`.
-- **Object storage** (Tigris): enable bucket versioning; objects are not covered
-  by database backups.
+- **PostgreSQL** (Fly Managed Postgres in production): automatic backups and point-in-time restore via `fly mpg restore`.
+- **Object storage** (Tigris): enable bucket versioning; objects are not covered by database backups.
 
-A restore of only one side leaves briefs pointing at objects that do not exist;
-`GET /api/assets/:id` answers `410` in that case rather than hanging the page.
-Run a restore drill covering both sides before trusting the setup.
+A restore of only one side leaves briefs pointing at objects that do not exist; `GET /api/assets/:id` answers `410` in that case rather than hanging the page. Run a restore drill covering both sides before trusting the setup.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `Port 4173 is already in use, so the server did not start.` | An earlier server is still running. Stop it (`pkill -f "node server/index.js"`) or use another port: `PORT=4174 npm start`. |
+| `Failed to connect to PostgreSQL.` | The database is not running or `DATABASE_URL` is wrong. Start it with `docker compose up -d db` and re-source `.env`. |
+| Images show as broken icons | The object referenced by the brief is missing (`/api/assets/:id` answers `410`), which happens when the database was restored without the bucket. |
+| App loads but edits vanish on reload, or the page shows local-only persistence | You are on a static file server or `file://`. Stop it and use `npm start`; confirm `/api/health` returns `ok: true`. |
+| Server starts but the browser shows a stale UI | Confirm the port in the URL matches the one the server printed — an old tab may point at a previous port. |
+| Comparable videos do not attach metadata | Metadata is fetched from YouTube/noembed in the browser, so it needs outbound network access. Everything else works offline. |
+| Google sign-in rejects the origin | The YouTube integration requires an `http://localhost` origin, so it only works through the server — not from a `file://` URL. |
+
+## Production
+
+The app runs on Fly.io at https://yt-brief.fly.dev, behind a shared password (interim access
+control until Google sign-in lands). Data lives in Fly Managed Postgres, and brief images live in a
+Tigris bucket, so the app is not pinned to a single machine.
+
+### Environment
+
+| Variable | Where it is set | Purpose |
+| --- | --- | --- |
+| `PORT` | `fly.toml` (8080) | HTTP port |
+| `HOST` | `fly.toml` (0.0.0.0) | Bind address |
+| `NODE_ENV` | `fly.toml` (`production`) | Marks the session cookie `Secure` |
+| `DATABASE_URL` | Fly secret | Managed Postgres connection string |
+| `BUCKET_NAME` | Fly secret | Tigris bucket for brief images |
+| `AWS_REGION`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Fly secrets (set by `fly storage create`) | Bucket credentials |
+| `APP_PASSWORD` | Fly secret | Shared password for the login gate. When unset, the app serves with no access control. |
+
+### Deploy
+
+Pushing to `main` deploys automatically via `.github/workflows/deploy.yml`, which needs a
+`FLY_API_TOKEN` repository secret.
+
+To deploy by hand:
+
+```bash
+fly deploy --remote-only
+```
+
+### Changing the password
+
+```bash
+fly secrets set APP_PASSWORD='new-password' -a yt-brief
+```
+
+### First-time provisioning
+
+```bash
+fly apps create yt-brief --org personal
+fly mpg create --region sjc                      # then attach: sets DATABASE_URL
+fly storage create                               # Tigris bucket; prints access keys once
+fly secrets set APP_PASSWORD='choose-a-password' -a yt-brief
+fly deploy --remote-only
+```
+
+The YouTube integration is browser-side OAuth, so `https://yt-brief.fly.dev` also has to be listed
+under **Authorized JavaScript origins** for the Google OAuth client.
 
 ## Connect your YouTube channel
 
@@ -133,10 +218,13 @@ costs a handful of units; refresh sparingly if you also use the quota elsewhere.
 - `youtube-api.js`: YouTube Data API v3 client and Google OAuth token handling
 - `channel-panel.js`: UI for the live channel data panel
 - `config.example.js`: template for the git-ignored `config.js`
-- `server/`: Express API, PostgreSQL store, object storage, SQL migrations
-- `scripts/`: `db:migrate` and the one-off `repair:intro-shapes` pass
+- `server/index.js`: Express server, static hosting, `/api/storage`, `/api/briefs`, and `/api/assets` endpoints
+- `server/db.js`, `server/migrations/`: PostgreSQL store and schema migrations
+- `server/object-storage.js`: S3-compatible image storage with a local filesystem fallback
+- `scripts/doctor.mjs`: local-startup preflight checks (`npm run doctor`)
+- `scripts/migrate.mjs`, `scripts/repair-intro-shapes.mjs`: migrations and the one-off intro-shape pass
 
 ## Notes
 
-- Data is persisted in PostgreSQL through the server. When `/api` is unreachable the app degrades to browser IndexedDB (`yt-brief-studio-local`), with a localStorage fallback under `yt-brief-studio-v7`, and images stay inline until a server is available again.
+- Data is persisted server-side in PostgreSQL when the app is served by `npm start`; browser IndexedDB (`yt-brief-studio-local`) with a localStorage fallback under `yt-brief-studio-v7` is used only when the API is unreachable, and images stay inline until a server is available again.
 - This is a starter. The next layer is adding AI-assisted research and thumbnail image references.

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createStore, DEFAULT_USER_ID, DOCUMENT_KEYS, STORAGE_KEYS } from "./db.js";
 import { createObjectStorage, MissingObjectError } from "./object-storage.js";
+import { createPasswordGate } from "./auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,13 +21,29 @@ const MIME_EXTENSIONS = {
   "image/avif": "avif",
 };
 
-const store = await createStore({
-  connectionString: process.env.DATABASE_URL,
-  migrationsDir,
-  revisionLimit: Number(process.env.REVISION_LIMIT) || undefined,
-  poolMax: Number(process.env.PG_POOL_MAX) || undefined,
-});
-await store.ensureUser(DEFAULT_USER_ID);
+function exitWithMessage(lines) {
+  for (const line of lines) {
+    console.error(line);
+  }
+  process.exit(1);
+}
+
+let store;
+try {
+  store = await createStore({
+    connectionString: process.env.DATABASE_URL,
+    migrationsDir,
+    revisionLimit: Number(process.env.REVISION_LIMIT) || undefined,
+    poolMax: Number(process.env.PG_POOL_MAX) || undefined,
+  });
+  await store.ensureUser(DEFAULT_USER_ID);
+} catch (error) {
+  exitWithMessage([
+    "Failed to connect to PostgreSQL.",
+    "Set DATABASE_URL to a reachable database (locally: `docker compose up -d db`).",
+    String(error?.message ?? error),
+  ]);
+}
 
 const objectStorage = createObjectStorage({
   bucket: process.env.BUCKET_NAME,
@@ -38,6 +55,9 @@ const objectStorage = createObjectStorage({
 const app = express();
 const port = Number(process.env.PORT) || 4173;
 const host = process.env.HOST || "0.0.0.0";
+const appPassword = process.env.APP_PASSWORD || "";
+
+app.set("trust proxy", true);
 
 // Auth lands in A-115; until then every request belongs to the single seeded user.
 function resolveUserId(_req) {
@@ -48,6 +68,12 @@ function asyncRoute(handler) {
   return (req, res, next) => {
     Promise.resolve(handler(req, res)).catch(next);
   };
+}
+
+if (appPassword) {
+  createPasswordGate({ password: appPassword, secure: process.env.NODE_ENV === "production" }).register(app);
+} else {
+  console.warn("APP_PASSWORD is not set; the app is served without any access control.");
 }
 
 app.post("/api/assets", express.raw({ type: ["image/*", "application/octet-stream"], limit: bodyLimit }));
@@ -370,8 +396,26 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-app.listen(port, host, () => {
-  console.log(`youtube-brief server running on http://${host}:${port}`);
+const server = app.listen(port, host, () => {
+  const displayHost = host === "0.0.0.0" || host === "::" ? "localhost" : host;
+  console.log(`youtube-brief server running on http://${displayHost}:${port}`);
   console.log(`postgres: ${new URL(process.env.DATABASE_URL).host}`);
   console.log(`object storage: ${objectStorage.describe()}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    exitWithMessage([
+      `Port ${port} is already in use, so the server did not start.`,
+      "Another copy of this server is probably still running. Stop it, or start on a different port:",
+      `  PORT=${port + 1} npm start`,
+    ]);
+  }
+  if (error.code === "EACCES") {
+    exitWithMessage([
+      `Not allowed to bind port ${port}.`,
+      "Ports below 1024 need elevated privileges; pick a higher port with PORT=<port> npm start.",
+    ]);
+  }
+  throw error;
 });
