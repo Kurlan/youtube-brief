@@ -20,10 +20,12 @@ test("a manual brief is created, edited, and persisted", async ({ page, request 
   await expect(page.locator("#projectName")).toBeVisible();
   await page.locator("#projectName").fill(projectName);
   await page.locator("#ideaFocus").click();
-  await expect(page.locator("#saveStatus")).toContainText("Saved");
 
-  const stored = await request.get("/api/briefs");
-  expect((await stored.json()).briefs).toHaveLength(1);
+  // #saveStatus already reads "Saved <time>" on load, so the stored brief is the
+  // only assertion that proves the edit reached the server.
+  await expect
+    .poll(async () => JSON.stringify((await (await request.get("/api/briefs")).json()).briefs))
+    .toContain(projectName);
 
   await page.locator("#backToBriefListBtn").click();
   await expect(page.locator("#briefListBoard")).toContainText(projectName);
@@ -38,7 +40,7 @@ test("briefs workspace is empty after the briefs are cleared", async ({ page, re
   await expect(page.locator("#projectName")).toBeVisible();
   await page.locator("#projectName").fill("Temporary brief");
   await page.locator("#ideaFocus").click();
-  await expect(page.locator("#saveStatus")).toContainText("Saved");
+  await expect.poll(async () => (await (await request.get("/api/briefs")).json()).briefs.length).toBe(1);
 
   expect((await request.delete("/api/briefs")).status()).toBe(204);
 
