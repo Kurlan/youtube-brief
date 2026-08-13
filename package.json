@@ -7,6 +7,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "doctor": "node scripts/doctor.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "db:migrate": "node scripts/migrate.mjs",
     "repair:intro-shapes": "node scripts/repair-intro-shapes.mjs"
   },
@@ -19,6 +21,7 @@
     "pg": "8.22.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.1",
     "better-sqlite3": "^11.10.0"
   }
 }
