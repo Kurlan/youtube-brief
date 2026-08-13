@@ -74,6 +74,19 @@ npm run repair:intro-shapes  # one-off: re-sync script.introGroup and legacy scr
 
 Only the server restarts on change; reload the browser for frontend edits. HTML/CSS/JS are served with `Cache-Control: no-store`, so a plain reload is enough — no hard-refresh needed.
 
+### End-to-end tests
+
+Playwright drives a real browser against a real server. Requires the PostgreSQL container from `docker compose up -d db`; the suite creates and uses its own `youtube_brief_e2e` database, so local data is untouched.
+
+```bash
+npx playwright install chromium   # once per machine
+npm run test:e2e                  # headless run (starts its own server on port 4273)
+npm run test:e2e:ui               # interactive runner
+npx playwright test tests/e2e/briefs.spec.js
+```
+
+Overrides: `E2E_PORT` (the password-gate spec uses `E2E_PORT + 1`) and `E2E_DATABASE_URL`. Specs cover the channel home board, ideation phase 1 capture and filtering, manual brief creation and persistence, the storage/brief APIs, and the `APP_PASSWORD` login gate. Tests run in CI on every pull request via `.github/workflows/e2e.yml`.
+
 ### Configuration
 
 Read from the environment at startup; `DATABASE_URL` is required, the rest are optional:
