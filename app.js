@@ -161,6 +161,9 @@ const refs = {
   showHomePageBtn: document.getElementById("showHomePageBtn"),
   showChannelPageBtn: document.getElementById("showChannelPageBtn"),
   saveStatus: document.getElementById("saveStatus"),
+  saveConflictBanner: document.getElementById("saveConflictBanner"),
+  keepLocalEditsBtn: document.getElementById("keepLocalEditsBtn"),
+  discardLocalEditsBtn: document.getElementById("discardLocalEditsBtn"),
   showBriefsPageBtn: document.getElementById("showBriefsPageBtn"),
   activeChannelLabel: document.getElementById("activeChannelLabel"),
   channelHomeBoard: document.getElementById("channelHomeBoard"),
@@ -356,6 +359,7 @@ const remoteBriefSerialized = {};
 const pendingBriefDeletions = new Set();
 let pendingBriefActiveIds = {};
 let remoteLoadFailed = false;
+let saveConflictPending = false;
 let remotePersistenceLastCheckedAt = 0;
 let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
@@ -875,6 +879,8 @@ async function deleteFromRemoteStorage(key) {
   if (!response.ok && response.status !== 204) {
     throw new Error(`Failed to clear ${key} from backend storage.`);
   }
+  // The row is gone, so the next write has to expect an empty slot rather than the old timestamp.
+  delete remoteStorageUpdatedAt[key];
 }
 
 async function readPersistedValue(key) {
@@ -945,24 +951,46 @@ async function clearBrowserLocalSnapshotCache() {
   }
 }
 
+function setSaveConflictPending(pending) {
+  saveConflictPending = pending;
+  if (refs.saveConflictBanner) {
+    refs.saveConflictBanner.hidden = !pending;
+  }
+}
+
+/** Writes the edits that are on screen over the version another client stored. */
+function keepLocalEditsAfterConflict() {
+  if (!saveConflictPending) {
+    return Promise.resolve();
+  }
+
+  // The conflict response already refreshed the expected timestamps, so this write is accepted.
+  setSaveConflictPending(false);
+  setSaveStatus("saving");
+  return enqueuePersistTask(runQueuedSnapshotPersist);
+}
+
+/** Throws away the edits on screen and reloads whatever the other client stored. */
+function discardLocalEditsAfterConflict() {
+  queuedSnapshotPayload = null;
+  setSaveConflictPending(false);
+  window.location.reload();
+}
+
 function enqueuePersistTask(task) {
   persistQueue = persistQueue
     .then(async () => {
       await task();
+      setSaveConflictPending(false);
       setSaveStatus("saved", Date.now());
     })
     .catch(async (error) => {
       if (error && error.code === "REMOTE_CONFLICT") {
-        // The conflict response refreshes the expected timestamps, so retrying keeps the
-        // edit that is on screen instead of replacing it with the stored version.
-        console.warn("Remote snapshot conflict detected. Retrying with refreshed timestamps.", error);
-        try {
-          await task();
-          setSaveStatus("saved", Date.now());
-        } catch (retryError) {
-          setSaveStatus("conflict");
-          console.warn("Remote snapshot conflict persists; unsaved edits are kept on screen.", retryError);
-        }
+        // Another client saved after this tab loaded. Retrying would overwrite their work without
+        // anyone seeing it, so writes stop here and the user picks which version survives.
+        setSaveConflictPending(true);
+        setSaveStatus("conflict");
+        console.warn("Remote snapshot conflict detected; waiting for the user to resolve it.", error);
         return;
       }
       setSaveStatus("error");
@@ -974,6 +1002,14 @@ function enqueuePersistTask(task) {
 
 function scheduleSnapshotPersist(snapshotPayload, immediate = false) {
   queuedSnapshotPayload = snapshotPayload;
+
+  // While a conflict is unresolved the newest edits keep accumulating in the queued payload,
+  // but nothing is written until the user chooses a side.
+  if (saveConflictPending) {
+    setSaveStatus("conflict");
+    return Promise.resolve();
+  }
+
   setSaveStatus("saving");
 
   if (pendingSaveTimer) {
@@ -10716,6 +10752,15 @@ function bindEvents() {
   const resetStateBtn = document.getElementById("resetStateBtn");
   if (resetStateBtn) {
     resetStateBtn.addEventListener("click", resetAll);
+  }
+
+  if (refs.keepLocalEditsBtn) {
+    refs.keepLocalEditsBtn.addEventListener("click", () => {
+      void keepLocalEditsAfterConflict();
+    });
+  }
+  if (refs.discardLocalEditsBtn) {
+    refs.discardLocalEditsBtn.addEventListener("click", discardLocalEditsAfterConflict);
   }
   if (refs.exportPackagingBriefPdfBtn) {
     refs.exportPackagingBriefPdfBtn.addEventListener("click", exportPackagingBriefPdf);

@@ -33,6 +33,19 @@
     </header>
 
     <main class="workspace">
+      <div id="saveConflictBanner" class="save-conflict-banner" role="alert" hidden>
+        <p>
+          Another tab or device saved this workspace after you opened it, so your latest edits were
+          not written. Nothing has been lost - your edits are still on screen.
+        </p>
+        <div class="save-conflict-actions">
+          <button id="keepLocalEditsBtn" class="btn" type="button">Save my version</button>
+          <button id="discardLocalEditsBtn" class="btn btn-muted" type="button">
+            Discard mine and reload theirs
+          </button>
+        </div>
+      </div>
+
       <section class="panel" data-page="home">
         <h2>Channels</h2>
         <p class="hint">Open a channel to start ideation and briefs.</p>
