@@ -17,6 +17,9 @@ const LOCAL_DB_KEY_VIEWER = "viewer";
 const SAVE_DEBOUNCE_MS = 180;
 const INSPIRATION_NOTES_SAVE_DEBOUNCE_MS = 700;
 const MAX_LOCAL_STORAGE_SNAPSHOT_CHARS = 900000;
+const MAX_IMAGE_LONG_EDGE_PX = 1280;
+const MAX_UNSCALED_IMAGE_BYTES = 300000;
+const IMAGE_ENCODE_QUALITY = 0.82;
 const DEFAULT_OWNER_NAME = "Steve Huynh";
 const IDEA_STATUSES = ["none", "red"];
 const BRIEF_STATUSES = ["draft", "review", "in-production", "published"];
@@ -348,6 +351,10 @@ let localDbPromise = null;
 let remotePersistenceAvailable = null;
 let remotePersistenceCheckPromise = null;
 const remoteStorageUpdatedAt = {};
+const remoteBriefUpdatedAt = {};
+const remoteBriefSerialized = {};
+let pendingBriefActiveIds = {};
+let remoteLoadFailed = false;
 let remotePersistenceLastCheckedAt = 0;
 let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
@@ -724,6 +731,127 @@ async function writeToRemoteStorage(key, value) {
   remoteStorageUpdatedAt[key] = payload?.updatedAt ?? Date.now();
 }
 
+async function readBriefsFromRemoteStorage() {
+  const indexResponse = await fetch("/api/briefs", {
+    method: "GET",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!indexResponse.ok) {
+    throw new Error("Failed to load the brief index from backend storage.");
+  }
+  const { briefs: index = [] } = await indexResponse.json();
+  if (!index.length) {
+    return null;
+  }
+
+  const loaded = await Promise.all(
+    index.map(async (entry) => {
+      const response = await fetch(`/api/briefs/${encodeURIComponent(entry.briefId)}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load brief ${entry.briefId} from backend storage.`);
+      }
+      return response.json();
+    }),
+  );
+
+  const byChannel = {};
+  Object.keys(remoteBriefUpdatedAt).forEach((briefId) => delete remoteBriefUpdatedAt[briefId]);
+  Object.keys(remoteBriefSerialized).forEach((briefId) => delete remoteBriefSerialized[briefId]);
+
+  loaded.forEach((entry) => {
+    const channelId = entry.channelId || entry.value?.channelId;
+    if (!channelId) {
+      return;
+    }
+    if (!byChannel[channelId]) {
+      byChannel[channelId] = { activeBriefId: "", briefs: [] };
+    }
+    byChannel[channelId].briefs.push(entry.value);
+    remoteBriefUpdatedAt[entry.briefId] = entry.updatedAt ?? null;
+    remoteBriefSerialized[entry.briefId] = JSON.stringify(entry.value);
+  });
+
+  return { schemaVersion: 4, savedAt: Date.now(), byChannel };
+}
+
+async function writeBriefToRemoteStorage(brief) {
+  const response = await fetch(`/api/briefs/${encodeURIComponent(brief.id)}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      value: brief,
+      channelId: brief.channelId,
+      source: "frontend",
+      expectedUpdatedAt: Object.prototype.hasOwnProperty.call(remoteBriefUpdatedAt, brief.id)
+        ? remoteBriefUpdatedAt[brief.id]
+        : null,
+    }),
+  });
+  if (response.status === 409) {
+    const payload = await response.json().catch(() => ({}));
+    remoteBriefUpdatedAt[brief.id] = payload?.updatedAt ?? null;
+    const conflictError = new Error(`Conflict while saving brief ${brief.id} to backend storage.`);
+    conflictError.code = "REMOTE_CONFLICT";
+    throw conflictError;
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to save brief ${brief.id} to backend storage.`);
+  }
+  const payload = await response.json().catch(() => ({}));
+  remoteBriefUpdatedAt[brief.id] = payload?.updatedAt ?? Date.now();
+  remoteBriefSerialized[brief.id] = JSON.stringify(brief);
+}
+
+async function deleteBriefFromRemoteStorage(briefId) {
+  const response = await fetch(`/api/briefs/${encodeURIComponent(briefId)}`, { method: "DELETE" });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`Failed to delete brief ${briefId} from backend storage.`);
+  }
+  delete remoteBriefUpdatedAt[briefId];
+  delete remoteBriefSerialized[briefId];
+}
+
+/** Writes only the briefs whose payload changed, so a save costs one brief instead of the whole collection. */
+async function writeBriefsToRemoteStorage(payload) {
+  const seen = new Set();
+  for (const [channelId, channelData] of Object.entries(payload?.byChannel || {})) {
+    for (const brief of channelData?.briefs || []) {
+      if (!brief?.id) {
+        continue;
+      }
+      seen.add(brief.id);
+      const serialized = JSON.stringify(brief);
+      if (remoteBriefSerialized[brief.id] === serialized) {
+        continue;
+      }
+      await writeBriefToRemoteStorage({ ...brief, channelId: brief.channelId || channelId });
+    }
+  }
+
+  for (const briefId of Object.keys(remoteBriefUpdatedAt)) {
+    if (!seen.has(briefId)) {
+      await deleteBriefFromRemoteStorage(briefId);
+    }
+  }
+}
+
+async function deleteAllBriefsFromRemoteStorage() {
+  const response = await fetch("/api/briefs", { method: "DELETE" });
+  if (!response.ok && response.status !== 204) {
+    throw new Error("Failed to clear briefs from backend storage.");
+  }
+  Object.keys(remoteBriefUpdatedAt).forEach((briefId) => delete remoteBriefUpdatedAt[briefId]);
+  Object.keys(remoteBriefSerialized).forEach((briefId) => delete remoteBriefSerialized[briefId]);
+}
+
 async function deleteFromRemoteStorage(key) {
   const response = await fetch(`/api/storage/${encodeURIComponent(key)}`, {
     method: "DELETE",
@@ -807,15 +935,18 @@ function enqueuePersistTask(task) {
       await task();
       setSaveStatus("saved", Date.now());
     })
-    .catch((error) => {
+    .catch(async (error) => {
       if (error && error.code === "REMOTE_CONFLICT") {
-        setSaveStatus("error");
-        console.warn("Remote snapshot conflict detected. Reloading latest backend state.", error);
-        void loadSnapshot().then((loadedSnapshot) => {
-          if (loadedSnapshot) {
-            updateBoardsAndBrief({ persist: false });
-          }
-        });
+        // The conflict response refreshes the expected timestamps, so retrying keeps the
+        // edit that is on screen instead of replacing it with the stored version.
+        console.warn("Remote snapshot conflict detected. Retrying with refreshed timestamps.", error);
+        try {
+          await task();
+          setSaveStatus("saved", Date.now());
+        } catch (retryError) {
+          setSaveStatus("conflict");
+          console.warn("Remote snapshot conflict persists; unsaved edits are kept on screen.", retryError);
+        }
         return;
       }
       setSaveStatus("error");
@@ -883,13 +1014,22 @@ const ideasRepo = {
 
 const briefsRepo = {
   async loadCurrent() {
-    return readPersistedValue(LOCAL_DB_KEY_BRIEFS);
+    if (await checkRemotePersistence()) {
+      return readBriefsFromRemoteStorage();
+    }
+    return readFromLocalDb(LOCAL_DB_KEY_BRIEFS);
   },
   async saveCurrent(payload) {
-    return writePersistedValue(LOCAL_DB_KEY_BRIEFS, payload);
+    if (await checkRemotePersistence()) {
+      return writeBriefsToRemoteStorage(payload);
+    }
+    return writeToLocalDb(LOCAL_DB_KEY_BRIEFS, payload);
   },
   async clear() {
-    return deletePersistedValue(LOCAL_DB_KEY_BRIEFS);
+    if (await checkRemotePersistence()) {
+      await deleteAllBriefsFromRemoteStorage();
+    }
+    return deleteFromLocalDb(LOCAL_DB_KEY_BRIEFS);
   },
 };
 
@@ -946,6 +1086,16 @@ function setSaveStatus(status, timestamp = Date.now()) {
 
   if (normalized === "error") {
     refs.saveStatus.textContent = "Save failed";
+    return;
+  }
+
+  if (normalized === "load-failed") {
+    refs.saveStatus.textContent = "Load failed - reload to retry";
+    return;
+  }
+
+  if (normalized === "conflict") {
+    refs.saveStatus.textContent = "Not saved - changed elsewhere";
     return;
   }
 
@@ -8964,7 +9114,17 @@ function buildWorkspacePayload(values = getFieldValues()) {
     currentAccountId: state.currentAccountId,
     activeChannelId: state.activeChannelId,
     channelWorkspaces: state.channelWorkspaces,
+    briefActiveIds: buildBriefActiveIds(),
   };
+}
+
+// Briefs are stored one row per record, so the per-channel selection rides along with the workspace.
+function buildBriefActiveIds() {
+  const activeIds = {};
+  Object.entries(state.briefsByChannel).forEach(([channelId, briefState]) => {
+    activeIds[channelId] = toCleanText(briefState?.activeBriefId);
+  });
+  return activeIds;
 }
 
 function buildIdeasPayload() {
@@ -9040,6 +9200,7 @@ function applyWorkspacePayload(payload = {}) {
     state.activeChannelId = toCleanText(payload.activeChannelId);
     state.channelWorkspaces = {};
     state.briefsByChannel = {};
+    pendingBriefActiveIds = payload.briefActiveIds && typeof payload.briefActiveIds === "object" ? payload.briefActiveIds : {};
 
     if (payload.channelWorkspaces && typeof payload.channelWorkspaces === "object") {
       Object.entries(payload.channelWorkspaces).forEach(([channelId, workspace]) => {
@@ -9163,7 +9324,13 @@ function applyBriefsPayload(payload = {}) {
       }
 
       if (Array.isArray(briefsPayload?.briefs)) {
-        state.briefsByChannel[channelId] = normalizeChannelBriefState(briefsPayload, channelId);
+        state.briefsByChannel[channelId] = normalizeChannelBriefState(
+          {
+            ...briefsPayload,
+            activeBriefId: toCleanText(briefsPayload.activeBriefId) || toCleanText(pendingBriefActiveIds[channelId]),
+          },
+          channelId,
+        );
         return;
       }
 
@@ -9324,11 +9491,19 @@ async function runQueuedSnapshotPersist() {
   }
 
   const payload = queuedSnapshotPayload;
-  queuedSnapshotPayload = null;
   await persistSnapshotToDb(payload);
+  if (queuedSnapshotPayload === payload) {
+    queuedSnapshotPayload = null;
+  }
 }
 
 function saveSnapshot(options = {}) {
+  // Briefs load one request each, so a partial load must never be written back as the truth.
+  if (remoteLoadFailed) {
+    setSaveStatus("load-failed");
+    return Promise.resolve();
+  }
+
   const values = getFieldValues();
   ensureChannelModel();
   cacheActiveChannelWorkspace(values);
@@ -9413,6 +9588,7 @@ async function loadSnapshot() {
   } catch (error) {
     console.warn("Could not load persisted snapshot.", error);
     if (useRemote) {
+      remoteLoadFailed = true;
       return false;
     }
   }
@@ -9671,7 +9847,13 @@ async function copyScriptMetadataJson(triggerBtn = refs.copyScriptMetadataJsonBt
   return didCopy;
 }
 
-function openPdfPrintWindow(html, triggerButton) {
+/** Export windows are opened blank, so server-hosted assets need absolute URLs to resolve. */
+function absolutizeAssetUrls(html) {
+  return String(html || "").replace(/(src|href)="\/api\/assets\//g, `$1="${window.location.origin}/api/assets/`);
+}
+
+function openPdfPrintWindow(rawHtml, triggerButton) {
+  const html = absolutizeAssetUrls(rawHtml);
   const printWindow = window.open("", "_blank");
   if (!printWindow) {
     flashButtonText(triggerButton, "Popup Blocked", 1500);
@@ -9714,7 +9896,8 @@ function openPdfPrintWindow(html, triggerButton) {
   flashButtonText(triggerButton, "Opening PDF", 900);
 }
 
-function openDocumentWindow(html, triggerButton, successText = "Opened") {
+function openDocumentWindow(rawHtml, triggerButton, successText = "Opened") {
+  const html = absolutizeAssetUrls(rawHtml);
   const docWindow = window.open("", "_blank");
   if (!docWindow) {
     flashButtonText(triggerButton, "Popup Blocked", 1500);
@@ -9784,6 +9967,84 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function loadImageBitmapFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not decode the selected image."));
+    };
+    image.src = url;
+  });
+}
+
+/** Screen-resolution previews are all the app displays, so shrink before anything is stored. */
+async function downscaleImageFile(file) {
+  if (file.type === "image/gif") {
+    return file;
+  }
+
+  try {
+    const image = await loadImageBitmapFromFile(file);
+    const longEdge = Math.max(image.naturalWidth, image.naturalHeight);
+    if (!longEdge) {
+      return file;
+    }
+    const scale = Math.min(1, MAX_IMAGE_LONG_EDGE_PX / longEdge);
+    if (scale === 1 && file.size <= MAX_UNSCALED_IMAGE_BYTES) {
+      return file;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(image.naturalWidth * scale);
+    canvas.height = Math.round(image.naturalHeight * scale);
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", IMAGE_ENCODE_QUALITY));
+    if (!blob || blob.size >= file.size) {
+      return file;
+    }
+    return blob;
+  } catch (error) {
+    console.warn("Could not downscale image; storing it as provided.", error);
+    return file;
+  }
+}
+
+/**
+ * Uploads an image to the server and returns the URL to reference it by. Falls back to an
+ * inline data URL when the backend is unavailable, which is the browser-only mode.
+ */
+async function uploadImageFile(file) {
+  const prepared = await downscaleImageFile(file);
+  if (!(await checkRemotePersistence())) {
+    return readFileAsDataUrl(prepared);
+  }
+
+  try {
+    const response = await fetch("/api/assets", {
+      method: "POST",
+      headers: {
+        "Content-Type": prepared.type || "application/octet-stream",
+        Accept: "application/json",
+      },
+      body: prepared,
+    });
+    if (!response.ok) {
+      throw new Error(`Asset upload failed with status ${response.status}.`);
+    }
+    const payload = await response.json();
+    return toCleanText(payload?.url);
+  } catch (error) {
+    console.warn("Could not upload image to the server; keeping it inline.", error);
+    return readFileAsDataUrl(prepared);
+  }
+}
+
 function getClipboardImageFiles(event) {
   const clipboardItems = Array.from(event?.clipboardData?.items || []);
   return clipboardItems
@@ -9840,7 +10101,7 @@ async function addInspirationFiles(files, options = {}) {
   let addedCount = 0;
   for (const file of imageFiles) {
     try {
-      const imageSrc = await readFileAsDataUrl(file);
+      const imageSrc = await uploadImageFile(file);
       if (!imageSrc) {
         continue;
       }
@@ -9886,7 +10147,7 @@ async function addThumbnailFiles(files, options = {}) {
   let addedCount = 0;
   for (const file of imageFiles) {
     try {
-      const imageSrc = await readFileAsDataUrl(file);
+      const imageSrc = await uploadImageFile(file);
       if (!imageSrc) {
         continue;
       }
@@ -10708,7 +10969,7 @@ async function init() {
   const locationNav = getNavigationStateFromLocation();
   applyNavigationState(locationNav, { persist: false, syncHistory: false });
   syncNavigationHistory("replace");
-  setSaveStatus("saved", Date.now());
+  setSaveStatus(remoteLoadFailed ? "load-failed" : "saved", Date.now());
 }
 
 void init();

@@ -7,12 +7,14 @@ import net from "node:net";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import pg from "pg";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
 const port = Number(process.env.PORT) || 4173;
-const dbPath = process.env.DB_PATH || path.join(rootDir, "data", "youtube-brief.sqlite");
+const connectionString = process.env.DATABASE_URL || "";
+const assetsDir = path.join(rootDir, "data", "assets");
 
 const results = [];
 
@@ -56,29 +58,35 @@ function checkDependencies() {
   }
 }
 
-async function checkNativeModule() {
+async function checkDatabase() {
+  if (!connectionString) {
+    record(false, "DATABASE_URL not set", "Copy .env.example and source it: `set -a && . ./.env` .");
+    return;
+  }
+
+  const client = new pg.Client({ connectionString, connectionTimeoutMillis: 3000 });
   try {
-    const { default: Database } = await import("better-sqlite3");
-    const db = new Database(":memory:");
-    db.close();
-    record(true, "better-sqlite3 native binding loads");
+    await client.connect();
+    await client.query("SELECT 1");
+    record(true, `postgres reachable (${new URL(connectionString).host})`);
   } catch (error) {
-    record(
-      false,
-      "better-sqlite3 native binding failed to load",
-      `Reinstall it with \`npm rebuild better-sqlite3\` (needs a C++ toolchain if no prebuild matches). ${error.message}`,
-    );
+    record(false, "postgres unreachable", `Start it with \`docker compose up -d db\`. ${error.message}`);
+  } finally {
+    await client.end().catch(() => {});
   }
 }
 
-function checkDatabaseWritable() {
-  const dir = path.dirname(dbPath);
+function checkAssetsWritable() {
+  if (process.env.BUCKET_NAME) {
+    record(true, `images go to bucket ${process.env.BUCKET_NAME}`);
+    return;
+  }
   try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.accessSync(dir, fs.constants.W_OK);
-    record(true, `database directory writable (${dir})`);
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.accessSync(assetsDir, fs.constants.W_OK);
+    record(true, `image directory writable (${assetsDir})`);
   } catch (error) {
-    record(false, `database directory not writable (${dir})`, `Fix permissions or set DB_PATH. ${error.message}`);
+    record(false, `image directory not writable (${assetsDir})`, `Fix permissions. ${error.message}`);
   }
 }
 
@@ -106,8 +114,8 @@ function checkPort() {
 
 checkNodeVersion();
 checkDependencies();
-await checkNativeModule();
-checkDatabaseWritable();
+await checkDatabase();
+checkAssetsWritable();
 await checkPort();
 
 for (const { ok, label, hint } of results) {

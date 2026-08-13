@@ -6,13 +6,19 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
+    "repair:intro-shapes": "node scripts/repair-intro-shapes.mjs"
   },
   "engines": {
     "node": ">=20.11.0"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
-    "express": "^4.21.2"
+    "@aws-sdk/client-s3": "3.1101.0",
+    "express": "^4.21.2",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^11.10.0"
   }
 }
