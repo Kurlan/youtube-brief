@@ -70,6 +70,7 @@ npm run dev                  # same server, restarts on file changes (node --wat
 npm run doctor               # run this first whenever startup misbehaves
 npm run db:migrate           # apply server/migrations without starting the server
 npm run repair:intro-shapes  # one-off: re-sync script.introGroup and legacy script.intros
+npm run db:import-legacy     # one-off: import a pre-PostgreSQL SQLite deployment (see below)
 ```
 
 Only the server restarts on change; reload the browser for frontend edits. HTML/CSS/JS are served with `Cache-Control: no-store`, so a plain reload is enough — no hard-refresh needed.
@@ -171,11 +172,36 @@ fly secrets set APP_PASSWORD='new-password' -a yt-brief
 
 ```bash
 fly apps create yt-brief --org personal
-fly mpg create --region sjc                      # then attach: sets DATABASE_URL
-fly storage create                               # Tigris bucket; prints access keys once
+fly mpg create --name yt-brief-db --region sjc --plan Basic
+fly mpg attach <cluster-id> -a yt-brief          # sets the DATABASE_URL secret
+fly storage create -n yt-brief-assets -a yt-brief  # Tigris bucket; sets BUCKET_NAME + keys
 fly secrets set APP_PASSWORD='choose-a-password' -a yt-brief
 fly deploy --remote-only
 ```
+
+Tigris provisioning requires a payment method on the Fly organization; it fails on trial
+organizations with `This functionality is disabled for trial organizations`.
+
+### Importing a legacy SQLite deployment
+
+Earlier versions stored everything in a single SQLite file whose `document_revisions` table kept a
+full copy of the entire briefs blob on every save — those files reach tens of gigabytes. The importer
+takes the latest state only and drops that history.
+
+```bash
+# on the old machine, after one clean boot of the app
+sqlite3 data/youtube-brief.sqlite ".dump documents" > documents.sql
+
+# against the target database (locally, or a proxied production connection)
+DATABASE_URL=... npm run db:import-legacy -- --dump documents.sql --dry-run
+DATABASE_URL=... npm run db:import-legacy -- --dump documents.sql
+```
+
+It can also read a SQLite file directly with `--sqlite data/youtube-brief.sqlite`. Inline `data:`
+images are uploaded to object storage (deduped by SHA-256) and replaced with `/api/assets/<id>`
+references, so the same command works for both a local filesystem and a Tigris target. It refuses to
+run when the target already holds briefs unless `--force` is passed, and `--user <id>` selects the
+owning user. Keep the original SQLite file until the import is verified in the app.
 
 The YouTube integration is browser-side OAuth, so `https://yt-brief.fly.dev` also has to be listed
 under **Authorized JavaScript origins** for the Google OAuth client.
@@ -235,7 +261,7 @@ costs a handful of units; refresh sparingly if you also use the quota elsewhere.
 - `server/db.js`, `server/migrations/`: PostgreSQL store and schema migrations
 - `server/object-storage.js`: S3-compatible image storage with a local filesystem fallback
 - `scripts/doctor.mjs`: local-startup preflight checks (`npm run doctor`)
-- `scripts/migrate.mjs`, `scripts/repair-intro-shapes.mjs`: migrations and the one-off intro-shape pass
+- `scripts/migrate.mjs`, `scripts/repair-intro-shapes.mjs`, `scripts/import-legacy-data.mjs`: migrations, the one-off intro-shape pass, and the legacy SQLite importer
 
 ## Notes
 

@@ -10,7 +10,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "db:migrate": "node scripts/migrate.mjs",
-    "repair:intro-shapes": "node scripts/repair-intro-shapes.mjs"
+    "repair:intro-shapes": "node scripts/repair-intro-shapes.mjs",
+    "db:import-legacy": "node scripts/import-legacy-data.mjs"
   },
   "engines": {
     "node": ">=20.11.0"
