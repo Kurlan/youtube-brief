@@ -353,6 +353,7 @@ let remotePersistenceCheckPromise = null;
 const remoteStorageUpdatedAt = {};
 const remoteBriefUpdatedAt = {};
 const remoteBriefSerialized = {};
+const pendingBriefDeletions = new Set();
 let pendingBriefActiveIds = {};
 let remoteLoadFailed = false;
 let remotePersistenceLastCheckedAt = 0;
@@ -810,6 +811,19 @@ async function writeBriefToRemoteStorage(brief) {
   remoteBriefSerialized[brief.id] = JSON.stringify(brief);
 }
 
+/**
+ * The only supported way to remove a stored brief. A brief that is simply absent from the
+ * in-memory state is never treated as deleted, so a partial load or a dropped channel cannot
+ * take server rows with it.
+ */
+function queueBriefDeletion(briefId) {
+  const id = toCleanText(briefId);
+  if (!id) {
+    return;
+  }
+  pendingBriefDeletions.add(id);
+}
+
 async function deleteBriefFromRemoteStorage(briefId) {
   const response = await fetch(`/api/briefs/${encodeURIComponent(briefId)}`, { method: "DELETE" });
   if (!response.ok && response.status !== 204) {
@@ -836,10 +850,11 @@ async function writeBriefsToRemoteStorage(payload) {
     }
   }
 
-  for (const briefId of Object.keys(remoteBriefUpdatedAt)) {
+  for (const briefId of [...pendingBriefDeletions]) {
     if (!seen.has(briefId)) {
       await deleteBriefFromRemoteStorage(briefId);
     }
+    pendingBriefDeletions.delete(briefId);
   }
 }
 
@@ -850,6 +865,7 @@ async function deleteAllBriefsFromRemoteStorage() {
   }
   Object.keys(remoteBriefUpdatedAt).forEach((briefId) => delete remoteBriefUpdatedAt[briefId]);
   Object.keys(remoteBriefSerialized).forEach((briefId) => delete remoteBriefSerialized[briefId]);
+  pendingBriefDeletions.clear();
 }
 
 async function deleteFromRemoteStorage(key) {
