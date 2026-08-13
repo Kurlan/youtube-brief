@@ -8,7 +8,8 @@
     "dev": "node --watch server/index.js",
     "doctor": "node scripts/doctor.mjs",
     "db:migrate": "node scripts/migrate.mjs",
-    "repair:intro-shapes": "node scripts/repair-intro-shapes.mjs"
+    "repair:intro-shapes": "node scripts/repair-intro-shapes.mjs",
+    "db:import-legacy": "node scripts/import-legacy-data.mjs"
   },
   "engines": {
     "node": ">=20.11.0"
