@@ -11,20 +11,27 @@ async function openIdeation(page) {
   await page.getByRole("heading", { name: "Phase 1. Brainstorming" }).waitFor();
 }
 
-test("quick capture adds a phase 1 idea that survives a reload", async ({ page }) => {
+test("quick capture persists a phase 1 idea on the server", async ({ browser, page, request }) => {
   const title = "E2E quick capture idea";
 
   await openIdeation(page);
   await page.locator("#step1FastIdea").fill(title);
   await page.locator("#addStep1FastBtn").click();
 
-  const row = page.locator("#step1Board").getByText(title, { exact: false }).first();
-  await expect(row).toBeVisible();
-  await expect(page.locator("#step1Count")).toContainText("Active 1");
-  await expect(page.locator("#saveStatus")).toContainText("Saved");
-
-  await openIdeation(page);
   await expect(page.locator("#step1Board").getByText(title, { exact: false }).first()).toBeVisible();
+  await expect(page.locator("#step1Count")).toContainText("Active 1");
+
+  // Snapshot writes are debounced, and a reload in this context would re-render from
+  // the browser-side cache, so assert the stored document and then a cold context.
+  await expect
+    .poll(async () => JSON.stringify((await (await request.get("/api/storage/ideas")).json()).value))
+    .toContain(title);
+
+  const coldContext = await browser.newContext();
+  const coldPage = await coldContext.newPage();
+  await openIdeation(coldPage);
+  await expect(coldPage.locator("#step1Board").getByText(title, { exact: false }).first()).toBeVisible();
+  await coldContext.close();
 });
 
 test("phase 1 search filters the backlog", async ({ page }) => {
