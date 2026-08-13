@@ -352,7 +352,8 @@ let remotePersistenceAvailable = null;
 let remotePersistenceCheckPromise = null;
 const remoteStorageUpdatedAt = {};
 const remoteBriefUpdatedAt = {};
-const remoteBriefSerialized = {};
+const remoteBriefSignature = {};
+const persistedValueSignature = {};
 const pendingBriefDeletions = new Set();
 let pendingBriefActiveIds = {};
 let remoteLoadFailed = false;
@@ -655,6 +656,45 @@ async function deleteFromLocalDb(key) {
   await txDone;
 }
 
+/** Deterministic JSON, so re-normalizing a payload never looks like an edit. */
+function stableStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+
+  return JSON.stringify(typeof value === "undefined" ? null : value);
+}
+
+/** `savedAt` only records when the last write happened, so it must not count as a change. */
+function documentSignature(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return stableStringify(payload);
+  }
+
+  const { savedAt, ...rest } = payload;
+  return stableStringify(rest);
+}
+
+/**
+ * `updatedAt` and `latestBriefHtml` are stamped on every render (the export HTML embeds a
+ * generation timestamp), so both are ignored when deciding whether a brief really changed.
+ */
+function briefContentSignature(brief) {
+  if (!brief || typeof brief !== "object") {
+    return stableStringify(brief);
+  }
+
+  const { updatedAt, latestBriefHtml, ...rest } = brief;
+  return stableStringify(rest);
+}
+
 async function checkRemotePersistence(force = false) {
   if (!force && remotePersistenceAvailable === true) {
     return remotePersistenceAvailable;
@@ -762,7 +802,7 @@ async function readBriefsFromRemoteStorage() {
 
   const byChannel = {};
   Object.keys(remoteBriefUpdatedAt).forEach((briefId) => delete remoteBriefUpdatedAt[briefId]);
-  Object.keys(remoteBriefSerialized).forEach((briefId) => delete remoteBriefSerialized[briefId]);
+  Object.keys(remoteBriefSignature).forEach((briefId) => delete remoteBriefSignature[briefId]);
 
   loaded.forEach((entry) => {
     const channelId = entry.channelId || entry.value?.channelId;
@@ -774,7 +814,7 @@ async function readBriefsFromRemoteStorage() {
     }
     byChannel[channelId].briefs.push(entry.value);
     remoteBriefUpdatedAt[entry.briefId] = entry.updatedAt ?? null;
-    remoteBriefSerialized[entry.briefId] = JSON.stringify(entry.value);
+    remoteBriefSignature[entry.briefId] = stableStringify(entry.value);
   });
 
   return { schemaVersion: 4, savedAt: Date.now(), byChannel };
@@ -808,7 +848,7 @@ async function writeBriefToRemoteStorage(brief) {
   }
   const payload = await response.json().catch(() => ({}));
   remoteBriefUpdatedAt[brief.id] = payload?.updatedAt ?? Date.now();
-  remoteBriefSerialized[brief.id] = JSON.stringify(brief);
+  remoteBriefSignature[brief.id] = stableStringify(brief);
 }
 
 /**
@@ -830,7 +870,7 @@ async function deleteBriefFromRemoteStorage(briefId) {
     throw new Error(`Failed to delete brief ${briefId} from backend storage.`);
   }
   delete remoteBriefUpdatedAt[briefId];
-  delete remoteBriefSerialized[briefId];
+  delete remoteBriefSignature[briefId];
 }
 
 /** Writes only the briefs whose payload changed, so a save costs one brief instead of the whole collection. */
@@ -842,11 +882,11 @@ async function writeBriefsToRemoteStorage(payload) {
         continue;
       }
       seen.add(brief.id);
-      const serialized = JSON.stringify(brief);
-      if (remoteBriefSerialized[brief.id] === serialized) {
+      const record = { ...brief, channelId: brief.channelId || channelId };
+      if (remoteBriefSignature[brief.id] === stableStringify(record)) {
         continue;
       }
-      await writeBriefToRemoteStorage({ ...brief, channelId: brief.channelId || channelId });
+      await writeBriefToRemoteStorage(record);
     }
   }
 
@@ -864,7 +904,7 @@ async function deleteAllBriefsFromRemoteStorage() {
     throw new Error("Failed to clear briefs from backend storage.");
   }
   Object.keys(remoteBriefUpdatedAt).forEach((briefId) => delete remoteBriefUpdatedAt[briefId]);
-  Object.keys(remoteBriefSerialized).forEach((briefId) => delete remoteBriefSerialized[briefId]);
+  Object.keys(remoteBriefSignature).forEach((briefId) => delete remoteBriefSignature[briefId]);
   pendingBriefDeletions.clear();
 }
 
@@ -879,19 +919,25 @@ async function deleteFromRemoteStorage(key) {
 
 async function readPersistedValue(key) {
   const useRemote = await checkRemotePersistence();
-  if (useRemote) {
-    return readFromRemoteStorage(key);
-  }
-  return readFromLocalDb(key);
+  const value = useRemote ? await readFromRemoteStorage(key) : await readFromLocalDb(key);
+  persistedValueSignature[key] = documentSignature(value);
+  return value;
 }
 
 async function writePersistedValue(key, value) {
+  // Loading and re-rendering rebuild these payloads, so skip writes that carry no change.
+  const signature = documentSignature(value);
+  if (persistedValueSignature[key] === signature) {
+    return;
+  }
+
   const useRemote = await checkRemotePersistence();
   if (useRemote) {
     await writeToRemoteStorage(key, value);
-    return;
+  } else {
+    await writeToLocalDb(key, value);
   }
-  await writeToLocalDb(key, value);
+  persistedValueSignature[key] = signature;
 }
 
 async function deletePersistedValue(key) {
@@ -900,6 +946,7 @@ async function deletePersistedValue(key) {
     await deleteFromRemoteStorage(key);
   }
   await deleteFromLocalDb(key);
+  delete persistedValueSignature[key];
 }
 
 async function loadBrowserLocalDbSnapshot() {
@@ -2861,7 +2908,7 @@ function buildActiveChannelBriefState(values = getFieldValues()) {
 
     hasActiveBrief = true;
     const persistedScript = getPersistableScriptState(brief.script);
-    return createBriefRecord({
+    const candidate = createBriefRecord({
       ...brief,
       channelId,
       tags: brief.tags,
@@ -2872,8 +2919,16 @@ function buildActiveChannelBriefState(values = getFieldValues()) {
       comparables: state.comparables,
       script: persistedScript,
       latestBriefHtml: state.latestBriefHtml,
-      updatedAt: Date.now(),
+      updatedAt: brief.updatedAt,
     });
+
+    // Caching the on-screen brief is not an edit, so keep the stored record whenever the
+    // content matches instead of stamping a new `updatedAt`.
+    if (briefContentSignature(candidate) === briefContentSignature(brief)) {
+      return brief;
+    }
+
+    return createBriefRecord({ ...candidate, updatedAt: Date.now() });
   });
 
   const activeBriefId = hasActiveBrief ? requestedActiveId : base.activeBriefId;
@@ -2966,9 +3021,13 @@ function cacheActiveChannelWorkspace(values = getFieldValues()) {
     return;
   }
 
-  state.channelWorkspaces[channelId] = buildActiveChannelWorkspace();
+  const previousWorkspace = state.channelWorkspaces[channelId];
+  const nextWorkspace = buildActiveChannelWorkspace();
+  const workspaceChanged = stableStringify(previousWorkspace) !== stableStringify(nextWorkspace);
+  state.channelWorkspaces[channelId] = nextWorkspace;
+
   const channel = state.channels.find((entry) => entry.id === channelId);
-  if (channel) {
+  if (channel && workspaceChanged) {
     channel.updatedAt = Date.now();
   }
 }
@@ -4310,6 +4369,12 @@ function renderArchivedLineSubsection(ownerRecord, archivedItems, options = {}) 
   });
   details.appendChild(stack);
   details.addEventListener("toggle", () => {
+    // Setting `open` above queues a toggle event, so ignore the one that only reports
+    // the state this block was rendered with.
+    if (Boolean(ownerRecord.archivedExpanded) === details.open) {
+      return;
+    }
+
     ownerRecord.archivedExpanded = details.open;
     void saveSnapshot({ immediate: true });
   });
