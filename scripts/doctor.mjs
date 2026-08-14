@@ -8,6 +8,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { createObjectStorage } from "../server/object-storage.js";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -90,6 +91,64 @@ function checkAssetsWritable() {
   }
 }
 
+/**
+ * Postgres and object storage are restored independently, so a row can point at an object that is
+ * no longer there. Those assets answer 410 and render as a placeholder, which is easy to miss until
+ * someone opens the brief - this names them up front.
+ */
+async function checkAssetObjects() {
+  if (!connectionString) {
+    return;
+  }
+
+  const client = new pg.Client({ connectionString, connectionTimeoutMillis: 3000 });
+  try {
+    await client.connect();
+  } catch {
+    await client.end().catch(() => {});
+    return;
+  }
+
+  try {
+    const { rows } = await client.query("SELECT asset_id, storage_key FROM brief_assets");
+    if (!rows.length) {
+      record(true, "no stored images to verify");
+      return;
+    }
+
+    const storage = createObjectStorage({
+      bucket: process.env.BUCKET_NAME,
+      region: process.env.AWS_REGION,
+      endpoint: process.env.AWS_ENDPOINT_URL_S3,
+      localDir: assetsDir,
+    });
+    const missing = [];
+    for (const row of rows) {
+      if (!(await storage.exists(row.storage_key))) {
+        missing.push(row.asset_id);
+      }
+    }
+
+    record(
+      missing.length === 0,
+      missing.length === 0
+        ? `all ${rows.length} stored image(s) present in ${storage.describe()}`
+        : `${missing.length} of ${rows.length} stored image(s) missing from ${storage.describe()}`,
+      missing.length === 0
+        ? ""
+        : `Restore the objects or re-upload them. Affected assets: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ", ..." : ""}`,
+    );
+  } catch (error) {
+    if (error.code === "42P01") {
+      record(false, "brief_assets table missing", "Run `npm run db:migrate`.");
+      return;
+    }
+    record(false, "could not verify stored images", error.message);
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 function checkPort() {
   return new Promise((resolve) => {
     const tester = net
@@ -116,6 +175,7 @@ checkNodeVersion();
 checkDependencies();
 await checkDatabase();
 checkAssetsWritable();
+await checkAssetObjects();
 await checkPort();
 
 for (const { ok, label, hint } of results) {

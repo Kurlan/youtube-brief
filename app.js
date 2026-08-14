@@ -10450,7 +10450,33 @@ function addStep3IdeaFromQuickEntry() {
   updateBoardsAndBrief();
 }
 
+/**
+ * An asset row can outlive its bytes - `/api/assets/:id` answers 410 when a Postgres restore is
+ * newer than the bucket - and an <img> pointed at it just renders as broken. Every image that fails
+ * to load is swapped for a labelled placeholder so the state is readable instead of mysterious.
+ */
+function replaceFailedAssetImage(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return;
+  }
+  const src = toCleanText(image.getAttribute("src"));
+  if (!src.includes("/api/assets/")) {
+    return;
+  }
+
+  const placeholder = document.createElement("div");
+  placeholder.className = `${image.className} asset-missing`.trim();
+  placeholder.setAttribute("role", "img");
+  placeholder.setAttribute("aria-label", "Image missing from storage");
+  placeholder.title = "This image could not be loaded from storage.";
+  placeholder.textContent = "Image missing from storage";
+  image.replaceWith(placeholder);
+}
+
 function bindEvents() {
+  // Image load failures do not bubble, so this listener has to run in the capture phase.
+  document.addEventListener("error", (event) => replaceFailedAssetImage(event.target), true);
+
   if (refs.showHomePageBtn) {
     refs.showHomePageBtn.addEventListener("click", () => {
       setPageView("home");
