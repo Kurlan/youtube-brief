@@ -9899,18 +9899,63 @@ async function copyScriptMetadataJson(triggerBtn = refs.copyScriptMetadataJsonBt
   return didCopy;
 }
 
-/** Export windows are opened blank, so server-hosted assets need absolute URLs to resolve. */
-function absolutizeAssetUrls(html) {
-  return String(html || "").replace(/(src|href)="\/api\/assets\//g, `$1="${window.location.origin}/api/assets/`);
+const ASSET_URL_PATTERN = /(src|href)="(\/api\/assets\/[^"]+)"/g;
+
+/**
+ * Exports are shared, archived, and read offline, so asset bytes are inlined instead of pointing
+ * back at this server, whose /api/assets routes need a session. An asset that cannot be read falls
+ * back to an absolute URL so the rest of the export still renders.
+ */
+async function inlineAssetUrls(html) {
+  const source = String(html || "");
+  const urls = [...new Set([...source.matchAll(ASSET_URL_PATTERN)].map((match) => match[2]))];
+  const dataUrls = new Map();
+
+  await Promise.all(
+    urls.map(async (url) => {
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Asset request failed with status ${response.status}.`);
+        }
+        dataUrls.set(url, await readFileAsDataUrl(await response.blob()));
+      } catch (error) {
+        console.warn(`Could not inline ${url} into the export; linking to this server instead.`, error);
+      }
+    }),
+  );
+
+  return source.replace(ASSET_URL_PATTERN, (match, attribute, url) => {
+    const dataUrl = dataUrls.get(url);
+    return dataUrl ? `${attribute}="${dataUrl}"` : `${attribute}="${window.location.origin}${url}"`;
+  });
 }
 
-function openPdfPrintWindow(rawHtml, triggerButton) {
-  const html = absolutizeAssetUrls(rawHtml);
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
+const EXPORT_PLACEHOLDER_HTML =
+  '<!doctype html><html><head><title>Preparing export</title></head>' +
+  '<body style="font-family: system-ui, sans-serif; padding: 2rem; color: #4a4a4a">Preparing export...</body></html>';
+
+// The window is opened before the assets are read so the click that triggered the export is still
+// what opens it; otherwise popup blockers reject it.
+function openExportWindow(triggerButton) {
+  const exportWindow = window.open("", "_blank");
+  if (!exportWindow) {
     flashButtonText(triggerButton, "Popup Blocked", 1500);
+    return null;
+  }
+  exportWindow.document.open();
+  exportWindow.document.write(EXPORT_PLACEHOLDER_HTML);
+  exportWindow.document.close();
+  return exportWindow;
+}
+
+async function openPdfPrintWindow(rawHtml, triggerButton) {
+  const printWindow = openExportWindow(triggerButton);
+  if (!printWindow) {
     return;
   }
+
+  const html = await inlineAssetUrls(rawHtml);
 
   const autoPrintScript = `
     <script>
@@ -9948,13 +9993,13 @@ function openPdfPrintWindow(rawHtml, triggerButton) {
   flashButtonText(triggerButton, "Opening PDF", 900);
 }
 
-function openDocumentWindow(rawHtml, triggerButton, successText = "Opened") {
-  const html = absolutizeAssetUrls(rawHtml);
-  const docWindow = window.open("", "_blank");
+async function openDocumentWindow(rawHtml, triggerButton, successText = "Opened") {
+  const docWindow = openExportWindow(triggerButton);
   if (!docWindow) {
-    flashButtonText(triggerButton, "Popup Blocked", 1500);
     return;
   }
+
+  const html = await inlineAssetUrls(rawHtml);
 
   docWindow.document.open();
   docWindow.document.write(html);
@@ -9981,7 +10026,7 @@ function exportPackagingBriefPdf() {
   }
 
   const html = buildThumbnailBriefExportHtml(getFieldValues());
-  openPdfPrintWindow(html, refs.exportPackagingBriefPdfBtn);
+  void openPdfPrintWindow(html, refs.exportPackagingBriefPdfBtn);
 }
 
 function exportProductionBriefPdf() {
@@ -9991,7 +10036,7 @@ function exportProductionBriefPdf() {
   }
 
   const html = buildProductionBriefExportHtml(getFieldValues());
-  openPdfPrintWindow(html, refs.exportProductionBriefPdfBtn);
+  void openPdfPrintWindow(html, refs.exportProductionBriefPdfBtn);
 }
 
 function openScriptExport() {
