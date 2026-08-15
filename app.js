@@ -778,7 +778,6 @@ async function readBriefsFromRemoteStorage() {
     }
     byChannel[channelId].briefs.push(entry.value);
     remoteBriefUpdatedAt[entry.briefId] = entry.updatedAt ?? null;
-    remoteBriefSerialized[entry.briefId] = JSON.stringify(entry.value);
   });
 
   return { schemaVersion: 4, savedAt: Date.now(), byChannel };
@@ -9623,6 +9622,7 @@ async function loadSnapshot() {
       ensureChannelBriefState(state.activeChannelId);
       applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
       applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
+      markLoadedBriefsAsSaved();
       if (useRemote) {
         await clearBrowserLocalSnapshotCache();
       }
@@ -9652,6 +9652,22 @@ async function loadSnapshot() {
   }
 
   return false;
+}
+
+/**
+ * A load normalizes whatever the server returned, so the in-memory records routinely differ from
+ * the stored bytes without anyone editing anything. Recording the normalized form as the saved
+ * baseline keeps a plain page view from writing the brief and appending a no-op revision, and any
+ * real edit still changes the serialization and is written.
+ */
+function markLoadedBriefsAsSaved() {
+  Object.entries(state.briefsByChannel).forEach(([channelId, briefState]) => {
+    normalizeChannelBriefState(briefState, channelId).briefs.forEach((brief) => {
+      if (brief?.id && Object.prototype.hasOwnProperty.call(remoteBriefUpdatedAt, brief.id)) {
+        remoteBriefSerialized[brief.id] = JSON.stringify(brief);
+      }
+    });
+  });
 }
 
 async function ensureViewerProfilePersistence() {
