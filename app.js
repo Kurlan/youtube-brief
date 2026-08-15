@@ -161,6 +161,9 @@ const refs = {
   showHomePageBtn: document.getElementById("showHomePageBtn"),
   showChannelPageBtn: document.getElementById("showChannelPageBtn"),
   saveStatus: document.getElementById("saveStatus"),
+  saveConflictBanner: document.getElementById("saveConflictBanner"),
+  keepLocalEditsBtn: document.getElementById("keepLocalEditsBtn"),
+  discardLocalEditsBtn: document.getElementById("discardLocalEditsBtn"),
   showBriefsPageBtn: document.getElementById("showBriefsPageBtn"),
   activeChannelLabel: document.getElementById("activeChannelLabel"),
   channelHomeBoard: document.getElementById("channelHomeBoard"),
@@ -357,6 +360,7 @@ const persistedValueSignature = {};
 const pendingBriefDeletions = new Set();
 let pendingBriefActiveIds = {};
 let remoteLoadFailed = false;
+let saveConflictPending = false;
 let remotePersistenceLastCheckedAt = 0;
 let pendingSaveTimer = null;
 let inspirationNotesSaveTimer = null;
@@ -814,7 +818,6 @@ async function readBriefsFromRemoteStorage() {
     }
     byChannel[channelId].briefs.push(entry.value);
     remoteBriefUpdatedAt[entry.briefId] = entry.updatedAt ?? null;
-    remoteBriefSignature[entry.briefId] = stableStringify(entry.value);
   });
 
   return { schemaVersion: 4, savedAt: Date.now(), byChannel };
@@ -915,6 +918,8 @@ async function deleteFromRemoteStorage(key) {
   if (!response.ok && response.status !== 204) {
     throw new Error(`Failed to clear ${key} from backend storage.`);
   }
+  // The row is gone, so the next write has to expect an empty slot rather than the old timestamp.
+  delete remoteStorageUpdatedAt[key];
 }
 
 async function readPersistedValue(key) {
@@ -992,24 +997,46 @@ async function clearBrowserLocalSnapshotCache() {
   }
 }
 
+function setSaveConflictPending(pending) {
+  saveConflictPending = pending;
+  if (refs.saveConflictBanner) {
+    refs.saveConflictBanner.hidden = !pending;
+  }
+}
+
+/** Writes the edits that are on screen over the version another client stored. */
+function keepLocalEditsAfterConflict() {
+  if (!saveConflictPending) {
+    return Promise.resolve();
+  }
+
+  // The conflict response already refreshed the expected timestamps, so this write is accepted.
+  setSaveConflictPending(false);
+  setSaveStatus("saving");
+  return enqueuePersistTask(runQueuedSnapshotPersist);
+}
+
+/** Throws away the edits on screen and reloads whatever the other client stored. */
+function discardLocalEditsAfterConflict() {
+  queuedSnapshotPayload = null;
+  setSaveConflictPending(false);
+  window.location.reload();
+}
+
 function enqueuePersistTask(task) {
   persistQueue = persistQueue
     .then(async () => {
       await task();
+      setSaveConflictPending(false);
       setSaveStatus("saved", Date.now());
     })
     .catch(async (error) => {
       if (error && error.code === "REMOTE_CONFLICT") {
-        // The conflict response refreshes the expected timestamps, so retrying keeps the
-        // edit that is on screen instead of replacing it with the stored version.
-        console.warn("Remote snapshot conflict detected. Retrying with refreshed timestamps.", error);
-        try {
-          await task();
-          setSaveStatus("saved", Date.now());
-        } catch (retryError) {
-          setSaveStatus("conflict");
-          console.warn("Remote snapshot conflict persists; unsaved edits are kept on screen.", retryError);
-        }
+        // Another client saved after this tab loaded. Retrying would overwrite their work without
+        // anyone seeing it, so writes stop here and the user picks which version survives.
+        setSaveConflictPending(true);
+        setSaveStatus("conflict");
+        console.warn("Remote snapshot conflict detected; waiting for the user to resolve it.", error);
         return;
       }
       setSaveStatus("error");
@@ -1021,6 +1048,14 @@ function enqueuePersistTask(task) {
 
 function scheduleSnapshotPersist(snapshotPayload, immediate = false) {
   queuedSnapshotPayload = snapshotPayload;
+
+  // While a conflict is unresolved the newest edits keep accumulating in the queued payload,
+  // but nothing is written until the user chooses a side.
+  if (saveConflictPending) {
+    setSaveStatus("conflict");
+    return Promise.resolve();
+  }
+
   setSaveStatus("saving");
 
   if (pendingSaveTimer) {
@@ -9652,6 +9687,7 @@ async function loadSnapshot() {
       ensureChannelBriefState(state.activeChannelId);
       applyActiveChannelWorkspace(state.channelWorkspaces[state.activeChannelId]);
       applyActiveChannelBriefState(state.briefsByChannel[state.activeChannelId]);
+      markLoadedBriefsAsSaved();
       if (useRemote) {
         await clearBrowserLocalSnapshotCache();
       }
@@ -9681,6 +9717,25 @@ async function loadSnapshot() {
   }
 
   return false;
+}
+
+/**
+ * A load normalizes whatever the server returned, so the in-memory records routinely differ from
+ * the stored bytes without anyone editing anything. Recording the normalized form as the saved
+ * baseline keeps a plain page view from writing the brief and appending a no-op revision, and any
+ * real edit still changes the serialization and is written.
+ */
+function markLoadedBriefsAsSaved() {
+  Object.entries(state.briefsByChannel).forEach(([channelId, briefState]) => {
+    normalizeChannelBriefState(briefState, channelId).briefs.forEach((brief) => {
+      if (brief?.id && Object.prototype.hasOwnProperty.call(remoteBriefUpdatedAt, brief.id)) {
+        remoteBriefSignature[brief.id] = stableStringify({
+          ...brief,
+          channelId: brief.channelId || channelId,
+        });
+      }
+    });
+  });
 }
 
 async function ensureViewerProfilePersistence() {
@@ -9928,18 +9983,63 @@ async function copyScriptMetadataJson(triggerBtn = refs.copyScriptMetadataJsonBt
   return didCopy;
 }
 
-/** Export windows are opened blank, so server-hosted assets need absolute URLs to resolve. */
-function absolutizeAssetUrls(html) {
-  return String(html || "").replace(/(src|href)="\/api\/assets\//g, `$1="${window.location.origin}/api/assets/`);
+const ASSET_URL_PATTERN = /(src|href)="(\/api\/assets\/[^"]+)"/g;
+
+/**
+ * Exports are shared, archived, and read offline, so asset bytes are inlined instead of pointing
+ * back at this server, whose /api/assets routes need a session. An asset that cannot be read falls
+ * back to an absolute URL so the rest of the export still renders.
+ */
+async function inlineAssetUrls(html) {
+  const source = String(html || "");
+  const urls = [...new Set([...source.matchAll(ASSET_URL_PATTERN)].map((match) => match[2]))];
+  const dataUrls = new Map();
+
+  await Promise.all(
+    urls.map(async (url) => {
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Asset request failed with status ${response.status}.`);
+        }
+        dataUrls.set(url, await readFileAsDataUrl(await response.blob()));
+      } catch (error) {
+        console.warn(`Could not inline ${url} into the export; linking to this server instead.`, error);
+      }
+    }),
+  );
+
+  return source.replace(ASSET_URL_PATTERN, (match, attribute, url) => {
+    const dataUrl = dataUrls.get(url);
+    return dataUrl ? `${attribute}="${dataUrl}"` : `${attribute}="${window.location.origin}${url}"`;
+  });
 }
 
-function openPdfPrintWindow(rawHtml, triggerButton) {
-  const html = absolutizeAssetUrls(rawHtml);
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
+const EXPORT_PLACEHOLDER_HTML =
+  '<!doctype html><html><head><title>Preparing export</title></head>' +
+  '<body style="font-family: system-ui, sans-serif; padding: 2rem; color: #4a4a4a">Preparing export...</body></html>';
+
+// The window is opened before the assets are read so the click that triggered the export is still
+// what opens it; otherwise popup blockers reject it.
+function openExportWindow(triggerButton) {
+  const exportWindow = window.open("", "_blank");
+  if (!exportWindow) {
     flashButtonText(triggerButton, "Popup Blocked", 1500);
+    return null;
+  }
+  exportWindow.document.open();
+  exportWindow.document.write(EXPORT_PLACEHOLDER_HTML);
+  exportWindow.document.close();
+  return exportWindow;
+}
+
+async function openPdfPrintWindow(rawHtml, triggerButton) {
+  const printWindow = openExportWindow(triggerButton);
+  if (!printWindow) {
     return;
   }
+
+  const html = await inlineAssetUrls(rawHtml);
 
   const autoPrintScript = `
     <script>
@@ -9977,13 +10077,13 @@ function openPdfPrintWindow(rawHtml, triggerButton) {
   flashButtonText(triggerButton, "Opening PDF", 900);
 }
 
-function openDocumentWindow(rawHtml, triggerButton, successText = "Opened") {
-  const html = absolutizeAssetUrls(rawHtml);
-  const docWindow = window.open("", "_blank");
+async function openDocumentWindow(rawHtml, triggerButton, successText = "Opened") {
+  const docWindow = openExportWindow(triggerButton);
   if (!docWindow) {
-    flashButtonText(triggerButton, "Popup Blocked", 1500);
     return;
   }
+
+  const html = await inlineAssetUrls(rawHtml);
 
   docWindow.document.open();
   docWindow.document.write(html);
@@ -10010,7 +10110,7 @@ function exportPackagingBriefPdf() {
   }
 
   const html = buildThumbnailBriefExportHtml(getFieldValues());
-  openPdfPrintWindow(html, refs.exportPackagingBriefPdfBtn);
+  void openPdfPrintWindow(html, refs.exportPackagingBriefPdfBtn);
 }
 
 function exportProductionBriefPdf() {
@@ -10020,7 +10120,7 @@ function exportProductionBriefPdf() {
   }
 
   const html = buildProductionBriefExportHtml(getFieldValues());
-  openPdfPrintWindow(html, refs.exportProductionBriefPdfBtn);
+  void openPdfPrintWindow(html, refs.exportProductionBriefPdfBtn);
 }
 
 function openScriptExport() {
@@ -10479,7 +10579,33 @@ function addStep3IdeaFromQuickEntry() {
   updateBoardsAndBrief();
 }
 
+/**
+ * An asset row can outlive its bytes - `/api/assets/:id` answers 410 when a Postgres restore is
+ * newer than the bucket - and an <img> pointed at it just renders as broken. Every image that fails
+ * to load is swapped for a labelled placeholder so the state is readable instead of mysterious.
+ */
+function replaceFailedAssetImage(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return;
+  }
+  const src = toCleanText(image.getAttribute("src"));
+  if (!src.includes("/api/assets/")) {
+    return;
+  }
+
+  const placeholder = document.createElement("div");
+  placeholder.className = `${image.className} asset-missing`.trim();
+  placeholder.setAttribute("role", "img");
+  placeholder.setAttribute("aria-label", "Image missing from storage");
+  placeholder.title = "This image could not be loaded from storage.";
+  placeholder.textContent = "Image missing from storage";
+  image.replaceWith(placeholder);
+}
+
 function bindEvents() {
+  // Image load failures do not bubble, so this listener has to run in the capture phase.
+  document.addEventListener("error", (event) => replaceFailedAssetImage(event.target), true);
+
   if (refs.showHomePageBtn) {
     refs.showHomePageBtn.addEventListener("click", () => {
       setPageView("home");
@@ -10781,6 +10907,15 @@ function bindEvents() {
   const resetStateBtn = document.getElementById("resetStateBtn");
   if (resetStateBtn) {
     resetStateBtn.addEventListener("click", resetAll);
+  }
+
+  if (refs.keepLocalEditsBtn) {
+    refs.keepLocalEditsBtn.addEventListener("click", () => {
+      void keepLocalEditsAfterConflict();
+    });
+  }
+  if (refs.discardLocalEditsBtn) {
+    refs.discardLocalEditsBtn.addEventListener("click", discardLocalEditsAfterConflict);
   }
   if (refs.exportPackagingBriefPdfBtn) {
     refs.exportPackagingBriefPdfBtn.addEventListener("click", exportPackagingBriefPdf);
